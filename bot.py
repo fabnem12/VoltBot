@@ -27,7 +27,7 @@ def main():
         your word has to start with the same letter as the word before ends. Example "The elephant tries snorkeling..."
         """
         
-        if message.channel.id != wordTrainChannel:
+        if message.channel.id != wordTrainChannel or message.author.bot:
             return
     
         isLetter = lambda x: x in "abcdefghijklmnopqrstuvwxyz "
