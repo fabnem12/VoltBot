@@ -37,6 +37,10 @@ def main():
             await purge_log(None, bot.get_guild(voltServer))
 
         await verif_word_train(message)
+    
+    @bot.event
+    async def on_message_edit(before, after):
+        await verif_word_train(after)
 
     async def verif_word_train(message):
         """
