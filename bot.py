@@ -5,12 +5,26 @@ from unidecode import unidecode
 
 import constantes
 
+#constants
+voltServer = 567021913210355745
+
+#-channels
 wordTrainChannel = 1141992409165733988
+deletedEditedMessages = 982242792422146098
+
+#-roles
+voltDiscordTeam = 674583505446895616
+voltSubTeam = 858692593104715817
+voltAdmin = 567023540193198080
 
 async def dmChannelUser(user):
     if user.dm_channel is None:
         await user.create_dm()
     return user.dm_channel
+
+async def isMod(guild, memberId):
+    member = await guild.fetch_member(memberId)
+    return any(role.id in (voltDiscordTeam, voltSubTeam, voltAdmin) for role in member.roles)
 
 def main():
     intents = discord.Intents.all()
@@ -19,6 +33,9 @@ def main():
     @bot.event
     async def on_message(message):
         await bot.process_commands(message)
+        if message.id % 100 == 0: #purge the log of deleted-edited-message about every 100 messages
+            await purge_log(None, bot.get_guild(voltServer))
+
         await verif_word_train(message)
 
     async def verif_word_train(message):
@@ -50,6 +67,27 @@ def main():
 
         return True
             
+    @bot.command(name = "purge_log")
+    async def purge_log(ctx, guild = None):
+        """
+        Purge #deleted-edited-messages. Records can be kept only up to 24 hours, so we have to delete them
+        once that delay is passed.
+        """
+        
+        if guild is None: 
+            guild = ctx.guild
+
+        if await isMod(guild, ctx.author.id):
+            channel = await guild.fetch_channel(deletedEditedMessages)
+
+            await ctx.message.add_reaction("👌")
+
+            import datetime
+            now = datetime.datetime.now()
+            oneDay = datetime.timedelta(hours=24)
+            
+            async for msg in channel.history(limit = None, before = now - oneDay):
+                await msg.delete()
 
     @bot.command(name="màj")
     async def maj(ctx):
