@@ -2,7 +2,6 @@ from subprocess import Popen, DEVNULL
 import os
 import pickle
 import psutil
-import sys
 
 def killBot():
     if "fichierPID.p" in os.listdir():
