@@ -10,6 +10,7 @@ voltServer = 567021913210355745
 
 #-channels
 wordTrainChannel = 1141992409165733988
+wordTrainChannel2 = 1143858096339439677
 deletedEditedMessages = 982242792422146098
 
 #-roles
@@ -33,14 +34,16 @@ def main():
     @bot.event
     async def on_message(message):
         await bot.process_commands(message)
-        if message.id % 100 == 0: #purge the log of deleted-edited-message about every 100 messages
+        if message.id % 100 == 13: #purge the log of deleted-edited-message about every 100 messages
             await purge_log(None, bot.get_guild(voltServer))
 
         await verif_word_train(message)
+        await verif_word_train2(message)
     
     @bot.event
     async def on_message_edit(before, after):
         await verif_word_train(after)
+        await verif_word_train2(after)
 
     async def verif_word_train(message):
         """
@@ -69,6 +72,35 @@ def main():
                 else:
                     lastLetter = word[-1]
 
+        return True
+
+    async def verif_word_train2(message):
+        if message.channel.id != wordTrainChannel2 or message.author.bot:
+            return
+
+        previousMsg = None
+        async for msg in message.channel.history(limit = None):
+            if msg != message and not msg.author.bot:
+                previousMsg = msg
+                break
+
+        if previousMsg:
+            isLetter = lambda x: x in "abcdefghijklmnopqrstuvwxyz "
+            previousMsgTxt = unidecode(previousMsg.content.lower())
+            msgTxt = unidecode(message.content.lower())
+
+            previousMsgLetters = "".join(filter(isLetter, previousMsgTxt))
+            msgLetters = "".join(filter(isLetter, msgTxt))
+            
+            if len(previousMsgLetters) and len(msgLetters):
+                if previousMsgLetters[-1] != msgLetters[0]:
+                    print(previousMsgLetters, msgLetters)
+
+                    await message.delete()
+                    await message.channel.send(f"<:bonk:843489770918903819> {message.author.mention}")
+
+                    return False
+                
         return True
             
     @bot.command(name = "purge_log")
