@@ -4,6 +4,7 @@ from nextcord.ext import commands
 from unidecode import unidecode
 
 import constantes
+import datetime
 
 #constants
 voltServer = 567021913210355745
@@ -27,6 +28,44 @@ async def isMod(guild, memberId):
     member = await guild.fetch_member(memberId)
     return any(role.id in (voltDiscordTeam, voltSubTeam, voltAdmin) for role in member.roles)
 
+async def ban(ctx, banAppealOk = True):
+    msg = ctx.message
+
+    if ctx.guild.id != 567021913210355745 or not await isMod(ctx.guild, ctx.author.id): #not on volt server or not a mod of the volt server
+        return
+
+    userIdRaw = msg.content.split(" ")[1]
+    if userIdRaw.isdigit():
+        userId = int(userIdRaw)
+    else:
+        userId = int(userIdRaw[2:-1])
+
+    try:
+        user = await msg.guild.fetch_member(userId)
+    except:
+        user = await bot.fetch_user(userId)
+
+    channel = await dmChannelUser(user)
+    banReason = ' '.join(msg.content.split(' ')[2:])
+    if banReason == "": banReason = "no reason given"
+
+    try:
+        if banAppealOk:
+            await channel.send(f"Ban reason: {banReason}\nBan appeal form: https://docs.google.com/forms/d/189lUm5ONdJHcI4C8QB4ml__2aAnygmxbCETrBMVhos0. Your discord id (asked in the form) is `{userId}`.")
+        else:
+            await channel.send(f"Ban reason: {banReason}")
+    except:
+        pass
+    else:
+        await ctx.message.add_reaction("👌")
+
+    try:
+        await msg.guild.ban(user, reason = f"{banReason} (ban by {msg.author.name})", delete_message_seconds = 0)
+    except Exception as e:
+        await (await dmChannelUser(msg.author)).send(f"Unable to ban {user.name}\n{e}")
+    else:
+        await msg.channel.send(f"Banned **{user.name}**")
+
 def main():
     intents = discord.Intents.all()
     bot = commands.Bot(command_prefix=constantes.prefixVolt, help_command=None, intents = intents)
@@ -39,6 +78,9 @@ def main():
 
         await verif_word_train(message)
         await verif_word_train2(message)
+
+        if message.content.startswith("*ban"):
+            await ban(message, banAppealOk = False)
     
     @bot.event
     async def on_message_edit(before, after):
@@ -132,6 +174,10 @@ def main():
 
             await ctx.message.add_reaction("👌")
             Popen(["python3", "maj.py"], stdout = DEVNULL)
+
+    @bot.command(name = "ban")
+    async def bancommand(ctx):
+        await ban(ctx)
 
     return bot, constantes.TOKENVOLT
 
