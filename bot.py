@@ -28,10 +28,8 @@ async def isMod(guild, memberId):
     member = await guild.fetch_member(memberId)
     return any(role.id in (voltDiscordTeam, voltSubTeam, voltAdmin) for role in member.roles)
 
-async def ban(ctx, banAppealOk = True):
-    msg = ctx.message
-
-    if ctx.guild.id != 567021913210355745 or not await isMod(ctx.guild, ctx.author.id): #not on volt server or not a mod of the volt server
+async def ban(msg, banAppealOk = True):
+    if msg.guild.id != 567021913210355745 or not await isMod(msg.guild, msg.author.id): #not on volt server or not a mod of the volt server
         return
 
     userIdRaw = msg.content.split(" ")[1]
@@ -57,7 +55,7 @@ async def ban(ctx, banAppealOk = True):
     except:
         pass
     else:
-        await ctx.message.add_reaction("👌")
+        await msg.add_reaction("👌")
 
     try:
         await msg.guild.ban(user, reason = f"{banReason} (ban by {msg.author.name})", delete_message_seconds = 0)
@@ -79,7 +77,7 @@ def main():
         await verif_word_train(message)
         await verif_word_train2(message)
 
-        if message.content.startswith("*ban"):
+        if message.content.startswith(".ban"):
             await ban(message, banAppealOk = False)
     
     @bot.event
@@ -177,7 +175,7 @@ def main():
 
     @bot.command(name = "ban")
     async def bancommand(ctx):
-        await ban(ctx)
+        await ban(ctx.message)
 
     return bot, constantes.TOKENVOLT
 
