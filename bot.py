@@ -4,7 +4,6 @@ from nextcord.ext import commands
 from unidecode import unidecode
 
 import constantes
-import datetime
 
 #constants
 voltServer = 567021913210355745
@@ -29,6 +28,7 @@ async def isMod(guild, memberId):
     return any(role.id in (voltDiscordTeam, voltSubTeam, voltAdmin) for role in member.roles)
 
 async def ban(msg, banAppealOk = True):
+    print(msg, await isMod(msg.guild, msg.author.id))
     if msg.guild.id != 567021913210355745 or not await isMod(msg.guild, msg.author.id): #not on volt server or not a mod of the volt server
         return
 
@@ -47,6 +47,8 @@ async def ban(msg, banAppealOk = True):
     banReason = ' '.join(msg.content.split(' ')[2:])
     if banReason == "": banReason = "no reason given"
 
+    print("tutu")
+
     try:
         if banAppealOk:
             await channel.send(f"Ban reason: {banReason}\nBan appeal form: https://docs.google.com/forms/d/189lUm5ONdJHcI4C8QB4ml__2aAnygmxbCETrBMVhos0. Your discord id (asked in the form) is `{userId}`.")
@@ -56,6 +58,8 @@ async def ban(msg, banAppealOk = True):
         pass
     else:
         await msg.add_reaction("👌")
+    
+    print("tata")
 
     try:
         await msg.guild.ban(user, reason = f"{banReason} (ban by {msg.author.name})", delete_message_seconds = 0)
@@ -71,7 +75,7 @@ def main():
     @bot.event
     async def on_message(message):
         await bot.process_commands(message)
-        if message.id % 100 == 13: #purge the log of deleted-edited-message about every 100 messages
+        if int(message.created_at.timestamp()) % 100 == 1: #purge the log of deleted-edited-message about every 100 messages
             await purge_log(None, bot.get_guild(voltServer))
 
         await verif_word_train(message)
@@ -131,7 +135,7 @@ def main():
 
             previousMsgLetters = "".join(filter(isLetter, previousMsgTxt))
             msgLetters = "".join(filter(isLetter, msgTxt))
-            
+
             if len(previousMsgLetters) and len(msgLetters):
                 if previousMsgLetters[-1] != msgLetters[0]:
                     print(previousMsgLetters, msgLetters)
@@ -140,30 +144,41 @@ def main():
                     await message.channel.send(f"<:bonk:843489770918903819> {message.author.mention}")
 
                     return False
-                
+
         return True
-            
+
     @bot.command(name = "purge_log")
     async def purge_log(ctx, guild = None):
         """
         Purge #deleted-edited-messages. Records can be kept only up to 24 hours, so we have to delete them
         once that delay is passed.
         """
-        
+
         if guild is None: 
             guild = ctx.guild
 
-        if await isMod(guild, ctx.author.id):
+        if ctx is None or (await isMod(guild, ctx.author.id)):
             channel = await guild.fetch_channel(deletedEditedMessages)
 
-            await ctx.message.add_reaction("👌")
+            if ctx: await ctx.message.add_reaction("👌")
 
             import datetime
             now = datetime.datetime.now()
             oneDay = datetime.timedelta(hours=24)
             
             async for msg in channel.history(limit = None, before = now - oneDay):
-                await msg.delete()
+                try:
+                    await msg.delete()
+                except discord.errors.NotFound:
+                    print("pass")
+                except discord.errors.HTTPException:
+                    print("pass")
+                    await asyncio.sleep(1)
+                    await msg.delete()
+                    print("Success")
+                else:
+                    print(msg.created_at.timestamp())
+                    await asyncio.sleep(1)
 
     @bot.command(name="màj")
     async def maj(ctx):
