@@ -5,6 +5,21 @@ from unidecode import unidecode
 
 import constantes
 
+def stockePID():
+    from os.path import join, dirname, abspath
+    import os
+    import pickle
+
+    fichierPID = join(dirname(abspath(__file__)), "fichierPID.p")
+    if not os.path.exists(fichierPID):
+        pickle.dump(set(), open(fichierPID, "wb"))
+
+    pids = pickle.load(open(fichierPID, "rb"))
+    pids.add(os.getpid())
+
+    pickle.dump(pids, open(fichierPID, "wb"))
+stockePID()
+
 #constants
 voltServer = 567021913210355745
 
