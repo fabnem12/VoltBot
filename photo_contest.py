@@ -31,6 +31,7 @@ organizerId = 619574125622722560
 mapUrl = "https://cdn.discordapp.com/attachments/847488864713048144/1155832232792047667/image.png"
 regions = ["Northern Europe", "Western Europe", "Central Europe", "Eastern Europe", "Southern Europe", "Rest of the World"]
 saveChannelId = 1157987716919734293
+grandFinalChannel = 1155786015521374208
 
 Submission = Tuple[str, int, float] #url, author_id, timestamp
 Vote = Tuple[int, str] #voter_id, url of the submission
@@ -246,7 +247,10 @@ async def end_submissions(bot):
                 e = discord.Embed(description = "Congrats, this photo has been selected for the semi-finals!")
                 e.set_image(url = subUrl)
                 await thread.send(embed = e)
-                await (await dmChannelUser(url2sub[subUrl][1])).send(embed = e)
+                try:
+                    await (await dmChannelUser(url2sub[subUrl][1])).send(embed = e)
+                except:
+                    pass
 
                 #embed in the semi-final channel
                 count += 1
@@ -256,6 +260,79 @@ async def end_submissions(bot):
 
                 entriesInSemis[channel.id][msgEntry.id] = url2sub[subUrl]
                 saveData()
+
+async def start_semi(bot, channelId: int):
+    """
+    Starts the voting period for a semi-final
+
+    Args:
+    - bot, the object representing the bot
+    - channelId, the id of the channel (has to be present in entriesInSemi)
+    """
+
+    if channelId in entriesInSemis:
+        contestState[0] = channelId
+        saveData()
+        channel = await bot.fetch_channel(channelId)
+
+        for msgId in entriesInSemis[channelId]:
+            msg = await channel.fetch_message(msgId)
+            await msg.add_reaction("👍")
+
+        await channel.send("**You can upvote as many photos as you want among those above this message**\nThen the photos that will reach the grand-final will be the one that ranked the best among contestants' votes and the top 4 among the global vote.")
+
+async def end_semi(bot, channelId: int):
+    """
+    Ends the voting period for a semi-final
+
+    Args: check start_semi
+    """
+
+    if channelId in entriesInSemis:
+        contestState[0] = 0
+        saveData()
+
+        contestants = set(authorId for channelInfo in submissions.values() for subs in channelInfo.values() for _, authorId, _ in subs.values())
+
+        channel = await bot.fetch_channel(channelId)
+
+        #count the votes of authors and global votes
+        votesContestants, globalVotes = {url: 0 for url, _, _ in entriesInSemis[channelId].values()}, {url: 0 for url, _, _ in entriesInSemis[channelId]}
+        url2sub = {s[0]: s for s in entriesInSemis[channelId].values()}
+
+        for voterId, subUrl in votes1[channelId]:
+            if voterId in contestants:
+                votesContestants[subUrl] += 1
+            
+            globalVotes[subUrl] += 1
+        
+        #find out which submissions got selected
+        #the best photo according to contestants, and the top 4 of the global vote (except the photo that got already selected)
+        selected = [max(votesContestants, key=lambda x: votesContestants[x])]
+        selected += sorted(filter(lambda x: x not in selected, globalVotes), key=lambda x: (globalVotes[x], votesContestants[x]), reverse=True)[:4]
+        shuffle(selected) #we don't want to show the selected photos in the order of their number of votes
+
+        #post an announcement
+        await channel.send(f"Here are the photos selected for the Grand Final from this semi-final:")
+
+        for subUrl in selected:
+            #embed in the thread
+            e = discord.Embed(description = "Congrats, this photo has been selected for the Grand Final!")
+            e.set_image(url = subUrl)
+            await channel.send(embed = e)
+            try:
+                await (await dmChannelUser(url2sub[subUrl][1])).send(embed = e)
+            except:
+                pass
+
+            #embed in the Grand Final channel
+            count += 1
+            e2 = discord.Embed(description = f"Photo #{count} for <#{channelId}>")
+            e2.set_image(url = subUrl)
+            msgEntry = await (await bot.fetch_channel(grandFinalChannel)).send(embed = e)
+
+            #TODO
+            saveData()
 
 class ButtonConfirm(discord.ui.View):
     """
@@ -351,7 +428,7 @@ async def cast_vote_submission_period(messageId, user, guild, emojiHash, channel
     if emojiHash != "👍":
         return
 
-    if contestState[0] != 0:
+    if contestState[0] != 1:
         return #today is not a day of the submission period
 
     if channel.parent and channel.parent.id in submissions:
@@ -404,7 +481,10 @@ async def cast_vote_semi(messageId, user, guild, emojiHash, channel):
             e = discord.Embed(description = "Your upvote for this photo has been properly withdrawn.")
         
         e.set_image(url = url)
-        await (await dmChannelUser(user)).send(embed = e)
+        try:
+            await (await dmChannelUser(user)).send(embed = e)
+        except:
+            pass
 
         #remove the reaction to make the vote invisible
         await (await channel.fetch_message(messageId)).remove_reaction("👍", user)
@@ -436,6 +516,8 @@ def main():
         if traitement:
             messageId = traitement["messageId"]
             user = traitement["user"]
+            if user.bot: return #no need to go further
+
             guild = traitement["guild"]
             emojiHash = traitement["emojiHash"]
             channel = traitement["channel"]
