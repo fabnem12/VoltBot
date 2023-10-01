@@ -351,20 +351,16 @@ async def cast_vote_submission_period(messageId, user, guild, emojiHash, channel
     if emojiHash != "👍":
         return
 
-    print("a")
     if channel.parent and channel.parent.id in submissions:
         parentId = channel.parent.id
         channelId = channel.id
 
-        print("b")
-        print(messageId)
         if channelId in submissions[parentId] and messageId in submissions[parentId][channelId]:
             url, _, _ = submissions[parentId][channelId][messageId]
 
             if channelId not in votes1:
                 votes1[channelId] = set()
             
-            print("c")
             #register the vote or withdraw it, then tell the voter
             voteInfo = (user.id, url)
 
