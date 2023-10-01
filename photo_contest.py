@@ -351,6 +351,9 @@ async def cast_vote_submission_period(messageId, user, guild, emojiHash, channel
     if emojiHash != "👍":
         return
 
+    if contestState[0] != 0:
+        return #today is not a day of the submission period
+
     if channel.parent and channel.parent.id in submissions:
         parentId = channel.parent.id
         channelId = channel.id
@@ -378,6 +381,35 @@ async def cast_vote_submission_period(messageId, user, guild, emojiHash, channel
             await (await channel.fetch_message(messageId)).remove_reaction("👍", user)
 
             saveData()
+
+async def cast_vote_semi(messageId, user, guild, emojiHash, channel):
+    if emojiHash != "👍":
+        return
+
+    channelId = channel.id
+    if channelId != contestState[0]:
+        return #today is not the day for this semi
+
+    if channelId in entriesInSemis and messageId in entriesInSemis[messageId]:
+        submission = entriesInSemis[channelId][messageId]
+        url, _, _ = submission
+        
+        voteInfo = (user.id, url)
+
+        if voteInfo not in votes1[channelId]:
+            votes1[channelId].add(voteInfo)
+            e = discord.Embed(description = "Your upvote for this photo has been saved. You can withdraw it by reacting again with 👍 (in the server, not here).")
+        else:
+            votes1[channelId].remove(voteInfo)
+            e = discord.Embed(description = "Your upvote for this photo has been properly withdrawn.")
+        
+        e.set_image(url = url)
+        await (await dmChannelUser(user)).send(embed = e)
+
+        #remove the reaction to make the vote invisible
+        await (await channel.fetch_message(messageId)).remove_reaction("👍", user)
+
+        saveData()
 
 #######################################################################
 
@@ -410,6 +442,7 @@ def main():
         
             await withdraw_submission(messageId, user, guild, emojiHash, channel)
             await cast_vote_submission_period(messageId, user, guild, emojiHash, channel)
+            await cast_vote_semi(messageId, user, guild, emojiHash, channel)
     
     @bot.command(name = "setup")
     async def command_setup(ctx, *channels: discord.TextChannel):
