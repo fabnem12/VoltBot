@@ -8,12 +8,11 @@ import json
 import requests
 from arrow import utcnow
 from random import shuffle
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Set
 
 #temporary way to update the bot
 def stockePID():
     from os.path import join, dirname, abspath
-    import os
     import pickle
 
     fichierPID = join(dirname(abspath(__file__)), "fichierPID.p")
@@ -31,13 +30,16 @@ voltServer = 567021913210355745
 organizerId = 619574125622722560
 mapUrl = "https://cdn.discordapp.com/attachments/847488864713048144/1155832232792047667/image.png"
 regions = ["Northern Europe", "Western Europe", "Central Europe", "Eastern Europe", "Southern Europe", "Rest of the World"]
+saveChannelId = 1157987716919734293
+
 Submission = Tuple[str, int, float] #url, author_id, timestamp
 Vote = Tuple[int, str] #voter_id, url of the submission
 
 #data of the contest
-submissions: Dict[int, Dict[int, Dict[int, Submission]]] = dict() #{channel_id: {thread_id: submissions}}
-votes1: Dict[int, List[Vote]] = dict() #{thread_id: list of votes}
-votes2: Dict[int, Dict[int, List[str]]] = dict() #{channel_id: {voter_id}}
+submissions: Dict[int, Dict[int, Dict[int, Submission]]] = dict() #{channel_id: {thread_id: {message_id: submission}}}
+entriesInSemis: Dict[int, Dict[int, Submission]] = dict() #{channel_id: {message_id: submission}}
+votes1: Dict[int, Set[Vote]] = dict() #{thread_id: list of votes}
+votes2: Dict[int, Dict[int, List[str]]] = dict() #{channel_id: {voter_id: submissions}}
 contestState: List[int] = [0] #0 for inactive, 1 for submission period, 2-3-4-5 for semi-finals (depending on the order of channels), 6 for the first final, 7 for the grand final
 contestData = (submissions, votes1, votes2, contestState)
 
@@ -45,8 +47,10 @@ if "photo_contest_data.json" in os.listdir():
     with open("photo_contest_data.json") as f:
         contestData = json.load(f)
 
-    submissions, votes1, votes2, contestState = contestData
-    submissions = {int(i): {int(j): v for j, v in entries.items()} for i, entries in submissions.items()}
+    submissions, entriesInSemis, votes1, votes2, contestState = contestData
+    submissions = {int(i): {int(j): {int(k): tuple(w) for k, w in v.items()} for j, v in entries.items()} for i, entries in submissions.items()}
+    entriesInSemis = {int(i): {int(j): tuple(w) for j, w in channels.items()} for i, channels in entriesInSemis.items()}
+    votes1 = {int(k): {tuple(x) for x in v} for k, v in votes1.items()} #for the jsonification, the set needs to be stored as a list. so we have to convert it here
 
 #-roles
 voltDiscordTeam = 674583505446895616
@@ -63,8 +67,9 @@ async def isMod(guild, memberId):
     return any(role.id in (voltDiscordTeam, voltSubTeam, voltAdmin) for role in member.roles)
 
 def saveData():
+    votes1Loc = {k: list(v) for k, v in votes1.items()} #for the jsonificiation, the set needs to be stored as a list. so we have to convert it here
     with open("photo_contest_data.json", "w") as f:
-        json.dump(contestData, f)
+        json.dump((submissions, votes1Loc, votes2, contestState), f)
 
 def checkNbSubsPerThread(dictOfSubs: Dict[int, Submission], userId: int) -> bool:
     """
@@ -101,17 +106,56 @@ async def setup(*channels: discord.TextChannel):
     saveData()
 
 async def planner(now, bot):
-    if now.minute == 0 and now.hour == 8 and (now.day, now.month) == (26, 9):
+    date, hour = (now.day, now.month), (now.hour, now.minute)
+    if hour == (8, 0) and date == (2, 10):
         await start_submissions(bot)
-    if now.minute == 0 and now.hour == 0 and (now.day, now.month) == (28, 9):
+    if hour == (0, 0) and date == (4, 10):
         await end_submissions(bot)
+    if hour == (6, 0) and date == (4, 10):
+        pass 
+        #semi-final for food
+    if hour == (22, 0) and date == (4, 10):
+        pass
+        #end of semi-final for food
+    if hour == (6, 0) and date == (5, 10):
+        #semi-final for art
+        pass
+    if hour == (22, 0) and date == (5, 10):
+        #end of semi-final for art
+        pass
+    if hour == (6, 0) and date == (6, 10):
+        #semi-final for nature
+        pass
+    if hour == (22, 0) and date == (6, 10):
+        #end of semi-final for nature
+        pass
+    if hour == (6, 0) and date == (7, 10):
+        #semi-final for pets
+        pass
+    if hour == (22, 0) and date == (7, 10):
+        #end of semi-final for pets
+        pass
+    if hour == (6, 0) and date == (8, 10):
+        #best of each semi-final
+        pass
+    if hour == (22, 0) and date == (8, 10):
+        #end of best of each semi-final
+        pass
+    if hour == (6, 0) and date == (9, 10):
+        #grand final
+        pass
+    if hour == (22, 0) and date == (9, 10):
+        #end of grand final
+        pass
 
-async def resendFile(url: str, saveChannelId: int):
+async def resendFile(url: str, saveChannelId: int) -> str:
     """
     Sends submissions in a safe channel to then keep a constant url.
 
     Args:
     - the url of the submission
+
+    Returns the new url of the file
     """ #renvoi chez le serveur squadro pour avoir une image quelque part
     filename = "-".join(url.replace(":","").split("/"))
     outputsPath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs")
@@ -155,7 +199,7 @@ async def start_submissions(bot):
     txt = f"**Hey! The photo contest is starting now!**\n\nPlease read the submission rules in <#1155785196029890570>.\nOne can submit **up to 2 photos** in this thread. You can upvote **as many proposals as you want**, the 4 photos with most upvotes will reach the semi-final, as well as the photo with most upvotes from contestants.\n\nSubmit photos in this thread that are **related with its geographic area**."
 
     for channelInfo in submissions.values():
-        for threadId, _ in channelInfo.values():
+        for threadId in channelInfo.keys():
             thread = await bot.fetch_channel(threadId)
             await thread.send(txt)
 
@@ -169,7 +213,7 @@ async def end_submissions(bot):
     - the bot object (to recover the channels)
     """
 
-    contestants = set(authorId for channelInfo in submissions.values() for _, subs in channelInfo.values() for _, authorId, _ in subs)
+    contestants = set(authorId for channelInfo in submissions.values() for subs in channelInfo.values() for _, authorId, _ in subs.values())
 
     for channelId, channelInfo in submissions.items():
         channel = await bot.fetch_channel(channelId)
@@ -178,8 +222,8 @@ async def end_submissions(bot):
         for threadId, subs in channelInfo.items():
 
             #count the votes of authors and global votes
-            votesContestants, globalVotes = {s[0]: 0 for s in subs}, {s[0]: 0 for s in subs}
-            url2sub = {s[0]: s for s in subs}
+            votesContestants, globalVotes = {s: 0 for s in subs}, {s: 0 for s in subs}
+            url2sub = {subs[s][0]: s for s in subs}
 
             for voterId, subUrl in votes1[threadId]:
                 if voterId in contestants:
@@ -208,7 +252,10 @@ async def end_submissions(bot):
                 count += 1
                 e2 = discord.Embed(description = f"Photo #{count} for <#{channelId}>")
                 e2.set_image(url = subUrl)
-                await channel.send(embed = e)
+                msgEntry = await channel.send(embed = e)
+
+                entriesInSemis[channel.id][msgEntry.id] = url2sub[subUrl]
+                saveData()
 
 class ButtonConfirm(discord.ui.View):
     """
@@ -245,6 +292,11 @@ class ButtonConfirm(discord.ui.View):
 
 async def submit(ctx, url: Optional[str]):
     userId = ctx.author.id
+
+    if contestState[0] != 1:
+        await ctx.send("Sorry, you can't make submissions for the photo contest at the moment…")
+        return
+    
     #submissions have to be made in threads
     if ctx.channel.parent:
         parent = ctx.channel.parent
@@ -263,35 +315,73 @@ async def submit(ctx, url: Optional[str]):
                 ref = discord.MessageReference(message_id = ctx.message.id, channel_id = ctx.channel.id)
 
                 if checkNbSubsPerThread(subsThread, userId): #the user is still allowed to make submissions in that thread
-                    msgConfirm = await ctx.send("Are you sure that:\n- you took this photo yourself?\n- the photo somewhat fits the channel and the geographic area of the thread?", view = ButtonConfirm(url, userId, utcnow().timestamp(), ctx.message), reference = ref)
-    return
-
-    if ctx.channel.id in submissions:
-        if CONTEST_STATE[0]:
-            if url:
-                human = getHuman(ctx.author)
-                languageChannel = getLanguageChannel(ctx.channel)
-                if languageChannel.nbProposalsPerson(human) == 3:
-                    await ctx.send("Sorry, you already submitted 3 photos in this thread, you can't submit more.\nYou can withdraw one of your previous submissions by adding a reaction ❌ to it.", reference = ref)
-                    return
-
-
-                msgConfirm = await ctx.send("Are you sure that:\n- you took this photo yourself?\n- the photo somewhat fits the channel and the geographic area of the thread?\nIf yes, you can confirm the submission with <:eurolike:759798224764141628>. If not, react with ❌", reference = ref)
-                try:
-                    msg2submission[msgConfirm.id] = (ctx.message.created_at, ctx.message.id, ctx.author.id, await resendFile(url, 1157987716919734293), 1)
-                except Exception as e:
-                    await msgConfirm.edit(content = "I'm sorry, it seems that this file is too big, I can't handle it :sweat_smile:")
-                    await (await dmChannelUser(await bot.fetch_user(ADMIN_ID))).send(str(e))
+                    newUrl = await resendFile(url, saveChannelId)
+                    await ctx.send("Are you sure that:\n- you took this photo yourself?\n- the photo somewhat fits the channel and the geographic area of the thread?", view = ButtonConfirm(newUrl, userId, utcnow().timestamp(), ctx.message), reference = ref)
                 else:
-                    await msgConfirm.add_reaction("eurolike:759798224764141628")
-                    await msgConfirm.add_reaction("❌")
-                    save()
+                    await ctx.send("You are not allowed to submit more than 2 photos per thread. If you really want to submit this photo, withdraw one of your previous submissions by reacting to it with ❌, then submit this photo again.", reference = ref)
+                    await ctx.message.delete()
             else:
-                await ctx.send("You have to attach a photo to make a submission. You can check <#889538982931755088> to see how to do it")
+                await ctx.send("The submission seems to be invalid, I can't find a valid URL for your image.")
         else:
-            await ctx.send("Sorry, the submission period hasn't started or is over…")
+            await ctx.send("Submissions for the photo contest are not allowed in this thread.")
     else:
-        await ctx.send("Submissions for the photo contest aren't allowed in this channel…")
+        await ctx.send("Submissions for the photo contest are not allowed in this channel.")
+    
+async def withdraw_submission(messageId, user, guild, emojiHash, channel):
+    """
+    Withdram a submission in the photo contest.
+    """
+
+    if emojiHash != "❌":
+        return #we can ignore other reactions
+
+    if channel.parent and channel.parent.id in submissions: #good start
+        parentId = channel.parent.id
+        channelId = channel.id
+
+        if channelId in submissions[parentId] and messageId in submissions[parentId][channelId]: #it is a submission
+            if submissions[parentId][channelId][messageId][1] == user.id or await isMod(guild, user.id): #the user can withdraw the submission
+                del submissions[parentId][channelId][messageId]
+                msg = await channel.fetch_message(messageId)
+
+                await msg.delete()
+                saveData()
+
+async def cast_vote_submission_period(messageId, user, guild, emojiHash, channel):
+    if emojiHash != "👍":
+        return
+
+    print("a")
+    if channel.parent and channel.parent.id in submissions:
+        parentId = channel.parent.id
+        channelId = channel.id
+
+        print("b")
+        print(messageId)
+        if channelId in submissions[parentId] and messageId in submissions[parentId][channelId]:
+            url, _, _ = submissions[parentId][channelId][messageId]
+
+            if channelId not in votes1:
+                votes1[channelId] = set()
+            
+            print("c")
+            #register the vote or withdraw it, then tell the voter
+            voteInfo = (user.id, url)
+
+            if voteInfo not in votes1[channelId]:
+                votes1[channelId].add(voteInfo)
+                e = discord.Embed(description = "Your upvote for this photo has been saved. You can withdraw it by reacting again with 👍 (in the server, not here).")
+            else:
+                votes1[channelId].remove(voteInfo)
+                e = discord.Embed(description = "Your upvote for this photo has been properly withdrawn.")
+            
+            e.set_image(url = url)
+            await (await dmChannelUser(user)).send(embed = e)
+
+            #remove the reaction to make the vote invisible
+            await (await channel.fetch_message(messageId)).remove_reaction("👍", user)
+
+            saveData()
 
 #######################################################################
 
@@ -321,11 +411,19 @@ def main():
             guild = traitement["guild"]
             emojiHash = traitement["emojiHash"]
             channel = traitement["channel"]
+        
+            await withdraw_submission(messageId, user, guild, emojiHash, channel)
+            await cast_vote_submission_period(messageId, user, guild, emojiHash, channel)
     
     @bot.command(name = "setup")
     async def command_setup(ctx, *channels: discord.TextChannel):
         if ctx.author.id == organizerId:
             await setup(ctx, *channels)
+        
+    @bot.command(name = "start_subs")
+    async def command_stat_subs(ctx):
+        if ctx.author.id == organizerId:
+            await start_submissions(bot)
     
     @bot.command(name = "submit")
     async def command_submit(ctx, url: Optional[str]):
