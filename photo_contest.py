@@ -5,9 +5,10 @@ from nextcord.ext import commands, tasks
 import constantes
 import os
 import json
+import requests
 from arrow import utcnow
 from random import shuffle
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 #temporary way to update the bot
 def stockePID():
@@ -34,7 +35,7 @@ Submission = Tuple[str, int, float] #url, author_id, timestamp
 Vote = Tuple[int, str] #voter_id, url of the submission
 
 #data of the contest
-submissions: Dict[int, Dict[str, Tuple[int, List[Submission]]]] = dict() #{channel_id: {region_name: (thread_id, submissions)}}
+submissions: Dict[int, Dict[int, Dict[int, Submission]]] = dict() #{channel_id: {thread_id: submissions}}
 votes1: Dict[int, List[Vote]] = dict() #{thread_id: list of votes}
 votes2: Dict[int, Dict[int, List[str]]] = dict() #{channel_id: {voter_id}}
 contestState: List[int] = [0] #0 for inactive, 1 for submission period, 2-3-4-5 for semi-finals (depending on the order of channels), 6 for the first final, 7 for the grand final
@@ -44,7 +45,8 @@ if "photo_contest_data.json" in os.listdir():
     with open("photo_contest_data.json") as f:
         contestData = json.load(f)
 
-    submissions, votes1, votes2 = contestData
+    submissions, votes1, votes2, contestState = contestData
+    submissions = {int(i): {int(j): v for j, v in entries.items()} for i, entries in submissions.items()}
 
 #-roles
 voltDiscordTeam = 674583505446895616
@@ -64,6 +66,16 @@ def saveData():
     with open("photo_contest_data.json", "w") as f:
         json.dump(contestData, f)
 
+def checkNbSubsPerThread(dictOfSubs: Dict[int, Submission], userId: int) -> bool:
+    """
+    Check whether the user is allowed to make new submissions in a given thread.
+
+    Args:
+    - dictOfSubs, the dict of submissions made in a thread
+    - userId, the id of the user to check
+    """
+    return sum(x[1] == userId for x in dictOfSubs.values()) < 2 #one can submit up to 2 photos per thread
+
 #######################################################################
 async def setup(*channels: discord.TextChannel):
     """Setup for the contest.
@@ -73,7 +85,7 @@ async def setup(*channels: discord.TextChannel):
     """
 
     submissions.clear()
-    submissions.update({c.id: {r: (0, []) for r in regions} for c in channels})
+    submissions.update({c.id: dict() for c in channels})
 
     for channel in channels:
         await channel.send(mapUrl)
@@ -84,7 +96,7 @@ async def setup(*channels: discord.TextChannel):
             msg = await channel.send(txt)
             thread = await msg.create_thread(name = txt, auto_archive_duration = 60 * 24 * 7) #1 week
             
-            channelInfo[region] = (thread.id, [])
+            channelInfo[thread.id] = []
     
     saveData()
 
@@ -93,6 +105,45 @@ async def planner(now, bot):
         await start_submissions(bot)
     if now.minute == 0 and now.hour == 0 and (now.day, now.month) == (28, 9):
         await end_submissions(bot)
+
+async def resendFile(url: str, saveChannelId: int):
+    """
+    Sends submissions in a safe channel to then keep a constant url.
+
+    Args:
+    - the url of the submission
+    """ #renvoi chez le serveur squadro pour avoir une image quelque part
+    filename = "-".join(url.replace(":","").split("/"))
+    outputsPath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs")
+    savePath = os.path.join(outputsPath, filename)
+    r = requests.get(url)
+    with open(savePath, "wb") as f:
+        f.write(r.content)
+
+    channelRefresh = await bot.fetch_channel(saveChannelId)
+    msgTmp = await channelRefresh.send(file = discord.File(savePath))
+    newUrl = msgTmp.attachments[0].url
+
+    os.remove(savePath)
+
+    return newUrl
+
+async def traitementRawReact(payload):
+    if payload.user_id != bot.user.id: #sinon, on est dans le cas d'une réaction en dm
+        messageId = payload.message_id
+        guild = bot.get_guild(payload.guild_id) if payload.guild_id else None
+        try:
+            user = (await guild.fetch_member(payload.user_id)) if guild else (await bot.fetch_user(payload.user_id))
+        except:
+            user = (await bot.fetch_user(payload.user_id))
+        channel = await bot.fetch_channel(payload.channel_id)
+
+        partEmoji = payload.emoji
+        emojiHash = partEmoji.id if partEmoji.is_custom_emoji() else partEmoji.name
+
+        return locals()
+    else:
+        return None
 
 async def start_submissions(bot):
     """Starts the submission period
@@ -124,7 +175,8 @@ async def end_submissions(bot):
         channel = await bot.fetch_channel(channelId)
 
         count = 0
-        for threadName, (threadId, subs) in channelInfo.items():
+        for threadId, subs in channelInfo.items():
+
             #count the votes of authors and global votes
             votesContestants, globalVotes = {s[0]: 0 for s in subs}, {s[0]: 0 for s in subs}
             url2sub = {s[0]: s for s in subs}
@@ -143,7 +195,7 @@ async def end_submissions(bot):
 
             #post an announcement
             thread = await bot.fetch_channel(threadId)
-            await thread.send(f"Here are the photos selected for the semi-finals in the thread {threadName}")
+            await thread.send(f"Here are the photos selected for the semi-finals in this thread")
 
             for subUrl in selected:
                 #embed in the thread
@@ -157,6 +209,89 @@ async def end_submissions(bot):
                 e2 = discord.Embed(description = f"Photo #{count} for <#{channelId}>")
                 e2.set_image(url = subUrl)
                 await channel.send(embed = e)
+
+class ButtonConfirm(discord.ui.View):
+    """
+    A class for the confirmation button for submissions.
+    """
+    def __init__(self, url: str, userId: int, timestamp: int, message: discord.Message):
+        super().__init__(timeout = 300)
+
+        self.url = url
+        self.userId = userId 
+        self.timestamp = timestamp
+        self.message = message
+    
+    @discord.ui.button(label = "Confirm", style = discord.ButtonStyle.blurple)
+    async def confirmSub(self, button: discord.ui.Button, interaction: discord.Interaction):
+        thread = interaction.channel
+        parent = thread.parent
+
+        e = discord.Embed(description = f"**You can upvote this photo with 👍**")
+        e.set_image(url = self.url)
+        msgVote = await thread.send(embed = e)
+        await msgVote.add_reaction("👍")
+
+        submissions[parent.id][thread.id][msgVote.id] = (self.url, self.userId, self.timestamp)
+        saveData()
+
+        await interaction.message.delete()
+        await self.message.delete()
+    
+    @discord.ui.button(label = "❌", style = discord.ButtonStyle.blurple)
+    async def deny(self, button: discord.ui.Button, interaction: discord.Interaction):
+        await interaction.message.delete()
+        await self.message.delete()
+
+async def submit(ctx, url: Optional[str]):
+    userId = ctx.author.id
+    #submissions have to be made in threads
+    if ctx.channel.parent:
+        parent = ctx.channel.parent
+
+        if parent.id in submissions:
+            subsThread = submissions[parent.id][ctx.channel.id]
+
+            if url is None:
+                if ctx.message.attachments != []:
+                    url = ctx.message.attachments[0].url
+            
+            if url:
+                if "#" in url: url = url.split("#")[0]
+                if "?" in url: url = url.split("?")[0]
+
+                ref = discord.MessageReference(message_id = ctx.message.id, channel_id = ctx.channel.id)
+
+                if checkNbSubsPerThread(subsThread, userId): #the user is still allowed to make submissions in that thread
+                    msgConfirm = await ctx.send("Are you sure that:\n- you took this photo yourself?\n- the photo somewhat fits the channel and the geographic area of the thread?", view = ButtonConfirm(url, userId, utcnow().timestamp(), ctx.message), reference = ref)
+    return
+
+    if ctx.channel.id in submissions:
+        if CONTEST_STATE[0]:
+            if url:
+                human = getHuman(ctx.author)
+                languageChannel = getLanguageChannel(ctx.channel)
+                if languageChannel.nbProposalsPerson(human) == 3:
+                    await ctx.send("Sorry, you already submitted 3 photos in this thread, you can't submit more.\nYou can withdraw one of your previous submissions by adding a reaction ❌ to it.", reference = ref)
+                    return
+
+
+                msgConfirm = await ctx.send("Are you sure that:\n- you took this photo yourself?\n- the photo somewhat fits the channel and the geographic area of the thread?\nIf yes, you can confirm the submission with <:eurolike:759798224764141628>. If not, react with ❌", reference = ref)
+                try:
+                    msg2submission[msgConfirm.id] = (ctx.message.created_at, ctx.message.id, ctx.author.id, await resendFile(url, 1157987716919734293), 1)
+                except Exception as e:
+                    await msgConfirm.edit(content = "I'm sorry, it seems that this file is too big, I can't handle it :sweat_smile:")
+                    await (await dmChannelUser(await bot.fetch_user(ADMIN_ID))).send(str(e))
+                else:
+                    await msgConfirm.add_reaction("eurolike:759798224764141628")
+                    await msgConfirm.add_reaction("❌")
+                    save()
+            else:
+                await ctx.send("You have to attach a photo to make a submission. You can check <#889538982931755088> to see how to do it")
+        else:
+            await ctx.send("Sorry, the submission period hasn't started or is over…")
+    else:
+        await ctx.send("Submissions for the photo contest aren't allowed in this channel…")
 
 #######################################################################
 
@@ -176,11 +311,25 @@ def main():
     @bot.event
     async def on_message(message):
         await bot.process_commands(message)
+
+    @bot.event
+    async def on_raw_reaction_add(payload):
+        traitement = await traitementRawReact(payload)
+        if traitement:
+            messageId = traitement["messageId"]
+            user = traitement["user"]
+            guild = traitement["guild"]
+            emojiHash = traitement["emojiHash"]
+            channel = traitement["channel"]
     
     @bot.command(name = "setup")
     async def command_setup(ctx, *channels: discord.TextChannel):
         if ctx.author.id == organizerId:
             await setup(ctx, *channels)
+    
+    @bot.command(name = "submit")
+    async def command_submit(ctx, url: Optional[str]):
+        await submit(ctx, url)
 
     return bot, constantes.TOKENVOLT
 
