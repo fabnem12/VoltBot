@@ -224,18 +224,22 @@ async def end_submissions(bot):
 
             #count the votes of authors and global votes
             votesContestants, globalVotes = {subs[s][0]: 0 for s in subs}, {subs[s][0]: 0 for s in subs}
-            url2sub = {subs[s][0]: s for s in subs}
+            url2sub = {subs[s][0]: subs[s] for s in subs}
 
-            for voterId, subUrl in votes1[threadId]:
-                if voterId in contestants:
-                    votesContestants[subUrl] += 1
-                
-                globalVotes[subUrl] += 1
+            if threadId in votes1:
+                for voterId, subUrl in votes1[threadId]:
+                    if voterId in contestants:
+                        votesContestants[subUrl] += 1
+                    
+                    globalVotes[subUrl] += 1
             
             #find out which submissions got selected
             #the best photo according to contestants, and the top 4 of the global vote (except the photo that got already selected)
-            selected = [max(votesContestants, key=lambda x: votesContestants[x])]
-            selected += sorted(filter(lambda x: x not in selected, globalVotes), key=lambda x: (globalVotes[x], votesContestants[x]), reverse=True)[:4]
+            if len(votesContestants):
+                selected = [max(votesContestants, key=lambda x: votesContestants[x])]
+            else:
+                selected = []
+            selected += sorted(filter(lambda x: x not in selected, globalVotes), key=lambda x: (globalVotes[x], votesContestants[x]), reverse=True)[:5-len(selected)]
             shuffle(selected) #we don't want to show the selected photos in the order of their number of votes
 
             #post an announcement
