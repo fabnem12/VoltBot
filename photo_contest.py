@@ -223,7 +223,7 @@ async def end_submissions(bot):
         for threadId, subs in channelInfo.items():
 
             #count the votes of authors and global votes
-            votesContestants, globalVotes = {s: 0 for s in subs}, {s: 0 for s in subs}
+            votesContestants, globalVotes = {subs[s][0]: 0 for s in subs}, {subs[s][0]: 0 for s in subs}
             url2sub = {subs[s][0]: s for s in subs}
 
             for voterId, subUrl in votes1[threadId]:
@@ -248,7 +248,7 @@ async def end_submissions(bot):
                 e.set_image(url = subUrl)
                 await thread.send(embed = e)
                 try:
-                    await (await dmChannelUser(url2sub[subUrl][1])).send(embed = e)
+                    await (await dmChannelUser(await bot.fetch_user(url2sub[subUrl][1]))).send(embed = e)
                 except:
                     pass
 
@@ -321,7 +321,7 @@ async def end_semi(bot, channelId: int):
             e.set_image(url = subUrl)
             await channel.send(embed = e)
             try:
-                await (await dmChannelUser(url2sub[subUrl][1])).send(embed = e)
+                await (await dmChannelUser(await bot.fetch_user(url2sub[subUrl][1]))).send(embed = e)
             except:
                 pass
 
