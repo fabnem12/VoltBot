@@ -348,24 +348,26 @@ class ButtonConfirm(discord.ui.View):
     
     @discord.ui.button(label = "Confirm", style = discord.ButtonStyle.blurple)
     async def confirmSub(self, button: discord.ui.Button, interaction: discord.Interaction):
-        thread = interaction.channel
-        parent = thread.parent
+        if interaction.user.id == self.userId:
+            thread = interaction.channel
+            parent = thread.parent
 
-        e = discord.Embed(description = f"**You can upvote this photo with 👍**")
-        e.set_image(url = self.url)
-        msgVote = await thread.send(embed = e)
-        await msgVote.add_reaction("👍")
+            e = discord.Embed(description = f"**You can upvote this photo with 👍**")
+            e.set_image(url = self.url)
+            msgVote = await thread.send(embed = e)
+            await msgVote.add_reaction("👍")
 
-        submissions[parent.id][thread.id][msgVote.id] = (self.url, self.userId, self.timestamp)
-        saveData()
+            submissions[parent.id][thread.id][msgVote.id] = (self.url, self.userId, self.timestamp)
+            saveData()
 
-        await interaction.message.delete()
-        await self.message.delete()
+            await interaction.message.delete()
+            await self.message.delete()
     
     @discord.ui.button(label = "❌", style = discord.ButtonStyle.blurple)
     async def deny(self, button: discord.ui.Button, interaction: discord.Interaction):
-        await interaction.message.delete()
-        await self.message.delete()
+        if interaction.user.id == self.userId:
+            await interaction.message.delete()
+            await self.message.delete()
 
 async def submit(ctx, url: Optional[str]):
     userId = ctx.author.id
@@ -509,6 +511,10 @@ def main():
     @bot.event
     async def on_message(message):
         await bot.process_commands(message)
+
+        if message.channel.parent and message.channel.parent.id in submissions:
+            ref = discord.MessageReference(message_id = message.id, channel_id = message.channel.id)
+            await message.channel.send("This doesn't count as a valid submission, please use the `;submit` command as explained in <#1155785196029890570>", delete_after = 3600, reference = ref)
 
     @bot.event
     async def on_raw_reaction_add(payload):
