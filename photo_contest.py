@@ -70,7 +70,7 @@ async def isMod(guild, memberId):
 def saveData():
     votes1Loc = {k: list(v) for k, v in votes1.items()} #for the jsonificiation, the set needs to be stored as a list. so we have to convert it here
     with open("photo_contest_data.json", "w") as f:
-        json.dump((submissions, votes1Loc, votes2, contestState), f)
+        json.dump((submissions, entriesInSemis, votes1Loc, votes2, contestState), f)
 
 def checkNbSubsPerThread(dictOfSubs: Dict[int, Submission], userId: int) -> bool:
     """
