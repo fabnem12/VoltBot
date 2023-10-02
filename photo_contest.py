@@ -512,6 +512,7 @@ def main():
     async def on_message(message):
         await bot.process_commands(message)
 
+        if message.author.bot: return
         if message.channel.parent and message.channel.parent.id in submissions:
             ref = discord.MessageReference(message_id = message.id, channel_id = message.channel.id)
             await message.channel.send("This doesn't count as a valid submission, please use the `;submit` command as explained in <#1155785196029890570>", delete_after = 3600, reference = ref)
