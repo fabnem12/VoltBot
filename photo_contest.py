@@ -110,42 +110,42 @@ async def planner(now, bot):
     date, hour = (now.day, now.month), (now.hour, now.minute)
     if hour == (8, 0) and date == (2, 10):
         await start_submissions(bot)
-    if hour == (0, 0) and date == (4, 10):
+    if hour == (0, 0) and date == (9, 10):
         await end_submissions(bot)
-    if hour == (6, 0) and date == (4, 10):
+    if hour == (6, 0) and date == (9, 10):
         pass 
         #semi-final for food
-    if hour == (22, 0) and date == (4, 10):
+    if hour == (22, 0) and date == (9, 10):
         pass
         #end of semi-final for food
-    if hour == (6, 0) and date == (5, 10):
+    if hour == (6, 0) and date == (10, 10):
         #semi-final for art
         pass
-    if hour == (22, 0) and date == (5, 10):
+    if hour == (22, 0) and date == (10, 10):
         #end of semi-final for art
         pass
-    if hour == (6, 0) and date == (6, 10):
+    if hour == (6, 0) and date == (11, 10):
         #semi-final for nature
         pass
-    if hour == (22, 0) and date == (6, 10):
+    if hour == (22, 0) and date == (11, 10):
         #end of semi-final for nature
         pass
-    if hour == (6, 0) and date == (7, 10):
+    if hour == (6, 0) and date == (12, 10):
         #semi-final for pets
         pass
-    if hour == (22, 0) and date == (7, 10):
+    if hour == (22, 0) and date == (12, 10):
         #end of semi-final for pets
         pass
-    if hour == (6, 0) and date == (8, 10):
+    if hour == (6, 0) and date == (13, 10):
         #best of each semi-final
         pass
-    if hour == (22, 0) and date == (8, 10):
+    if hour == (22, 0) and date == (13, 10):
         #end of best of each semi-final
         pass
-    if hour == (6, 0) and date == (9, 10):
+    if hour == (6, 0) and date == (14, 10):
         #grand final
         pass
-    if hour == (22, 0) and date == (9, 10):
+    if hour == (22, 0) and date == (15, 10):
         #end of grand final
         pass
 
