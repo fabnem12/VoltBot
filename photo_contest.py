@@ -460,6 +460,9 @@ async def cast_vote_submission_period(messageId, user, guild, emojiHash, channel
             e.set_image(url = url)
             await (await dmChannelUser(user)).send(embed = e)
 
+            #the following works because channel is a Thread
+            if user.id not in {x.id for x in channel.members}: await channel.add_user(user)
+
             #remove the reaction to make the vote invisible
             await (await channel.fetch_message(messageId)).remove_reaction("👍", user)
 
