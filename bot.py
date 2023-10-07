@@ -103,6 +103,11 @@ def main():
     async def on_message_edit(before, after):
         await verif_word_train(after)
         await verif_word_train2(after)
+    
+    @bot.event
+    async def on_member_join(member: discord.Member):
+        dmChannel = await dmChannelUser(member)
+        await dmChannel.send("Hey! **Welcome to the Volt Europa Discord server**\nTo get the access to the server, please introduce yourself in <#567024817128210433>, citing the country/countries you are from, the languages you speak and whether you are a <:volt:698844154418954311> member.\nOnce you get verified, you can check <#727489317210947655> to get access to topic channels.")
 
     async def verif_word_train(message):
         """
