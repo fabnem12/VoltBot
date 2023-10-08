@@ -42,7 +42,7 @@ entriesInSemis: Dict[int, Dict[int, Submission]] = dict() #{channel_id: {message
 votes1: Dict[int, Set[Vote]] = dict() #{thread_id: list of votes}
 votes2: Dict[int, Dict[int, List[str]]] = dict() #{channel_id: {voter_id: submissions}}
 contestState: List[int] = [0] #0 for inactive, 1 for submission period, 2-3-4-5 for semi-finals (depending on the order of channels), 6 for the first final, 7 for the grand final
-contestData = (submissions, votes1, votes2, contestState)
+contestData = (submissions, entriesInSemis, votes1, votes2, contestState)
 
 if "photo_contest_data.json" in os.listdir():
     with open("photo_contest_data.json") as f:
@@ -113,30 +113,10 @@ async def planner(now, bot):
     if hour == (0, 0) and date == (9, 10):
         await end_submissions(bot)
     if hour == (6, 0) and date == (9, 10):
-        pass 
-        #semi-final for food
-    if hour == (22, 0) and date == (9, 10):
-        pass
-        #end of semi-final for food
-    if hour == (6, 0) and date == (10, 10):
-        #semi-final for art
-        pass
-    if hour == (22, 0) and date == (10, 10):
-        #end of semi-final for art
-        pass
-    if hour == (6, 0) and date == (11, 10):
-        #semi-final for nature
-        pass
-    if hour == (22, 0) and date == (11, 10):
-        #end of semi-final for nature
-        pass
-    if hour == (6, 0) and date == (12, 10):
-        #semi-final for pets
-        pass
-    if hour == (22, 0) and date == (12, 10):
-        #end of semi-final for pets
-        pass
-    if hour == (6, 0) and date == (13, 10):
+        await start_semis(bot)
+    if hour == (22, 0) and date == (13, 10):
+        await end_semis(bot)
+    if hour == (6, 0) and date == (14, 10):
         #best of each semi-final
         pass
     if hour == (22, 0) and date == (13, 10):
@@ -228,18 +208,22 @@ async def end_submissions(bot):
 
             if threadId in votes1:
                 for voterId, subUrl in votes1[threadId]:
+                    voteWeight = 1 if voterId != url2sub[subUrl][1] else 0.5
+                    #when you vote for yourself, your vote is worth 0.5 only
+
                     if voterId in contestants:
-                        votesContestants[subUrl] += 1
+                        votesContestants[subUrl] += voteWeight
                     
-                    globalVotes[subUrl] += 1
+                    globalVotes[subUrl] += voteWeight
             
             #find out which submissions got selected
             #the best photo according to contestants, and the top 4 of the global vote (except the photo that got already selected)
             if len(votesContestants):
-                selected = [max(votesContestants, key=lambda x: votesContestants[x])]
+                selected = [max(votesContestants, key=lambda x: (votesContestants[x], globalVotes[x], -url2sub[x][2]))]
+                #the tie breaker for the vote among contestants is the global vote, then photos that got submitted earlier get the priority
             else:
                 selected = []
-            selected += sorted(filter(lambda x: x not in selected, globalVotes), key=lambda x: (globalVotes[x], votesContestants[x]), reverse=True)[:5-len(selected)]
+            selected += sorted(filter(lambda x: x not in selected, globalVotes), key=lambda x: (globalVotes[x], votesContestants[x], -url2sub[x][2]), reverse=True)[:5-len(selected)]
             shuffle(selected) #we don't want to show the selected photos in the order of their number of votes
 
             #post an announcement
@@ -265,59 +249,69 @@ async def end_submissions(bot):
                 entriesInSemis[channel.id][msgEntry.id] = url2sub[subUrl]
                 saveData()
 
-async def start_semi(bot, channelId: int):
+async def start_semis(bot):
     """
-    Starts the voting period for a semi-final
+    Starts the voting period for the semi-finals
 
     Args:
     - bot, the object representing the bot
-    - channelId, the id of the channel (has to be present in entriesInSemi)
     """
 
-    if channelId in entriesInSemis:
-        contestState[0] = channelId
-        saveData()
+    for channelId, entries in entriesInSemis.items():
         channel = await bot.fetch_channel(channelId)
 
-        for msgId in entriesInSemis[channelId]:
+        for msgId in entries:
             msg = await channel.fetch_message(msgId)
             await msg.add_reaction("👍")
 
         await channel.send("**You can upvote as many photos as you want among those above this message**\nThen the photos that will reach the grand-final will be the one that ranked the best among contestants' votes and the top 4 among the global vote.")
 
-async def end_semi(bot, channelId: int):
-    """
-    Ends the voting period for a semi-final
+    contestState[0] = 2
+    saveData()
 
-    Args: check start_semi
+async def end_semis(bot):
+    """
+    Ends the voting period for the semi-final
+
+    Args:
+    - bot, the object representing the bot
     """
 
-    if channelId in entriesInSemis:
-        contestState[0] = 0
-        saveData()
+    entriesInSemis[grandFinalChannel] = dict()
+
+    for channelId, entries in entriesInSemis.items():
+        if channelId == grandFinalChannel: continue
 
         contestants = set(authorId for channelInfo in submissions.values() for subs in channelInfo.values() for _, authorId, _ in subs.values())
-
         channel = await bot.fetch_channel(channelId)
+        count = 0
 
         #count the votes of authors and global votes
-        votesContestants, globalVotes = {url: 0 for url, _, _ in entriesInSemis[channelId].values()}, {url: 0 for url, _, _ in entriesInSemis[channelId]}
-        url2sub = {s[0]: s for s in entriesInSemis[channelId].values()}
+        votesContestants, globalVotes = {v[0]: 0 for v in entries.values()}, {v[0]: 0 for v in entries.values()}
+        url2sub = {v[0]: v for v in entries.values()}
 
-        for voterId, subUrl in votes1[channelId]:
-            if voterId in contestants:
-                votesContestants[subUrl] += 1
-            
-            globalVotes[subUrl] += 1
+        if channelId in votes1: #should be true but who knows
+            for voterId, subUrl in votes1[channelId]:
+                voteWeight = 1 if voterId != url2sub[subUrl][1] else 0.5
+                #when you vote for yourself, your vote is worth 0.5 only
+
+                if voterId in contestants:
+                    votesContestants[subUrl] += voteWeight
+                
+                globalVotes[subUrl] += voteWeight
         
         #find out which submissions got selected
         #the best photo according to contestants, and the top 4 of the global vote (except the photo that got already selected)
-        selected = [max(votesContestants, key=lambda x: votesContestants[x])]
-        selected += sorted(filter(lambda x: x not in selected, globalVotes), key=lambda x: (globalVotes[x], votesContestants[x]), reverse=True)[:4]
+        if len(votesContestants):
+            selected = [max(votesContestants, key=lambda x: (votesContestants[x], globalVotes[x], -url2sub[x][2]))]
+            #the tie breaker for the vote among contestants is the global vote, then photos that got submitted earlier get the priority
+        else:
+            selected = []
+        selected += sorted(filter(lambda x: x not in selected, globalVotes), key=lambda x: (globalVotes[x], votesContestants[x], -url2sub[x][2]), reverse=True)[:5-len(selected)]
         shuffle(selected) #we don't want to show the selected photos in the order of their number of votes
 
         #post an announcement
-        await channel.send(f"Here are the photos selected for the Grand Final from this semi-final:")
+        await channel.send(f"Here are the photos selected for the Grand Final from this channel:")
 
         for subUrl in selected:
             #embed in the thread
@@ -335,8 +329,10 @@ async def end_semi(bot, channelId: int):
             e2.set_image(url = subUrl)
             msgEntry = await (await bot.fetch_channel(grandFinalChannel)).send(embed = e)
 
-            #TODO
-            saveData()
+            entriesInSemis[grandFinalChannel][msgEntry.id] = url2sub[subUrl]
+        
+        contestState[0] = 0
+        saveData()
 
 class ButtonConfirm(discord.ui.View):
     """
@@ -473,8 +469,8 @@ async def cast_vote_semi(messageId, user, guild, emojiHash, channel):
         return
 
     channelId = channel.id
-    if channelId != contestState[0]:
-        return #today is not the day for this semi
+    if contestState[0] != 2:
+        return #the semi-finals are not open
 
     if channelId in entriesInSemis and messageId in entriesInSemis[messageId]:
         submission = entriesInSemis[channelId][messageId]
