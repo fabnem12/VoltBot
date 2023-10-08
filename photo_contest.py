@@ -112,17 +112,17 @@ async def planner(now, bot):
         await start_submissions(bot)
     if hour == (0, 0) and date == (9, 10):
         await end_submissions(bot)
-    if hour == (6, 0) and date == (9, 10):
+    if hour == (0, 5) and date == (9, 10):
         await start_semis(bot)
     if hour == (22, 0) and date == (13, 10):
         await end_semis(bot)
-    if hour == (22, 1) and date == (13, 10):
+    if hour == (22, 5) and date == (13, 10):
         #best of each semi-final
         pass
     if hour == (22, 0) and date == (16, 10):
         #end of best of each semi-final
         pass
-    if hour == (22, 1) and date == (16, 10):
+    if hour == (22, 5) and date == (16, 10):
         #grand final
         pass
     if hour == (22, 0) and date == (22, 10):
