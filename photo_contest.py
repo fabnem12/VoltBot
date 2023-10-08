@@ -116,16 +116,16 @@ async def planner(now, bot):
         await start_semis(bot)
     if hour == (22, 0) and date == (13, 10):
         await end_semis(bot)
-    if hour == (6, 0) and date == (14, 10):
+    if hour == (22, 1) and date == (13, 10):
         #best of each semi-final
         pass
-    if hour == (22, 0) and date == (13, 10):
+    if hour == (22, 0) and date == (16, 10):
         #end of best of each semi-final
         pass
-    if hour == (6, 0) and date == (14, 10):
+    if hour == (22, 1) and date == (16, 10):
         #grand final
         pass
-    if hour == (22, 0) and date == (15, 10):
+    if hour == (22, 0) and date == (22, 10):
         #end of grand final
         pass
 
@@ -454,7 +454,10 @@ async def cast_vote_submission_period(messageId, user, guild, emojiHash, channel
                 e = discord.Embed(description = "Your upvote for this photo has been properly withdrawn.")
             
             e.set_image(url = url)
-            await (await dmChannelUser(user)).send(embed = e)
+            try:
+                await (await dmChannelUser(user)).send(embed = e)
+            except:
+                pass
 
             #the following works because channel is a Thread
             if user.id not in {x.id for x in channel.members}: await channel.add_user(user)
