@@ -198,6 +198,7 @@ async def end_submissions(bot):
 
     for channelId, channelInfo in submissions.items():
         channel = await bot.fetch_channel(channelId)
+        entriesInSemis[channelId] = dict()
 
         count = 0
         for threadId, subs in channelInfo.items():
