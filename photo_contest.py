@@ -476,11 +476,17 @@ async def cast_vote_semi(messageId, user, guild, emojiHash, channel):
     if contestState[0] != 2:
         return #the semi-finals are not open
 
-    if channelId in entriesInSemis and messageId in entriesInSemis[messageId]:
+    if channelId in entriesInSemis and messageId in entriesInSemis[channelId]:
         submission = entriesInSemis[channelId][messageId]
         url, _, _ = submission
         
+        #remove the reaction to make the vote invisible
+        await (await channel.fetch_message(messageId)).remove_reaction("👍", user)
+
         voteInfo = (user.id, url)
+
+        if channelId not in votes1:
+            votes1[channelId] = set()
 
         if voteInfo not in votes1[channelId]:
             votes1[channelId].add(voteInfo)
@@ -494,9 +500,6 @@ async def cast_vote_semi(messageId, user, guild, emojiHash, channel):
             await (await dmChannelUser(user)).send(embed = e)
         except:
             pass
-
-        #remove the reaction to make the vote invisible
-        await (await channel.fetch_message(messageId)).remove_reaction("👍", user)
 
         saveData()
 
