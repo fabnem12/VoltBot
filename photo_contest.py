@@ -117,13 +117,13 @@ async def planner(now, bot):
         await start_semis(bot)
     if hour == (22, 0) and date == (13, 10):
         await end_semis(bot)
-    if hour == (22, 5) and date == (13, 10):
+    if hour == (8, 0) and date == (14, 10):
         #best of each semi-final
         pass
-    if hour == (22, 0) and date == (16, 10):
+    if hour == (22, 0) and date == (17, 10):
         #end of best of each semi-final
         pass
-    if hour == (22, 5) and date == (16, 10):
+    if hour == (22, 5) and date == (17, 10):
         #grand final
         pass
     if hour == (22, 0) and date == (22, 10):
@@ -278,8 +278,6 @@ async def end_semis(bot):
     Args:
     - bot, the object representing the bot
     """
-
-    entriesInSemis[grandFinalChannel] = dict()
 
     for channelId, entries in entriesInSemis.items():
         if channelId == grandFinalChannel: continue
