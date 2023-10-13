@@ -39,16 +39,17 @@ Vote = Tuple[int, str] #voter_id, url of the submission
 #data of the contest
 submissions: Dict[int, Dict[int, Dict[int, Submission]]] = dict() #{channel_id: {thread_id: {message_id: submission}}}
 entriesInSemis: Dict[int, Dict[int, Submission]] = dict() #{channel_id: {message_id: submission}}
+entriesInGF: Dict[int, List[Submission]] = dict() #{channel_of_origin_id: [submissions]} #channel_of_origin_id is grandFinalChannel for the last 4
 votes1: Dict[int, Set[Vote]] = dict() #{thread_id: list of votes}
 votes2: Dict[int, Dict[int, List[str]]] = dict() #{channel_id: {voter_id: submissions}}
 contestState: List[int] = [0] #0 for inactive, 1 for submission period, 2-3-4-5 for semi-finals (depending on the order of channels), 6 for the first final, 7 for the grand final
-contestData = (submissions, entriesInSemis, votes1, votes2, contestState)
+contestData = (submissions, entriesInSemis, entriesInGF, votes1, votes2, contestState)
 
 if "photo_contest_data.json" in os.listdir():
     with open("photo_contest_data.json") as f:
         contestData = json.load(f)
 
-    submissions, entriesInSemis, votes1, votes2, contestState = contestData
+    submissions, entriesInSemis, entriesInGF, votes1, votes2, contestState = contestData
     submissions = {int(i): {int(j): {int(k): tuple(w) for k, w in v.items()} for j, v in entries.items()} for i, entries in submissions.items()}
     entriesInSemis = {int(i): {int(j): tuple(w) for j, w in channels.items()} for i, channels in entriesInSemis.items()}
     votes1 = {int(k): {tuple(x) for x in v} for k, v in votes1.items()} #for the jsonification, the set needs to be stored as a list. so we have to convert it here
@@ -70,7 +71,7 @@ async def isMod(guild, memberId):
 def saveData():
     votes1Loc = {k: list(v) for k, v in votes1.items()} #for the jsonificiation, the set needs to be stored as a list. so we have to convert it here
     with open("photo_contest_data.json", "w") as f:
-        json.dump((submissions, entriesInSemis, votes1Loc, votes2, contestState), f)
+        json.dump((submissions, entriesInSemis, entriesInGF, votes1Loc, votes2, contestState), f)
 
 def checkNbSubsPerThread(dictOfSubs: Dict[int, Submission], userId: int) -> bool:
     """
@@ -245,7 +246,7 @@ async def end_submissions(bot):
                 count += 1
                 e2 = discord.Embed(description = f"Photo #{count} for <#{channelId}>")
                 e2.set_image(url = subUrl)
-                msgEntry = await channel.send(embed = e)
+                msgEntry = await channel.send(embed = e2)
 
                 entriesInSemis[channel.id][msgEntry.id] = url2sub[subUrl]
                 saveData()
@@ -282,6 +283,8 @@ async def end_semis(bot):
 
     for channelId, entries in entriesInSemis.items():
         if channelId == grandFinalChannel: continue
+
+        entriesInGF[channelId] = []
 
         contestants = set(authorId for channelInfo in submissions.values() for subs in channelInfo.values() for _, authorId, _ in subs.values())
         channel = await bot.fetch_channel(channelId)
@@ -326,11 +329,11 @@ async def end_semis(bot):
 
             #embed in the Grand Final channel
             count += 1
-            e2 = discord.Embed(description = f"Photo #{count} for <#{channelId}>")
+            e2 = discord.Embed(description = f"Photo #F{count} for <#{channelId}>")
             e2.set_image(url = subUrl)
-            msgEntry = await (await bot.fetch_channel(grandFinalChannel)).send(embed = e)
+            await (await bot.fetch_channel(grandFinalChannel)).send(embed = e2)
 
-            entriesInSemis[grandFinalChannel][msgEntry.id] = url2sub[subUrl]
+            entriesInGF[channelId].append(url2sub[subUrl])
         
         contestState[0] = 0
         saveData()
@@ -370,6 +373,40 @@ class ButtonConfirm(discord.ui.View):
             await interaction.message.delete()
             await self.message.delete()
 
+async def VoteGF1(bot):
+    """
+    Generate the vote message for the first step of the Grand Final
+    """
+    class Aux(discord.ui.View):
+        def __init__(self):
+            super().__init__(timeout = 72 * 3600)
+    
+    Aux.__view_children_items__ = []
+    
+    for channelId in entriesInSemis: #one button per semi-final channel
+        channelName = (await bot.fetch_channel(channelId)).name
+
+        @discord.ui.button(label = channelName, style = discord.ButtonStyle.blurple)
+        async def callback(self, button: discord.ui.Button, interaction: discord.Interaction):
+            dmChannel = await dmChannelUser(interaction.user)
+
+            await dmChannel.send(f"**You can vote among the remaining 5 photos for <#{channelId}>**")
+            for i, submission in enumerate(entriesInGF[channelId]):
+                url, _, _ = submission
+                
+                e = discord.Embed(description = f"Photo #F{i+1} for <#{channelId}>")
+                e.set_image(url = url)
+                await dmChannel.send(embed = e)
+            
+            #send the vote mechanism
+            #TODO
+
+        #add the button to Aux
+        setattr(Aux, f"callback{channelId}", callback)
+        Aux.__view_children_items__.append(callback)
+
+    return Aux()
+            
 async def submit(ctx, url: Optional[str]):
     userId = ctx.author.id
 
@@ -523,7 +560,8 @@ def main():
         await bot.process_commands(message)
 
         if message.author.bot: return
-        if message.channel.parent and message.channel.parent.id in submissions and ";submit" not in message.content:
+
+        if hasattr(message.channel, "parent") and message.channel.parent and message.channel.parent.id in submissions and ";submit" not in message.content:
             ref = discord.MessageReference(message_id = message.id, channel_id = message.channel.id)
             await message.channel.send("This doesn't count as a valid submission, please use the `;submit` command as explained in <#1155785196029890570>", delete_after = 3600, reference = ref)
 
@@ -547,6 +585,12 @@ def main():
     async def command_setup(ctx, *channels: discord.TextChannel):
         if ctx.author.id == organizerId:
             await setup(ctx, *channels)
+    
+    @bot.command(name = "test")
+    async def command_test(ctx):
+        if ctx.author.id == organizerId:
+            v = await VoteGF1(bot)
+            await ctx.send("This is a test", view = v)
         
     @bot.command(name = "start_subs")
     async def command_stat_subs(ctx):
