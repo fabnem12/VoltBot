@@ -422,7 +422,7 @@ def VoteGF(submissions: List[Submission], channelOfOrigin: int):
                     votes2[channelOfOrigin][interaction.user.id] = list(map(lambda x: x[0], self.selectedItems))
                     saveData()
 
-                    await interaction.message.edit(content = "**Your vote has been saved**\nYou can edit change it by reacting again on the server\n\n" + self.showSelected(), view = self)
+                    await interaction.message.edit(content = "**Your vote has been saved**\nYou can change it by reacting again on the server\n\n" + self.showSelected(), view = self)
             
             return callback
         
