@@ -41,7 +41,7 @@ submissions: Dict[int, Dict[int, Dict[int, Submission]]] = dict() #{channel_id: 
 entriesInSemis: Dict[int, Dict[int, Submission]] = dict() #{channel_id: {message_id: submission}}
 entriesInGF: Dict[int, List[Submission]] = dict() #{channel_of_origin_id: [submissions]} #channel_of_origin_id is grandFinalChannel for the last 4
 votes1: Dict[int, Set[Vote]] = dict() #{thread_id: list of votes}
-votes2: Dict[int, Dict[int, List[str]]] = dict() #{channel_id: {voter_id: submissions}}
+votes2: Dict[int, Dict[int, List[Submission]]] = dict() #{channel_id: {voter_id: submissions}}
 contestState: List[int] = [0] #0 for inactive, 1 for submission period, 2-3-4-5 for semi-finals (depending on the order of channels), 6 for the first final, 7 for the grand final
 contestData = (submissions, entriesInSemis, entriesInGF, votes1, votes2, contestState)
 
@@ -118,8 +118,7 @@ async def planner(now, bot):
     if hour == (22, 0) and date == (13, 10):
         await end_semis(bot)
     if hour == (8, 0) and date == (14, 10):
-        #best of each semi-final
-        pass
+        await start_gf1(bot)
     if hour == (22, 0) and date == (17, 10):
         #end of best of each semi-final
         pass
@@ -336,6 +335,22 @@ async def end_semis(bot):
         contestState[0] = 0
         saveData()
 
+async def start_gf1(bot):
+    """
+    Sends the message for voting in the first part of the Grand Final
+
+    Args:
+    - bot, the object representing the bot
+    """
+
+    emoji2channel = {(await bot.fetch_channel(channelId)).name[0]: channelId for channelId in entriesInGF}
+    channel = await bot.fetch_channel(grandFinalChannel)
+
+    msg = await channel.send("**Vote for the first part of the Grand-Final!**\nReact to this message and the bot will ask you in DMs to rank the remaining 5 photos of the category.\n" + "\n".join(f"{e} for <#{channelId}>" for e, channelId in emoji2channel.items()))
+    for e in emoji2channel:
+        await msg.add_reaction(e)
+
+
 class ButtonConfirm(discord.ui.View):
     """
     A class for the confirmation button for submissions.
@@ -371,41 +386,59 @@ class ButtonConfirm(discord.ui.View):
             await interaction.message.delete()
             await self.message.delete()
 
-async def VoteGF1(bot):
+def VoteGF(submissions: List[Submission], channelOfOrigin: int):
     """
-    Generate the vote message for the first step of the Grand Final
+    Defines the view for voting in the Grand Final
     """
+
     class Aux(discord.ui.View):
         def __init__(self):
-            super().__init__(timeout = 72 * 3600)
-    
+            super().__init__(timeout = 3600)
+            self.selectedItems: List[Tuple[Submission, str]] = []
+        
+        def showSelected(self):
+            selectedItems = self.selectedItems
+            return "\n".join(f"**#{i+1}** {affi}" for i, (_, affi) in enumerate(selectedItems))
+
     Aux.__view_children_items__ = []
-    
-    for channelId in entriesInSemis: #one button per semi-final channel
-        channelName = (await bot.fetch_channel(channelId)).name
 
-        @discord.ui.button(label = channelName, style = discord.ButtonStyle.blurple)
-        async def callback(self, button: discord.ui.Button, interaction: discord.Interaction):
-            dmChannel = await dmChannelUser(interaction.user)
+    for i in range(5):
+        def aux(idPhoto):
+            #trick to keep idPhoto correct, because otherwise it would be evaluated at the end of the loop
+            #with i = 4 for all callbacks
 
-            await dmChannel.send(f"**You can vote among the remaining 5 photos for <#{channelId}>**")
-            for i, submission in enumerate(entriesInGF[channelId]):
-                url, _, _ = submission
-                
-                e = discord.Embed(description = f"Photo #F{i+1} for <#{channelId}>")
-                e.set_image(url = url)
-                await dmChannel.send(embed = e)
+            affi = f"Photo #F{idPhoto+1}"
+            @discord.ui.button(label = affi)
+            async def callback(self, button: discord.ui.Button, interaction: discord.Interaction):
+                self.selectedItems.append((submissions[idPhoto], affi))
+                button.disabled = True
+
+                if len(self.selectedItems) < 5:
+                    await interaction.message.edit(content = self.showSelected() + "\n" + f"Please click on a button below to select **your #{len(self.selectedItems)+1} preferred photo**", view=self)
+                else:
+                    if channelOfOrigin not in votes2:
+                        votes2[channelOfOrigin] = dict()
+
+                    votes2[channelOfOrigin][interaction.user.id] = list(map(lambda x: x[0], self.selectedItems))
+                    saveData()
+
+                    await interaction.message.edit(content = "**Your vote has been saved**\nYou can edit change it by reacting again on the server\n\n" + self.showSelected(), view = self)
             
-            #send the vote mechanism
-            #TODO
-
+            return callback
+        
+        fonc = aux(i)
+        
         #add the button to Aux
-        setattr(Aux, f"callback{channelId}", callback)
-        Aux.__view_children_items__.append(callback)
-
+        setattr(Aux, f"callback{i}", fonc)
+        Aux.__view_children_items__.append(fonc)
+    
     return Aux()
             
 async def submit(ctx, url: Optional[str]):
+    """
+    Submit a photo
+    """
+
     userId = ctx.author.id
 
     if contestState[0] != 1:
@@ -463,6 +496,10 @@ async def withdraw_submission(messageId, user, guild, emojiHash, channel):
                 saveData()
 
 async def cast_vote_submission_period(messageId, user, guild, emojiHash, channel):
+    """
+    Save an upvote during the submission period.
+    """
+
     if emojiHash != "👍":
         return
 
@@ -504,6 +541,10 @@ async def cast_vote_submission_period(messageId, user, guild, emojiHash, channel
             saveData()
 
 async def cast_vote_semi(messageId, user, guild, emojiHash, channel):
+    """
+    Save an upvote during the semi-finals.
+    """
+
     if emojiHash != "👍":
         return
 
@@ -537,6 +578,31 @@ async def cast_vote_semi(messageId, user, guild, emojiHash, channel):
             pass
 
         saveData()
+    
+async def cast_vote_gf1(messageId, user, guild, emojiHash, channel):
+    """
+    Ask the bot to send a DM to vote in the first part of the Grand Final
+    """
+    
+    emoji2channel: Dict[str, int] = {(await guild.fetch_channel(channelId)).name[0]: channelId for channelId in entriesInGF}
+
+    if emojiHash not in emoji2channel or channel.id != grandFinalChannel:
+        return
+    
+    await (await channel.fetch_message(messageId)).remove_reaction(emojiHash, user)
+
+    channelId = emoji2channel[emojiHash]
+    dmChannel = await dmChannelUser(user)
+
+    await dmChannel.send(f"**You can vote among the remaining 5 photos for <#{channelId}>**")
+    for i, submission in enumerate(entriesInGF[channelId]):
+        url, _, _ = submission
+        
+        e = discord.Embed(description = f"Photo #F{i+1} for <#{channelId}>")
+        e.set_image(url = url)
+        await dmChannel.send(embed = e)
+    
+    await dmChannel.send("Please click on a button below to select **your preferred photo** among the 5", view = VoteGF(entriesInGF[channelId], channelId))
 
 #######################################################################
 
@@ -578,17 +644,12 @@ def main():
             await withdraw_submission(messageId, user, guild, emojiHash, channel)
             await cast_vote_submission_period(messageId, user, guild, emojiHash, channel)
             await cast_vote_semi(messageId, user, guild, emojiHash, channel)
+            await cast_vote_gf1(messageId, user, guild, emojiHash, channel)
     
     @bot.command(name = "setup")
     async def command_setup(ctx, *channels: discord.TextChannel):
         if ctx.author.id == organizerId:
             await setup(ctx, *channels)
-    
-    @bot.command(name = "test")
-    async def command_test(ctx):
-        if ctx.author.id == organizerId:
-            v = await VoteGF1(bot)
-            await ctx.send("This is a test", view = v)
         
     @bot.command(name = "start_subs")
     async def command_stat_subs(ctx):
