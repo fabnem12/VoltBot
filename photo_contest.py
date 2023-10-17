@@ -8,7 +8,7 @@ import json
 import requests
 from arrow import utcnow
 from random import shuffle
-from typing import Dict, List, Tuple, Optional, Set
+from typing import Dict, List, Tuple, Optional, Set, Any
 
 #temporary way to update the bot
 def stockePID():
@@ -52,7 +52,9 @@ if "photo_contest_data.json" in os.listdir():
     submissions, entriesInSemis, entriesInGF, votes1, votes2, contestState = contestData
     submissions = {int(i): {int(j): {int(k): tuple(w) for k, w in v.items()} for j, v in entries.items()} for i, entries in submissions.items()}
     entriesInSemis = {int(i): {int(j): tuple(w) for j, w in channels.items()} for i, channels in entriesInSemis.items()}
+    entriesInGF = {int(i): listSubs for i, listSubs in entriesInGF.items()}
     votes1 = {int(k): {tuple(x) for x in v} for k, v in votes1.items()} #for the jsonification, the set needs to be stored as a list. so we have to convert it here
+    votes2 = {int(i): {int(j): [tuple(x) for x in v] for j, v in val.items()} for i, val in votes2.items()}
 
 #-roles
 voltDiscordTeam = 674583505446895616
@@ -82,6 +84,88 @@ def checkNbSubsPerThread(dictOfSubs: Dict[int, Submission], userId: int) -> bool
     - userId, the id of the user to check
     """
     return sum(x[1] == userId for x in dictOfSubs.values()) < 2 #one can submit up to 2 photos per thread
+
+def condorcet(rankings: Dict[int, List[Submission]], candidates: List[Submission]) -> Tuple[Submission, Dict[Tuple[Submission, Submission], Tuple[Submission, Tuple[float, float]]]]:
+    """
+    Compute the results of each duel from ranked voting ballots.
+    Returns the Condorcet winner (or None if there is no winner) and detailed duel results.
+
+    Args:
+    - rankings, dictionary {voter_id: [submissions_ranked_by_voter]}
+    - submissions, dictionary {url: submission}
+
+    Returns:
+    - the Condorcet winner (if it exists), Optional[Submission]
+    - detailed duel results, Dict[Tuple[Submission, Submission], Tuple[Submission, Tuple[float, float]]]
+    """
+
+    def borda_elim():
+        candidatesLoc = set(candidates)
+        while len(candidatesLoc) > 1:
+            nbPoints = {c: 0 for c in candidatesLoc}
+
+            for voterId, ranking in rankings.items():
+                for i, sub in enumerate(filter(lambda x: x in nbPoints, ranking)):
+                    authorId = sub[1]
+                    malus = 0 if authorId != voterId else 0.5
+
+                    nbPoints[sub] += len(candidatesLoc) - i - malus
+            
+            loser = min(nbPoints.items(), key=lambda x: (x[1], -x[0][2]))[0]
+            #we remove the submission that got the lowest amount of points
+            #in case of a tie, the submission that got submitted later gets the priority for getting removed
+            
+            candidatesLoc.remove(loser)
+        
+        return candidatesLoc.pop()
+
+    if rankings == dict():
+        #select the photo that got submitted earlier
+        return min(candidates, key=lambda x: x[2]), dict()
+    else:
+        #{candidate_1: {candidate2: number_votes_candidate1_preferred_over_candidate2}}
+        countsDuels: Dict[Submission, Dict[Submission, float]] = {c: {c2: 0 for c2 in candidates if c != c2} for c in candidates}
+
+        for voterId, vote in rankings.items():
+            for i, subI in enumerate(vote):
+                _, authorId, _ = subI
+
+                weightVote = 1 if voterId != authorId else 0.5
+                for j in range(i+1, len(vote)):
+                    countsDuels[subI][vote[j]] += weightVote
+        
+        #{(winner, loser): (score_winner, score_loser)}
+        winsDuels: Dict[Tuple[Submission, Submission], Tuple[Submission, Tuple[float, float]]] = dict()
+        for i, subI in enumerate(candidates):
+            for j in range(i+1, len(candidates)):
+                subJ = candidates[j]
+
+                duelIJ = countsDuels[subI][subJ]
+                duelJI = countsDuels[subJ][subI]
+
+                if duelIJ > duelJI:
+                    winsDuels[subI, subJ] = (duelIJ, duelJI)
+                elif duelIJ < duelJI:
+                    winsDuels[subJ, subI] = (duelJI, duelIJ)
+                else: #there is a tie, we use the timestamp as a tiebreaker
+                    timestampI = subI[2]
+                    timestampJ = subJ[2]
+
+                    if timestampI <= timestampJ:
+                        #the probability of having an equality on the timestamp is neglictible
+                        #the submission submitted earlier gets the priority
+                        winsDuels[subI, subJ] = (duelIJ, duelJI)
+        
+        #let's find the condorcet winner
+        nbWins = {c: 0 for c in candidates}
+        for (a, b) in winsDuels:
+            nbWins[a] += 1
+        
+        biggestWinner, nbWinsBigger = max(nbWins.items(), key=lambda x: x[1])
+        if nbWinsBigger == len(candidates) - 1: #the candidate won all its duels, it is an actual Condorcet winner
+            return biggestWinner, winsDuels
+        else:
+            return borda_elim(), winsDuels
 
 #######################################################################
 async def setup(*channels: discord.TextChannel):
@@ -121,13 +205,13 @@ async def planner(now, bot):
         await start_gf1(bot)
     if hour == (22, 0) and date == (17, 10):
         #end of best of each semi-final
-        pass
+        await end_gf1(bot)
     if hour == (22, 5) and date == (17, 10):
         #grand final
-        pass
+        await start_gf2(bot)
     if hour == (22, 0) and date == (22, 10):
         #end of grand final
-        pass
+        await end_gf2(bot)
 
 async def resendFile(url: str, saveChannelId: int) -> str:
     """
@@ -350,6 +434,62 @@ async def start_gf1(bot):
     for e in emoji2channel:
         await msg.add_reaction(e)
 
+async def end_gf1(bot):
+    """
+    End of the first part of GF1. Count the votes, find the Condorcet winner (if there is no Condorcet winner, select the winner of Borda with elimination)
+    """
+
+    entriesInGF[grandFinalChannel] = []
+
+    channel = await bot.fetch_channel(grandFinalChannel)
+    for channelId, submissionsFromChannel in entriesInGF.items():
+        if channelId == grandFinalChannel: continue
+
+        winnerGF, _ = condorcet(votes2[channelId], submissionsFromChannel)
+        
+        e = discord.Embed(description = f"**Congratulations, this photo won the <#{channelId}> category!**")
+        e.set_image(url = winnerGF[1])
+        await channel.send(embed = e)
+
+        #tell the author
+        authorId = winnerGF[1]
+        try:
+            await (await dmChannelUser(await bot.fetch_user(authorId))).send(embed = e)
+        except:
+            pass
+
+        entriesInGF[grandFinalChannel].append(winnerGF)
+
+        saveData()
+
+async def start_gf2(bot):
+    """
+    Beginning of GF2.
+    """
+
+    channel = await bot.fetch_channel(grandFinalChannel)
+
+    msg = await channel.send("**Vote for the winner of the 2023 edition of the Volt Photo Contest!**\nReact to this message with ✅ and the bot will ask you in DMs to rank the remaining 4 photos.\nYou have to rank them all for your vote to count.")
+    await msg.add_reaction("✅")
+
+async def end_gf2(bot):
+    """
+    End of the contest!
+    """
+
+    channel = await bot.fetch_channel(grandFinalChannel)
+    winnerGF, _ = condorcet(votes2[grandFinalChannel], entriesInGF[grandFinalChannel])
+    
+    url, authorId, _ = winnerGF
+    e = discord.Embed(description = f"**Congratulations <@{authorId}>, you won the 2023 edition of the Photo Contest!**")
+    e.set_image(url = url)
+
+    await channel.send(embed = e)
+
+    try:
+        await (await dmChannelUser(await bot.fetch_user(authorId))).send(embed = e)
+    except:
+        pass
 
 class ButtonConfirm(discord.ui.View):
     """
@@ -579,12 +719,13 @@ async def cast_vote_semi(messageId, user, guild, emojiHash, channel):
 
         saveData()
     
-async def cast_vote_gf1(messageId, user, guild, emojiHash, channel):
+async def cast_vote_gf(messageId, user, guild, emojiHash, channel):
     """
     Ask the bot to send a DM to vote in the first part of the Grand Final
     """
     
     emoji2channel: Dict[str, int] = {(await guild.fetch_channel(channelId)).name[0]: channelId for channelId in entriesInGF}
+    emoji2channel["✅"] = grandFinalChannel
 
     if emojiHash not in emoji2channel or channel.id != grandFinalChannel:
         return
@@ -644,7 +785,7 @@ def main():
             await withdraw_submission(messageId, user, guild, emojiHash, channel)
             await cast_vote_submission_period(messageId, user, guild, emojiHash, channel)
             await cast_vote_semi(messageId, user, guild, emojiHash, channel)
-            await cast_vote_gf1(messageId, user, guild, emojiHash, channel)
+            await cast_vote_gf(messageId, user, guild, emojiHash, channel)
     
     @bot.command(name = "setup")
     async def command_setup(ctx, *channels: discord.TextChannel):
