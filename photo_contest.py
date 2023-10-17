@@ -52,7 +52,7 @@ if "photo_contest_data.json" in os.listdir():
     submissions, entriesInSemis, entriesInGF, votes1, votes2, contestState = contestData
     submissions = {int(i): {int(j): {int(k): tuple(w) for k, w in v.items()} for j, v in entries.items()} for i, entries in submissions.items()}
     entriesInSemis = {int(i): {int(j): tuple(w) for j, w in channels.items()} for i, channels in entriesInSemis.items()}
-    entriesInGF = {int(i): listSubs for i, listSubs in entriesInGF.items()}
+    entriesInGF = {int(i): [tuple(x) for x in listSubs] for i, listSubs in entriesInGF.items()}
     votes1 = {int(k): {tuple(x) for x in v} for k, v in votes1.items()} #for the jsonification, the set needs to be stored as a list. so we have to convert it here
     votes2 = {int(i): {int(j): [tuple(x) for x in v] for j, v in val.items()} for i, val in votes2.items()}
 
@@ -100,7 +100,7 @@ def condorcet(rankings: Dict[int, List[Submission]], candidates: List[Submission
     """
 
     def borda_elim():
-        candidatesLoc = set(candidates)
+        candidatesLoc = set(tuple(x) for x in candidates)
         while len(candidatesLoc) > 1:
             nbPoints = {c: 0 for c in candidatesLoc}
 
@@ -203,13 +203,13 @@ async def planner(now, bot):
         await end_semis(bot)
     if hour == (8, 0) and date == (14, 10):
         await start_gf1(bot)
-    if hour == (22, 0) and date == (17, 10):
+    if hour == (22, 5) and date == (17, 10):
         #end of best of each semi-final
         await end_gf1(bot)
-    if hour == (22, 5) and date == (17, 10):
+    if hour == (22, 0) and date == (17, 10):
         #grand final
         await start_gf2(bot)
-    if hour == (22, 0) and date == (22, 10):
+    if hour == (22, 15) and date == (22, 10):
         #end of grand final
         await end_gf2(bot)
 
@@ -448,7 +448,7 @@ async def end_gf1(bot):
         winnerGF, _ = condorcet(votes2[channelId], submissionsFromChannel)
         
         e = discord.Embed(description = f"**Congratulations, this photo won the <#{channelId}> category!**")
-        e.set_image(url = winnerGF[1])
+        e.set_image(url = winnerGF[0])
         await channel.send(embed = e)
 
         #tell the author
@@ -542,7 +542,7 @@ def VoteGF(submissions: List[Submission], channelOfOrigin: int):
 
     Aux.__view_children_items__ = []
 
-    for i in range(5):
+    for i in range(len(submissions)):
         def aux(idPhoto):
             #trick to keep idPhoto correct, because otherwise it would be evaluated at the end of the loop
             #with i = 4 for all callbacks
@@ -553,7 +553,7 @@ def VoteGF(submissions: List[Submission], channelOfOrigin: int):
                 self.selectedItems.append((submissions[idPhoto], affi))
                 button.disabled = True
 
-                if len(self.selectedItems) < 5:
+                if len(self.selectedItems) < len(submissions):
                     await interaction.message.edit(content = self.showSelected() + "\n" + f"Please click on a button below to select **your #{len(self.selectedItems)+1} preferred photo** (you have to rank all photos for your vote to be taken into account)", view=self)
                 else:
                     if channelOfOrigin not in votes2:
@@ -729,13 +729,11 @@ async def cast_vote_gf(messageId, user, guild, emojiHash, channel):
 
     if emojiHash not in emoji2channel or channel.id != grandFinalChannel:
         return
-    
-    await (await channel.fetch_message(messageId)).remove_reaction(emojiHash, user)
 
     channelId = emoji2channel[emojiHash]
     dmChannel = await dmChannelUser(user)
 
-    await dmChannel.send(f"**You can vote among the remaining 5 photos for <#{channelId}>**")
+    await dmChannel.send(f"**You can vote among the remaining 5 photos for <#{channelId}>**" if channelId != grandFinalChannel else "**You can vote among the 4 category winners to select the final winner of the contest!**")
     for i, submission in enumerate(entriesInGF[channelId]):
         url, _, _ = submission
         
@@ -743,7 +741,7 @@ async def cast_vote_gf(messageId, user, guild, emojiHash, channel):
         e.set_image(url = url)
         await dmChannel.send(embed = e)
     
-    await dmChannel.send("Please click on a button below to select **your preferred photo** among the 5", view = VoteGF(entriesInGF[channelId], channelId))
+    await dmChannel.send(f"Please click on a button below to select **your preferred photo** among the {len(entriesInGF[channelId])}", view = VoteGF(entriesInGF[channelId], channelId))
 
 #######################################################################
 
