@@ -554,7 +554,7 @@ def VoteGF(submissions: List[Submission], channelOfOrigin: int):
                 button.disabled = True
 
                 if len(self.selectedItems) < 5:
-                    await interaction.message.edit(content = self.showSelected() + "\n" + f"Please click on a button below to select **your #{len(self.selectedItems)+1} preferred photo**", view=self)
+                    await interaction.message.edit(content = self.showSelected() + "\n" + f"Please click on a button below to select **your #{len(self.selectedItems)+1} preferred photo** (you have to rank all photos for your vote to be taken into account)", view=self)
                 else:
                     if channelOfOrigin not in votes2:
                         votes2[channelOfOrigin] = dict()
