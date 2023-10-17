@@ -206,10 +206,10 @@ async def planner(now, bot):
     if hour == (22, 5) and date == (17, 10):
         #end of best of each semi-final
         await end_gf1(bot)
-    if hour == (22, 0) and date == (17, 10):
+    if hour == (22, 20) and date == (17, 10):
         #grand final
         await start_gf2(bot)
-    if hour == (22, 15) and date == (22, 10):
+    if hour == (22, 0) and date == (22, 10):
         #end of grand final
         await end_gf2(bot)
 
