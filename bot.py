@@ -1,7 +1,10 @@
 import asyncio
+import json
 import nextcord as discord
 from nextcord.ext import commands
 from unidecode import unidecode
+import os
+import re
 
 import constantes
 
@@ -32,6 +35,19 @@ deletedEditedMessages = 982242792422146098
 voltDiscordTeam = 674583505446895616
 voltSubTeam = 858692593104715817
 voltAdmin = 567023540193198080
+
+#info in json
+if "bot_info.json" in os.listdir(os.path.dirname(__file__)):
+    with open("bot_info.json", "r") as f:
+        info = json.load(f)
+else:
+    info = {"smart_tweet": dict()}
+    with open("bot_info.json", "w") as f:
+        json.dump(info, f)
+
+def save():
+    with open("bot_info.json", "w") as f:
+        json.dump(info, f)
 
 async def dmChannelUser(user):
     if user.dm_channel is None:
@@ -78,6 +94,33 @@ async def ban(msg, banAppealOk = True):
     else:
         await msg.channel.send(f"Banned **{user.name}**")
 
+async def smart_tweet(msg: discord.Message, delete: bool = False):
+    """
+    Reply to messages with Twitter links whose embed fails with vxtwitter
+    """
+    
+    msgId = msg.id
+    infoSmartTweet = info["smart_tweet"]
+
+    if delete and msgId in infoSmartTweet:
+        msgRep = await msg.channel.fetch_message(infoSmartTweet[msgId])
+        await msgRep.delete()
+        del infoSmartTweet[msgId]
+
+    links = re.findall("https:\/\/([\w_-]+(?:(?:\.[\w_-]+)+))([\w.,@?^=%&:\/~+#-]*[\w@?^=%&\/~+#-])", msg.content)
+    links = [(x.lower(), y.lower()) for x, y in links]
+    twitterLinks = ["https://" + x.replace("x.com", "twitter.com").replace("twitter.com", "vxtwitter.com") + y for x, y in links if ("x.com" in x or "twitter.com" in x) and "fxtwitter.com" not in x and "vxtwitter.com" not in x]
+
+    if len(twitterLinks):
+        ref = discord.MessageReference(channel_id = msg.channel.id, message_id = msgId)
+        
+        if msg.edited_at and "smart_tweet" in info and msgId in infoSmartTweet:
+            msgRep = await msg.channel.fetch_message(infoSmartTweet[msgId])
+            await msgRep.edit(content = "\n".join(twitterLinks))
+        else:
+            rep = await msg.channel.send("\n".join(twitterLinks), reference = ref)
+            infoSmartTweet[msgId] = rep.id
+
 def main():
     intents = discord.Intents.all()
     bot = commands.Bot(command_prefix=constantes.prefixVolt, help_command=None, intents = intents)
@@ -87,17 +130,24 @@ def main():
         await bot.process_commands(message)
         if int(message.created_at.timestamp()) % 100 == 1: #purge the log of deleted-edited-message about every 100 messages
             await purge_log(None, bot.get_guild(voltServer))
+            save()
 
         await verif_word_train(message)
         await verif_word_train2(message)
+        await smart_tweet(message)
 
         if message.content.startswith(".ban"):
             await ban(message, banAppealOk = False)
-    
+        
     @bot.event
     async def on_message_edit(before, after):
         await verif_word_train(after)
         await verif_word_train2(after)
+        await smart_tweet(after)
+        
+    @bot.event
+    async def on_message_delete(message):
+        await smart_tweet(message, delete=True)
     
     @bot.event
     async def on_member_join(member: discord.Member):
