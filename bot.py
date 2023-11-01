@@ -109,7 +109,9 @@ async def smart_tweet(msg: discord.Message, delete: bool = False):
 
     links = re.findall("https:\/\/([\w_-]+(?:(?:\.[\w_-]+)+))([\w.,@?^=%&:\/~+#-]*[\w@?^=%&\/~+#-])", msg.content)
     links = [(x.lower(), y.lower()) for x, y in links]
-    twitterLinks = ["https://" + x.replace("x.com", "twitter.com").replace("twitter.com", "vxtwitter.com") + y for x, y in links if (x.startswith("x.com") or x.startswith("twitter.com") in x) and "fxtwitter.com" not in x and "vxtwitter.com" not in x]
+    twitterLinks = ["https://" + x.replace("x.com", "twitter.com").replace("twitter.com", "vxtwitter.com") + y for x, y in links if (x.startswith("x.com") or x.startswith("twitter.com")) and "fxtwitter.com" not in x and "vxtwitter.com" not in x]
+
+    print(twitterLinks)
 
     if len(twitterLinks):
         ref = discord.MessageReference(channel_id = msg.channel.id, message_id = msgId)
