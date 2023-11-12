@@ -111,8 +111,6 @@ async def smart_tweet(msg: discord.Message, delete: bool = False):
     links = [(x.lower(), y.lower()) for x, y in links]
     twitterLinks = ["https://" + x.replace("x.com", "twitter.com").replace("twitter.com", "vxtwitter.com") + y for x, y in links if (x.startswith("x.com") or x.startswith("twitter.com")) and "fxtwitter.com" not in x and "vxtwitter.com" not in x]
 
-    print(twitterLinks)
-
     if len(twitterLinks):
         ref = discord.MessageReference(channel_id = msg.channel.id, message_id = msgId)
         
@@ -122,6 +120,9 @@ async def smart_tweet(msg: discord.Message, delete: bool = False):
         else:
             rep = await msg.channel.send("\n".join(twitterLinks), reference = ref)
             infoSmartTweet[msgId] = rep.id
+    elif msg.edited_at and "smart_tweet" in info and msgId in infoSmartTweet:
+        msgRep = await msg.channel.fetch_message(infoSmartTweet[msgId])
+        await msgRep.edit(content = ".")
 
 def main():
     intents = discord.Intents.all()
@@ -241,6 +242,30 @@ def main():
                     await msg.delete()
                 else:
                     await asyncio.sleep(1)
+    
+    @bot.command(name = "mod")
+    async def command_mod_smart_ping(ctx):
+        """
+        Smart ping of mod
+        """
+
+        if ctx.guild.id == voltServer and await isMod(ctx.guild, ctx.author.id):
+            lastMessagesMods = dict()
+            print("ohe")
+
+            for member in ctx.guild.get_role(voltDiscordTeam).members:
+                print(member)
+                lastMessage = None
+                async for msg in member.history():
+                    if msg == ctx.message: continue
+                    lastMessage = msg
+                    break
+                
+                if hasattr(lastMessage, "created_at"):
+                    lastMessagesMods[member.id] = lastMessage.created_at
+            
+            mostRecentMod = max(lastMessagesMods, key=lambda x: lastMessagesMods[x])
+            await ctx.send(f"{mostRecentMod} is the most recent mod")
 
     @bot.command(name="màj")
     async def maj(ctx):
