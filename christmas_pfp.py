@@ -188,22 +188,22 @@ async def setup(*channels: discord.TextChannel):
 
 async def planner(now, bot):
     date, hour = (now.day, now.month), (now.hour, now.minute)
-    if hour == (11, 3) and date == (17, 12):
+    if hour == (12, 0) and date == (17, 12):
         await start_submissions(bot)
-    if hour == (11, 10) and date == (17, 12):
+    if hour == (8, 0) and date == (23, 12):
         await end_submissions(bot)
-    if hour == (8, 5) and date == (25, 12):
+    if hour == (8, 5) and date == (23, 12):
         await start_gf1(bot)
-    if hour == (22, 0) and date == (31, 12):
+    if hour == (20, 0) and date == (24, 12):
         #end of best of each semi-final
         await end_gf1(bot)
-    if hour == (22, 20) and date == (17, 10):
+    if hour == (20, 5) and date == (25, 12):
         #grand final
         await start_gf2(bot)
-    if hour == (22, 0) and date == (22, 10):
+    if hour == (20, 0) and date == (31, 12):
         #end of grand final
         await end_gf2(bot)
-    if hour == (22, 5) and date == (22, 10):
+    if hour == (20, 5) and date == (31, 12):
         await resultats(bot)
 
 async def resendFile(url: str, saveChannelId: int) -> str:
@@ -294,7 +294,7 @@ async def end_submissions(bot):
                     globalVotes[subUrl] += voteWeight
             
             #find out which submissions got selected
-            selected = sorted(filter(lambda x: x not in selected, globalVotes), key=lambda x: (globalVotes[x], votesContestants[x], -url2sub[x][2]), reverse=True)[:3]
+            selected = sorted(globalVotes, key=lambda x: (globalVotes[x], votesContestants[x], -url2sub[x][2]), reverse=True)[:3]
             shuffle(selected) #we don't want to show the selected photos in the order of their number of votes
 
             #post an announcement
