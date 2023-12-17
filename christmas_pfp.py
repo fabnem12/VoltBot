@@ -567,8 +567,8 @@ async def submit(ctx, url: Optional[str]):
     userId = ctx.author.id
 
     if contestState[0] != 1:
-        await ctx.message.delete()
         await (await dmChannelUser(ctx.user)).send("Sorry, you can't make submissions for the Christmas Profile Picture contest at the moment…")
+        await ctx.message.delete()
         return
     
     #submissions have to be made in threads
