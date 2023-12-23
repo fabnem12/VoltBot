@@ -192,7 +192,7 @@ async def planner(now, bot):
         await start_submissions(bot)
     if hour == (8, 0) and date == (23, 12):
         await end_submissions(bot)
-    if hour == (8, 5) and date == (23, 12):
+    if hour == (8, 30) and date == (23, 12):
         await start_gf1(bot)
     if hour == (20, 0) and date == (24, 12):
         #end of best of each semi-final
