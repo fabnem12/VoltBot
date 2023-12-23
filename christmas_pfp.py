@@ -285,6 +285,8 @@ async def end_submissions(bot):
 
             if threadId in votes1:
                 for voterId, subUrl in votes1[threadId]:
+                    if subUrl not in url2sub: continue
+
                     voteWeight = 1 if voterId != url2sub[subUrl][1] else 0.5
                     #when you vote for yourself, your vote is worth 0.5 only
 
