@@ -197,7 +197,7 @@ async def planner(now, bot):
     if hour == (20, 0) and date == (24, 12):
         #end of best of each semi-final
         await end_gf1(bot)
-    if hour == (20, 5) and date == (25, 12):
+    if hour == (10, 0) and date == (25, 12):
         #grand final
         await start_gf2(bot)
     if hour == (20, 0) and date == (31, 12):
@@ -434,7 +434,7 @@ async def end_gf1(bot):
 
         winnerGF, _ = condorcet(votes2[channelId], submissionsFromChannel)
         
-        e = discord.Embed(description = f"**Congratulations, this photo won the <#{channelId}> category!**")
+        e = discord.Embed(description = f"**Congratulations, this profile picture won for <#{channelId}>!**")
         e.set_image(url = winnerGF[0])
         await channel.send(embed = e)
 
