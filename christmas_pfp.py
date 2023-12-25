@@ -456,7 +456,7 @@ async def start_gf2(bot):
 
     channel = await bot.fetch_channel(grandFinalChannel)
 
-    msg = await channel.send("**Vote for the winner of the 2023 edition of the Volt Photo Contest!**\nReact to this message with ✅ and the bot will ask you in DMs to rank the remaining 4 photos.\nYou have to rank them all for your vote to count.")
+    msg = await channel.send("**Vote for the winner of the 2023 edition of the Volt Christmas Profile Picture Contest!**\nReact to this message with ✅ and the bot will ask you in DMs to rank the remaining 11 photos.\nYou have to rank them all for your vote to count.")
     await msg.add_reaction("✅")
 
 async def end_gf2(bot):
@@ -468,7 +468,7 @@ async def end_gf2(bot):
     winnerGF, _ = condorcet(votes2[grandFinalChannel], entriesInGF[grandFinalChannel])
     
     url, authorId, _ = winnerGF
-    e = discord.Embed(description = f"**Congratulations <@{authorId}>, you won the 2023 edition of the Photo Contest!**")
+    e = discord.Embed(description = f"**Congratulations <@{authorId}>, you won the 2023 edition of the Volt Christmas Profile Picture Contest!**")
     e.set_image(url = url)
 
     await channel.send(embed = e)
@@ -722,7 +722,7 @@ async def cast_vote_gf(messageId, user, guild, emojiHash, channel):
     channelId = emoji2channel[emojiHash]
     dmChannel = await dmChannelUser(user)
 
-    await dmChannel.send(f"**You can vote among the remaining 3 profile pictures for <#{channelId}>**" if channelId != grandFinalChannel else "**You can vote among the 4 category winners to select the final winner of the contest!**")
+    await dmChannel.send(f"**You can vote among the remaining 3 profile pictures for <#{channelId}>**" if channelId != grandFinalChannel else "**You can vote among the 11 winning profile pictures to select the final winner of the contest!**")
     for i, submission in enumerate(entriesInGF[channelId]):
         url, _, _ = submission
         
