@@ -893,7 +893,7 @@ async def resultats(bot):
         f.write("".join(infoGF))
     
     channel = await bot.fetch_channel(grandFinalChannel)
-    channel.send("Detailed deanonymized voting results:", attachments = [])
+    await channel.send("Detailed deanonymized voting results:", attachments = [])
 
 #######################################################################
 
