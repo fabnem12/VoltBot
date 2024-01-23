@@ -137,7 +137,7 @@ def main():
 
         await verif_word_train(message)
         await verif_word_train2(message)
-        await smart_tweet(message)
+        #await smart_tweet(message)
 
         if message.content.startswith(".ban"):
             await ban(message, banAppealOk = False)
@@ -146,11 +146,11 @@ def main():
     async def on_message_edit(before, after):
         await verif_word_train(after)
         await verif_word_train2(after)
-        await smart_tweet(after)
+        #await smart_tweet(after)
         
     @bot.event
     async def on_message_delete(message):
-        await smart_tweet(message, delete=True)
+        pass#await smart_tweet(message, delete=True)
     
     @bot.event
     async def on_member_join(member: discord.Member):
