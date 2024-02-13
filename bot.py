@@ -88,7 +88,7 @@ async def ban(msg, banAppealOk = True):
         await msg.add_reaction("👌")
 
     try:
-        await msg.guild.ban(user, reason = f"{banReason} (ban by {msg.author.name})", delete_message_seconds = 0)
+        await msg.guild.ban(user, reason = f"{banReason}", delete_message_seconds = 0)
     except Exception as e:
         await (await dmChannelUser(msg.author)).send(f"Unable to ban {user.name}\n{e}")
     else:
