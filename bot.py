@@ -5,6 +5,7 @@ from nextcord.ext import commands
 from unidecode import unidecode
 import os
 import re
+import time
 
 import constantes
 
@@ -152,8 +153,12 @@ def main():
         #await smart_tweet(after)
         
     @bot.event
-    async def on_message_delete(message):
-        pass#await smart_tweet(message, delete=True)
+    async def on_message_delete(msg):
+        async for entry in msg.guild.audit_logs(action=discord.AuditLogAction.message_delete):
+            if msg.author.id == entry.target.id and abs(entry.created_at.timestamp() - time.time()) < 1 and (await isMod(msg.guild, entry.user.id) or any(x.id == 1038899815821619270 for x in entry.user.roles)):
+                await reportTemp(msg, entry.user.id)
+            
+            break
     
     @bot.event
     async def on_member_join(member: discord.Member):
@@ -281,6 +286,63 @@ def main():
     @bot.command(name = "ban")
     async def bancommand(ctx):
         await ban(ctx.message)
+    
+    @bot.command(name = "report")
+    async def reportTemp(ctx, param = ""):
+        reportChannelId = 806219815760166972
+        if not isinstance(param, str):
+            reportChannelId = 1037071502656405584
+            msg = ctx
+            reporter = param
+            param = None
+        else:
+            reference = ctx.message.reference
+            if reference:
+                await ctx.message.delete()
+                msg = await ctx.channel.fetch_message(reference.message_id)
+                reporter = ctx.author.id
+            else:
+                return
+            
+        reportChannel = await ctx.guild.fetch_channel(reportChannelId)
+
+        content = msg.content
+        author = msg.author
+        channelName = ctx.channel.mention
+
+        if author.id == 1086220502831480833 and msg.channel.id == 982242792422146098: #in deleted-edited messages
+            embed = msg.embeds[0]
+            content = embed.description
+            
+            author = ctx.guild.get_member_named(embed.author.name)
+
+            if author is None and embed.author.icon_url: #ne devrait pas servir mais peut-être…
+                authorId = int(embed.author.icon_url.split("/")[4])
+                author = await ctx.guild.fetch_member(authorId)
+
+            channelName = "in".join(embed.title.split("in")[1:])
+
+            return
+
+        e = discord.Embed(title = f"Message {'reported' if param is not None else 'deleted by a mod'}", description = content, timestamp = msg.created_at)
+        if author.avatar:
+            e.set_author(name = author.name, icon_url = author.avatar.url)
+        e.add_field(name = "Author", value=author.mention, inline=False)
+        e.add_field(name = "Channel", value=channelName, inline=False)
+        e.add_field(name = "Reporter", value=f"<@{reporter}>", inline=False)
+        if param is not None:
+            e.add_field(name = "Link to message", value=msg.jump_url)
+        msgReport = await reportChannel.send(embed = e)
+
+        ref = discord.MessageReference(channel_id = msgReport.channel.id, message_id = msgReport.id)
+
+        for att in msg.attachments:
+            r = requests.get(att.url)
+            with open(att.filename, "wb") as outfile:
+                outfile.write(r.content)
+
+            await reportChannel.send(file = discord.File(att.filename), reference = ref)
+            os.remove(att.filename)
 
     return bot, constantes.TOKENVOLT
 
