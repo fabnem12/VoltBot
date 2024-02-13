@@ -80,15 +80,18 @@ async def ban(msg, banAppealOk = True):
     try:
         if banAppealOk:
             await channel.send(f"Ban reason: {banReason}\nBan appeal form: https://docs.google.com/forms/d/189lUm5ONdJHcI4C8QB4ml__2aAnygmxbCETrBMVhos0. Your discord id (asked in the form) is `{userId}`.")
+            print("appel proposé")
         else:
             await channel.send(f"Ban reason: {banReason}")
+            print("appel pas proposé")
     except:
         pass
     else:
         await msg.add_reaction("👌")
 
     try:
-        await msg.guild.ban(user, reason = f"{banReason}", delete_message_seconds = 0)
+        await msg.guild.ban(user, reason = f"{banReason} (ban by {msg.author.mention})", delete_message_seconds = 0)
+        print("voilà")
     except Exception as e:
         await (await dmChannelUser(msg.author)).send(f"Unable to ban {user.name}\n{e}")
     else:
