@@ -5,6 +5,7 @@ from nextcord.ext import commands
 from unidecode import unidecode
 import os
 import re
+import requests
 import time
 
 import constantes
