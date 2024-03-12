@@ -180,6 +180,8 @@ def main():
         msgLetters = "".join(filter(isLetter, msgTxt))
         words = msgLetters.split()
 
+        #previous logic
+        """
         if len(words) > 1:
             lastLetter = words[0][-1]
 
@@ -191,6 +193,16 @@ def main():
                     return False
                 else:
                     lastLetter = word[-1]
+        """
+        #new logic
+        previousMsg = None
+        async for msg in message.channel.history(oldest_first=False, limit=2):
+            if msg is not message:
+                previousMsg = msg
+
+        if len(words) > 1 or previousMsg.content.lower()[-1] != msgTxt[0]:
+            await message.delete()
+            await message.channel.send(f"<:bonk:843489770918903819> {message.author.mention}")
 
         return True
 
