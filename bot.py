@@ -410,6 +410,42 @@ def main():
 
         await ctx.message.delete()
 
+    async def banFromMsg(msg):
+        if msg.author.id == 282859044593598464: #the message is from ProBot -> introduction message
+            idNew = int(msg.content.split("<")[1].split(">")[0].split("!")[-1])
+            try:
+                memberNew = await msg.guild.fetch_member(idNew)
+            except discord.errors.NotFound:
+                return
+
+            if memberNew and len(memberNew.roles) == 1:
+                await memberNew.ban(reason = "raid - mass ban by Volt Europa Bot")
+
+    banFrom = [0]
+    @bot.command(name="ban_from")
+    async def ban_from(ctx):
+        ref = ctx.message.reference
+        if ref and (await isMod(ctx.guild, ctx.author.id)):
+            msg = await ctx.channel.fetch_message(ref.message_id)
+            banFrom[0] = (msg.created_at, msg)
+
+            await ctx.message.add_reaction("👌")
+
+    @bot.command(name="ban_to")
+    async def banTo(ctx):
+        ref = ctx.message.reference
+        if ref and banFrom[0] and (await isMod(ctx.guild, ctx.author.id)):
+            timestampInit, msgFrom = banFrom[0]
+            msg = await ctx.channel.fetch_message(ref.message_id)
+
+            await banFromMsg(msgFrom)
+            await banFromMsg(msg)
+            async for msg in ctx.channel.history(limit = None, before = msg.created_at, after = timestampInit):
+                await banFromMsg(msg)
+
+            banFrom[0] = 0
+            await ctx.message.add_reaction("👌")
+
     return bot, constantes.TOKENVOLT
 
 if __name__ == "__main__": #pour lancer le bot
