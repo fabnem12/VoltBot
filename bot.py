@@ -32,6 +32,8 @@ voltServer = 567021913210355745
 wordTrainChannel = 1141992409165733988
 deletedEditedMessages = 982242792422146098
 modLogId = 929466478678405211
+reportChannelId = 806219815760166972
+modMessageLog = 1037071502656405584
 
 #-roles
 voltDiscordTeam = 674583505446895616
@@ -61,7 +63,7 @@ async def isMod(guild, memberId):
     return any(role.id in (voltDiscordTeam, voltSubTeam, voltAdmin) for role in member.roles)
 
 async def ban(msg, banAppealOk = True):
-    if msg.guild.id != 567021913210355745 or not await isMod(msg.guild, msg.author.id): #not on volt server or not a mod of the volt server
+    if msg.guild.id != voltServer or not await isMod(msg.guild, msg.author.id): #not on volt server or not a mod of the volt server
         return
 
     userIdRaw = msg.content.split(" ")[1]
@@ -264,9 +266,9 @@ def main():
     
     @bot.command(name = "report")
     async def reportTemp(ctx, param = ""):
-        reportChannelId = 806219815760166972
+        channelId = reportChannelId
         if not isinstance(param, str):
-            reportChannelId = 1037071502656405584
+            channelId = modMessageLog
             msg = ctx
             reporter = param
             param = None
@@ -279,25 +281,11 @@ def main():
             else:
                 return
             
-        reportChannel = await ctx.guild.fetch_channel(reportChannelId)
+        reportChannel = await ctx.guild.fetch_channel(channelId)
 
         content = msg.content
         author = msg.author
         channelName = ctx.channel.mention
-
-        if author.id == 1086220502831480833 and msg.channel.id == 982242792422146098: #in deleted-edited messages
-            embed = msg.embeds[0]
-            content = embed.description
-            
-            author = ctx.guild.get_member_named(embed.author.name)
-
-            if author is None and embed.author.icon_url: #ne devrait pas servir mais peut-être…
-                authorId = int(embed.author.icon_url.split("/")[4])
-                author = await ctx.guild.fetch_member(authorId)
-
-            channelName = "in".join(embed.title.split("in")[1:])
-
-            return
 
         e = discord.Embed(title = f"Message {'reported' if param is not None else 'deleted by a mod'}", description = content, timestamp = msg.created_at)
         if author.avatar:
