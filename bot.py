@@ -36,6 +36,7 @@ modLogId = 929466478678405211
 reportChannelId = 806219815760166972
 modMessageLog = 1037071502656405584
 courtChannel = 912092404570554388
+introChannel = 567024817128210433
 
 #-roles
 voltDiscordTeam = 674583505446895616
@@ -43,6 +44,7 @@ voltSubTeam = 858692593104715817
 voltAdmin = 567023540193198080
 inCourt = 709532690692571177
 muted = 806589642287480842
+welcomeTeam = 801958112173096990
 
 #users
 botAdmin = 619574125622722560
@@ -126,6 +128,22 @@ async def exclusion(before, after):
 
         await modlog.send(embed = e)
 
+async def introreact(messageId, guild, emojiHash, channel, user):
+    peaceFingersEmoji = 712416440099143708
+    if emojiHash != peaceFingersEmoji:
+        return
+
+    if channel.id == introChannel: #in introduction
+        if any(x.id == welcomeTeam for x in user.roles): #welcome team
+            message = await channel.fetch_message(messageId)
+            newMember = message.author
+
+            roles = [guild.get_role(x) for x in (708313061764890694, 708315631774335008, 754029717211971705, 708313617686069269, 856620435164495902, 596511307209900053, 717132666721402949, 1101606908437221436)]
+            await newMember.add_roles(*roles)
+
+            await message.add_reaction("👌")
+
+
 def main():
     intents = discord.Intents.all()
     bot = commands.Bot(command_prefix=constantes.prefixVolt, help_command=None, intents = intents)
@@ -172,6 +190,36 @@ def main():
     @bot.event
     async def on_member_update(before, after):
         await exclusion(before, after)
+
+    async def traitementRawReact(payload):
+        if payload.user_id != bot.user.id: #sinon, on est dans le cas d'une réaction en dm
+            messageId = payload.message_id
+            guild = bot.get_guild(payload.guild_id) if payload.guild_id else None
+            try:
+                user = (await guild.fetch_member(payload.user_id)) if guild else (await bot.fetch_user(payload.user_id))
+            except:
+                user = (await bot.fetch_user(payload.user_id))
+            channel = bot.get_channel(payload.channel_id)
+
+            partEmoji = payload.emoji
+            emojiHash = partEmoji.id if partEmoji.is_custom_emoji() else partEmoji.name
+
+            return locals()
+        else:
+            return None
+        
+    @bot.event
+    async def on_raw_reaction_add(payload):
+        traitement = await traitementRawReact(payload)
+        if traitement:
+            messageId = traitement["messageId"]
+            user = traitement["user"]
+            guild = traitement["guild"]
+            emojiHash = traitement["emojiHash"]
+            channel = traitement["channel"]
+
+            await introreact(messageId, guild, emojiHash, channel, user)
+
 
     async def verif_word_train(message):
         """
