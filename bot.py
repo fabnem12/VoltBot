@@ -44,6 +44,9 @@ voltAdmin = 567023540193198080
 inCourt = 709532690692571177
 muted = 806589642287480842
 
+#users
+botAdmin = 619574125622722560
+
 #info in json
 if "bot_info.json" in os.listdir(os.path.dirname(__file__)):
     with open("bot_info.json", "r") as f:
@@ -373,6 +376,28 @@ def main():
 
             await reportChannel.send(file = discord.File(att.filename), reference = ref)
             os.remove(att.filename)
+
+    @bot.command(name = "top_of_month")
+    async def topOfMonth(ctx):
+        if ctx.author.id == botAdmin:
+            from subprocess import Popen
+            import os
+
+            Popen(["python3", os.path.join(os.path.dirname(__file__), "top_countries_month.py")])
+            await ctx.message.add_reaction("👌")
+
+    @bot.command(name = "read_top_of_month")
+    async def topOfMonth(ctx):
+        if ctx.author.id == botAdmin:
+            import os
+
+            ref = discord.MessageReference(channel_id = ctx.channel.id, message_id = ctx.message.id)
+
+            pathTop = os.path.join("outputs", "infoTopCountries.txt")
+            if os.path.exists(pathTop):
+                await ctx.send(file = discord.File(pathTop), reference = ref)
+            else:
+                await ctx.send("Someone has to start the count!", reference = ref)
 
     return bot, constantes.TOKENVOLT
 
