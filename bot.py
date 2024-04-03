@@ -30,7 +30,6 @@ voltServer = 567021913210355745
 
 #-channels
 wordTrainChannel = 1141992409165733988
-wordTrainChannel2 = 1143858096339439677
 deletedEditedMessages = 982242792422146098
 
 #-roles
@@ -141,8 +140,6 @@ def main():
             save()
 
         await verif_word_train(message)
-        await verif_word_train2(message)
-        #await smart_tweet(message)
 
         if message.content.startswith(".ban"):
             await ban(message, banAppealOk = False)
@@ -150,8 +147,6 @@ def main():
     @bot.event
     async def on_message_edit(before, after):
         await verif_word_train(after)
-        await verif_word_train2(after)
-        #await smart_tweet(after)
         
     @bot.event
     async def on_message_delete(msg):
@@ -197,40 +192,14 @@ def main():
         """
         #new logic
         previousMsg = None
-        async for msg in message.channel.history(oldest_first=False, limit=2):
-            if msg is not message:
-                previousMsg = msg
-
-        if len(words) > 1 or previousMsg.content.lower()[-1] != msgTxt[0]:
-            await message.delete()
-            await message.channel.send(f"<:bonk:843489770918903819> {message.author.mention}")
-
-        return True
-
-    async def verif_word_train2(message):
-        if message.channel.id != wordTrainChannel2 or message.author.bot:
-            return
-
-        previousMsg = None
-        async for msg in message.channel.history(limit = None):
+        async for msg in message.channel.history(oldest_first=False, limit=None):
             if msg != message and not msg.author.bot:
                 previousMsg = msg
                 break
 
-        if previousMsg:
-            isLetter = lambda x: x in "abcdefghijklmnopqrstuvwxyz "
-            previousMsgTxt = unidecode(previousMsg.content.lower())
-            msgTxt = unidecode(message.content.lower())
-
-            previousMsgLetters = "".join(filter(isLetter, previousMsgTxt))
-            msgLetters = "".join(filter(isLetter, msgTxt))
-
-            if len(previousMsgLetters) and len(msgLetters):
-                if previousMsgLetters[-1] != msgLetters[0]:
-                    await message.delete()
-                    await message.channel.send(f"<:bonk:843489770918903819> {message.author.mention}")
-
-                    return False
+        if len(words) > 1 or previousMsg.content.strip().lower()[-1] != msgTxt[0]:
+            await message.delete()
+            await message.channel.send(f"<:bonk:843489770918903819> {message.author.mention}")
 
         return True
 
