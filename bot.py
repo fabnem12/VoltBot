@@ -197,7 +197,7 @@ def main():
                 previousMsg = msg
                 break
 
-        if len(words) > 1 or previousMsg.content.strip().lower()[-1] != msgTxt[0]:
+        if len(words) > 1 or previousMsg.content.strip().lower()[-1] != msgTxt[0] or previousMsg.author.id == message.author.id:
             await message.delete()
             await message.channel.send(f"<:bonk:843489770918903819> {message.author.mention}")
 
