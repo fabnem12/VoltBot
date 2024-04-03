@@ -31,6 +31,7 @@ voltServer = 567021913210355745
 #-channels
 wordTrainChannel = 1141992409165733988
 deletedEditedMessages = 982242792422146098
+modLogId = 929466478678405211
 
 #-roles
 voltDiscordTeam = 674583505446895616
@@ -98,6 +99,24 @@ async def ban(msg, banAppealOk = True):
     else:
         await msg.channel.send(f"Banned **{user.name}**")
 
+async def exclusion(before, after):
+    if before.guild.id == voltServer and before.communication_disabled_until is None and after.communication_disabled_until:
+        #let's find the reason
+        async for entry in before.guild.audit_logs(action=discord.AuditLogAction.member_update):
+            reason = entry.reason
+            mod = entry.user
+            time = entry.created_at
+            break
+        
+        modlog = await before.guild.fetch_channel(modLogId)
+        e = discord.Embed(title = "time out", timestamp = time, color = 0x502379)
+        e.add_field(name = "User:", value = f"{after}", inline=False)
+        e.add_field(name = "Reason:", value = reason, inline=False)
+        e.add_field(name = "Reponsible moderator:", value = f"{mod}", inline=False)
+        e.set_footer(text = f"ID: {after.id}")
+
+        await modlog.send(embed = e)
+
 async def smart_tweet(msg: discord.Message, delete: bool = False):
     """
     Reply to messages with Twitter links whose embed fails with vxtwitter
@@ -161,6 +180,10 @@ def main():
         dmChannel = await dmChannelUser(member)
         await dmChannel.send("Hey! **Welcome to the Volt Europa Discord server**\nTo get the access to the server, please introduce yourself in <#567024817128210433>, citing the country/countries you are from, the languages you speak and whether you are a <:volt:698844154418954311> member.\nOnce you get verified, you can check <#727489317210947655> to get access to topic channels.")
 
+    @bot.event
+    async def on_member_update(before, after):
+        await exclusion(before, after)
+    
     async def verif_word_train(message):
         """
         Word train channel:
