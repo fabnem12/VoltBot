@@ -148,6 +148,16 @@ def main():
         
     @bot.event
     async def on_message_delete(msg):
+        #resend the attachments of deleted messages in #deleted-edited-messages
+        deletedMsgChannel = await msg.guild.fetch_channel(deletedEditedMessages)
+        for att in msg.attachments:
+            r = requests.get(att.url)
+            with open(att.filename, "wb") as outfile:
+                outfile.write(r.content)
+
+            await deletedMsgChannel.send(f"Attachment to message with ID {msg.id}", file = discord.File(att.filename))
+            os.remove(att.filename)
+
         async for entry in msg.guild.audit_logs(action=discord.AuditLogAction.message_delete):
             if msg.author.id == entry.target.id and abs(entry.created_at.timestamp() - time.time()) < 1 and (await isMod(msg.guild, entry.user.id) or any(x.id == 1038899815821619270 for x in entry.user.roles)):
                 await reportTemp(msg, entry.user.id)
