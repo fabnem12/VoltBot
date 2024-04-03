@@ -2,7 +2,7 @@ import asyncio
 import json
 import nextcord as discord
 from nextcord.ext import commands
-from typing import Optional
+from typing import Optional, Union
 from unidecode import unidecode
 import datetime
 import os
@@ -398,6 +398,17 @@ def main():
                 await ctx.send(file = discord.File(pathTop), reference = ref)
             else:
                 await ctx.send("Someone has to start the count!", reference = ref)
+
+    @bot.command(name="react")
+    async def react(ctx, *emojis: Union[discord.Emoji, str]):
+        reference = ctx.message.reference
+
+        if reference:
+            msg = await ctx.channel.fetch_message(reference.message_id)
+            for emoji in emojis:
+                await msg.add_reaction(emoji)
+
+        await ctx.message.delete()
 
     return bot, constantes.TOKENVOLT
 
