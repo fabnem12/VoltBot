@@ -2,9 +2,10 @@ import asyncio
 import json
 import nextcord as discord
 from nextcord.ext import commands
+from typing import Optional
 from unidecode import unidecode
+import datetime
 import os
-import re
 import requests
 import time
 
@@ -34,11 +35,14 @@ deletedEditedMessages = 982242792422146098
 modLogId = 929466478678405211
 reportChannelId = 806219815760166972
 modMessageLog = 1037071502656405584
+courtChannel = 912092404570554388
 
 #-roles
 voltDiscordTeam = 674583505446895616
 voltSubTeam = 858692593104715817
 voltAdmin = 567023540193198080
+inCourt = 709532690692571177
+muted = 806589642287480842
 
 #info in json
 if "bot_info.json" in os.listdir(os.path.dirname(__file__)):
@@ -197,6 +201,69 @@ def main():
             await message.channel.send(f"<:bonk:843489770918903819> {message.author.mention}")
 
         return True
+
+    @bot.command(name = "court")
+    async def courtcommand(ctx, user: discord.Member, *, reason: Optional[str]):
+        if ctx.guild.id != voltServer or not await isMod(ctx.guild, ctx.author.id): #not on volt server or not a mod of the volt server
+            return
+
+        #create the court thread
+        guildVolt = bot.get_guild(voltServer)
+        channelCourt = guildVolt.get_channel(courtChannel)
+        courtThread = await channelCourt.create_thread(name = f"{user.nick or user.name} court")
+
+        #give the roles "in court" and "muted"
+        roles = [guildVolt.get_role(x) for x in (inCourt, muted)]
+        await user.add_roles(*roles)
+
+        #ping the mod and the courted user
+        await courtThread.send(f"{user.mention} {ctx.author.mention}")
+
+        #register in modlog
+        modlog = await guildVolt.fetch_channel(modLogId)
+        e = discord.Embed(title = "Courting", timestamp = datetime.datetime.fromtimestamp(time.time()), color = 0x502379)
+        e.add_field(name = "User:", value = user.mention, inline=False)
+        e.add_field(name = "Reason:", value = reason, inline=False)
+        e.add_field(name = "Reponsible moderator:", value = ctx.author.mention, inline=False)
+        e.set_footer(text = f"ID: {user.id}")
+
+        await modlog.send(embed = e)
+        await courtThread.send(embed = e)
+    
+    @bot.command(name = "uncourt")
+    async def courtcommand(ctx, user: discord.User, *, reason: Optional[str]):
+        if ctx.guild.id != voltServer or not await isMod(ctx.guild, ctx.author.id): #not on volt server or not a mod of the volt server
+            return
+
+        #get the court thread
+        guildVolt = bot.get_guild(voltServer)
+        courtThread = ctx.channel
+
+        try:
+            member = await guildVolt.fetch_member(user.id)
+        except discord.errors.NotFound:
+            member = None
+
+        if member is not None: #the member did not get banned / didn't leave during the courting
+            #remove the roles "in court" and "muted"
+            roles = [guildVolt.get_role(x) for x in (inCourt, muted)]
+            await member.remove_roles(*roles)
+
+            await courtThread.remove_user(member)
+        
+        #make the bot and the mod leave the thread. the api doesn't let the bot archive the thread manually, it will be done automatically
+        await courtThread.remove_user(ctx.author)
+        await courtThread.leave()
+
+        #register in modlog
+        modlog = await guildVolt.fetch_channel(modLogId)
+        e = discord.Embed(title = "Court case closed", timestamp = datetime.datetime.fromtimestamp(time.time()), color = 0x502379)
+        e.add_field(name = "User:", value = user.mention, inline=False)
+        e.add_field(name = "Reason:", value = reason, inline=False)
+        e.add_field(name = "Reponsible moderator:", value = ctx.author.mention, inline=False)
+        e.set_footer(text = f"ID: {user.id}")
+
+        await modlog.send(embed = e)
 
     @bot.command(name = "purge_log")
     async def purge_log(ctx, guild = None):
