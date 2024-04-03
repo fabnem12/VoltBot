@@ -43,7 +43,7 @@ if "bot_info.json" in os.listdir(os.path.dirname(__file__)):
     with open("bot_info.json", "r") as f:
         info = json.load(f)
 else:
-    info = {"smart_tweet": dict()}
+    info = {}
     with open("bot_info.json", "w") as f:
         json.dump(info, f)
 
@@ -116,36 +116,6 @@ async def exclusion(before, after):
         e.set_footer(text = f"ID: {after.id}")
 
         await modlog.send(embed = e)
-
-async def smart_tweet(msg: discord.Message, delete: bool = False):
-    """
-    Reply to messages with Twitter links whose embed fails with vxtwitter
-    """
-    
-    msgId = msg.id
-    infoSmartTweet = info["smart_tweet"]
-
-    if delete and msgId in infoSmartTweet:
-        msgRep = await msg.channel.fetch_message(infoSmartTweet[msgId])
-        await msgRep.delete()
-        del infoSmartTweet[msgId]
-
-    links = re.findall("https:\/\/([\w_-]+(?:(?:\.[\w_-]+)+))([\w.,@?^=%&:\/~+#-]*[\w@?^=%&\/~+#-])", msg.content)
-    links = [(x.lower(), y.lower()) for x, y in links]
-    twitterLinks = ["https://" + x.replace("x.com", "twitter.com").replace("twitter.com", "vxtwitter.com") + y for x, y in links if (x.startswith("x.com") or x.startswith("twitter.com")) and "fxtwitter.com" not in x and "vxtwitter.com" not in x]
-
-    if len(twitterLinks):
-        ref = discord.MessageReference(channel_id = msg.channel.id, message_id = msgId)
-        
-        if msg.edited_at and "smart_tweet" in info and msgId in infoSmartTweet:
-            msgRep = await msg.channel.fetch_message(infoSmartTweet[msgId])
-            await msgRep.edit(content = "\n".join(twitterLinks))
-        else:
-            rep = await msg.channel.send("\n".join(twitterLinks), reference = ref)
-            infoSmartTweet[msgId] = rep.id
-    elif msg.edited_at and "smart_tweet" in info and msgId in infoSmartTweet:
-        msgRep = await msg.channel.fetch_message(infoSmartTweet[msgId])
-        await msgRep.edit(content = ".")
 
 def main():
     intents = discord.Intents.all()
