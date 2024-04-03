@@ -172,7 +172,7 @@ def main():
     @bot.event
     async def on_member_update(before, after):
         await exclusion(before, after)
-    
+
     async def verif_word_train(message):
         """
         Word train channel:
@@ -214,6 +214,10 @@ def main():
             await message.channel.send(f"<:bonk:843489770918903819> {message.author.mention}")
 
         return True
+
+    @bot.command(name = "ayo")
+    async def ayo(ctx):
+        await ctx.send("ayo")
 
     @bot.command(name = "court")
     async def courtcommand(ctx, user: discord.Member, *, reason: Optional[str]):
