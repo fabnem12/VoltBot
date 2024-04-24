@@ -255,9 +255,10 @@ def main():
         async for msg in message.channel.history(oldest_first=False, limit=None):
             if msg != message and not msg.author.bot:
                 previousMsg = msg
+                previousMsgLetters = "".join(filter(isLetter, unidecode(message.content.lower())))
                 break
 
-        if len(words) > 1 or previousMsg.content.strip().lower()[-1] != msgTxt[0] or previousMsg.author.id == message.author.id:
+        if len(words) > 1 or previousMsgLetters.content.strip().lower()[-1] != msgTxt[0] or previousMsg.author.id == message.author.id:
             await message.delete()
             await message.channel.send(f"<:bonk:843489770918903819> {message.author.mention}")
 
