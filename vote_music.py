@@ -216,7 +216,7 @@ async def saveVotePublic(user, country):
 
     if nbVotesOfUser < numberMaxVotesPublic:
         votes.append((user.name, False, country))
-        await channel.send(f"Your vote for {country.capitalize()} has been properly saved.")
+        await channel.send(f"Your vote for **{country.upper()}** has been properly saved.")
         save()
     else:
         await channel.send(f"You already reached the limit of {numberMaxVotesPublic} votes, you can no longer vote with a country flag.")
