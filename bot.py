@@ -142,6 +142,10 @@ async def report(messageId, guild, channel, user, param = ""):
             msg = await channel.fetch_message(reference.message_id)
         else: #report by reaction
             await (await dmChannelUser(user)).send(f"The message got reported: {msg.jump_url}. Thanks!")
+            ruleEmoji = 742137941211611208
+            emoji = await guild.fetch_emoji(ruleEmoji)
+
+            await msgInit.remove_reaction(emoji, user)
     
     reportChannel = await guild.fetch_channel(channelId)
 
