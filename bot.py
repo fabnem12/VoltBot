@@ -93,10 +93,8 @@ async def ban(msg, banAppealOk = True):
     try:
         if banAppealOk:
             await channel.send(f"Ban reason: {banReason}\nBan appeal form: https://docs.google.com/forms/d/189lUm5ONdJHcI4C8QB4ml__2aAnygmxbCETrBMVhos0. Your discord id (asked in the form) is `{userId}`.")
-            print("appel proposé")
         else:
             await channel.send(f"Ban reason: {banReason}")
-            print("appel pas proposé")
     except:
         pass
     else:
@@ -104,7 +102,6 @@ async def ban(msg, banAppealOk = True):
 
     try:
         await msg.guild.ban(user, reason = f"{banReason} (ban by {msg.author.mention})", delete_message_seconds = 0)
-        print("voilà")
     except Exception as e:
         await (await dmChannelUser(msg.author)).send(f"Unable to ban {user.name}\n{e}")
     else:
@@ -128,6 +125,53 @@ async def exclusion(before, after):
 
         await modlog.send(embed = e)
 
+async def report(messageId, guild, channel, user, param = ""):
+    channelId = reportChannelId
+
+    msgInit = await channel.fetch_message(messageId)
+    msg = msgInit
+    if not isinstance(param, str):
+        channelId = modMessageLog
+        reporter = param
+        param = None
+    else:
+        reference = msgInit.reference
+        reporter = user.id
+        if reference:
+            await msgInit.delete()
+            msg = await channel.fetch_message(reference.message_id)
+        else: #report by reaction
+            await (await dmChannelUser(user)).send(f"The message got reported: {msg.jump_url}. Thanks!")
+    
+    reportChannel = await guild.fetch_channel(channelId)
+
+    content = msg.content
+    author = msg.author
+    channelName = channel.mention
+
+    e = discord.Embed(title = f"Message {'reported' if param is not None else 'deleted by a mod'}", description = content, timestamp = msg.created_at)
+    if author.avatar:
+        e.set_author(name = author.name, icon_url = author.avatar.url)
+    e.add_field(name = "Author", value=author.mention, inline=False)
+    e.add_field(name = "Channel", value=channelName, inline=False)
+    e.add_field(name = "Reporter", value=f"<@{reporter}>", inline=False)
+    if param is not None:
+        if not isinstance(param, str):
+            e.add_field(name = "Link to message", value=msg.jump_url)
+        else:
+            e.add_field(name = "Details", value=param)
+    msgReport = await reportChannel.send(embed = e)
+
+    ref = discord.MessageReference(channel_id = msgReport.channel.id, message_id = msgReport.id)
+
+    for att in msg.attachments:
+        r = requests.get(att.url)
+        with open(att.filename, "wb") as outfile:
+            outfile.write(r.content)
+
+        await reportChannel.send(file = discord.File(att.filename), reference = ref)
+        os.remove(att.filename)
+
 async def introreact(messageId, guild, emojiHash, channel, user):
     peaceFingersEmoji = 712416440099143708
     if emojiHash != peaceFingersEmoji:
@@ -143,6 +187,12 @@ async def introreact(messageId, guild, emojiHash, channel, user):
 
             await message.add_reaction("👌")
 
+async def reportreact(messageId, guild, emojiHash, channel, user):
+    ruleEmoji = 742137941211611208
+    if emojiHash != ruleEmoji:
+        return
+
+    await report(messageId, guild, channel, user)
 
 def main():
     intents = discord.Intents.all()
@@ -178,7 +228,8 @@ def main():
 
         async for entry in msg.guild.audit_logs(action=discord.AuditLogAction.message_delete):
             if msg.author.id == entry.target.id and abs(entry.created_at.timestamp() - time.time()) < 1 and (await isMod(msg.guild, entry.user.id) or any(x.id == 1038899815821619270 for x in entry.user.roles)):
-                await reportTemp(msg, entry.user.id)
+                await report(msg.id, msg.guild, msg.channel, entry.user, entry.user.id)
+                #await report(msg, entry.user.id)
             
             break
     
@@ -219,7 +270,7 @@ def main():
             channel = traitement["channel"]
 
             await introreact(messageId, guild, emojiHash, channel, user)
-
+            await reportreact(messageId, guild, emojiHash, channel, user)
 
     async def verif_word_train(message):
         """
@@ -369,10 +420,8 @@ def main():
 
         if ctx.guild.id == voltServer and await isMod(ctx.guild, ctx.author.id):
             lastMessagesMods = dict()
-            print("ohe")
 
             for member in ctx.guild.get_role(voltDiscordTeam).members:
-                print(member)
                 lastMessage = None
                 async for msg in member.history():
                     if msg == ctx.message: continue
@@ -398,47 +447,9 @@ def main():
         await ban(ctx.message)
     
     @bot.command(name = "report")
-    async def reportTemp(ctx, param = ""):
-        channelId = reportChannelId
-        if not isinstance(param, str):
-            channelId = modMessageLog
-            msg = ctx
-            reporter = param
-            param = None
-        else:
-            reference = ctx.message.reference
-            if reference:
-                await ctx.message.delete()
-                msg = await ctx.channel.fetch_message(reference.message_id)
-                reporter = ctx.author.id
-            else:
-                return
-            
-        reportChannel = await ctx.guild.fetch_channel(channelId)
-
-        content = msg.content
-        author = msg.author
-        channelName = ctx.channel.mention
-
-        e = discord.Embed(title = f"Message {'reported' if param is not None else 'deleted by a mod'}", description = content, timestamp = msg.created_at)
-        if author.avatar:
-            e.set_author(name = author.name, icon_url = author.avatar.url)
-        e.add_field(name = "Author", value=author.mention, inline=False)
-        e.add_field(name = "Channel", value=channelName, inline=False)
-        e.add_field(name = "Reporter", value=f"<@{reporter}>", inline=False)
-        if param is not None:
-            e.add_field(name = "Link to message", value=msg.jump_url)
-        msgReport = await reportChannel.send(embed = e)
-
-        ref = discord.MessageReference(channel_id = msgReport.channel.id, message_id = msgReport.id)
-
-        for att in msg.attachments:
-            r = requests.get(att.url)
-            with open(att.filename, "wb") as outfile:
-                outfile.write(r.content)
-
-            await reportChannel.send(file = discord.File(att.filename), reference = ref)
-            os.remove(att.filename)
+    async def reportcommand(ctx, *, param = ""):
+        await report(ctx.message.id, ctx.guild, ctx.channel, ctx.author, param)
+        #await report(ctx, param)
 
     @bot.command(name = "top_of_month")
     async def topOfMonth(ctx):
