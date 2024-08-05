@@ -160,7 +160,7 @@ async def report(messageId, guild, channel, user, param = ""):
     e.add_field(name = "Channel", value=channelName, inline=False)
     e.add_field(name = "Reporter", value=f"<@{reporter}>", inline=False)
     if param is not None:
-        if not isinstance(param, str):
+        if isinstance(param, str):
             e.add_field(name = "Link to message", value=msg.jump_url)
         else:
             e.add_field(name = "Details", value=param)
