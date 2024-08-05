@@ -232,7 +232,7 @@ def main():
 
         async for entry in msg.guild.audit_logs(action=discord.AuditLogAction.message_delete):
             if msg.author.id == entry.target.id and abs(entry.created_at.timestamp() - time.time()) < 1 and (await isMod(msg.guild, entry.user.id) or any(x.id == 1038899815821619270 for x in entry.user.roles)):
-                await report(msg.id, msg.guild, msg.channel, entry.user, entry.user.id, None)
+                await report(msg.id, msg.guild, msg.channel, entry.user, entry.user.id)
                 #await report(msg, entry.user.id)
             
             break
