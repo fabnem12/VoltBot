@@ -137,7 +137,7 @@ async def report(messageId, guild, channel, user, param = ""):
     else:
         reference = msgInit.reference
         reporter = user.id
-        if reference:
+        if reference and msgInit.content.startwith(constantes.prefixVolt+"report"):
             await msgInit.delete()
             msg = await channel.fetch_message(reference.message_id)
         else: #report by reaction
