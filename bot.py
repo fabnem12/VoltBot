@@ -137,9 +137,9 @@ async def report(messageId, guild, channel, user, param = ""):
     else:
         reference = msgInit.reference
         reporter = user.id
-        if reference and msgInit.content.startwith(constantes.prefixVolt+"report"):
-            await msgInit.delete()
+        if reference and msgInit.content.startswith(constantes.prefixVolt+"report"):
             msg = await channel.fetch_message(reference.message_id)
+            await msgInit.delete()
         else: #report by reaction
             await (await dmChannelUser(user)).send(f"The message got reported: {msg.jump_url}. Thanks!")
             ruleEmoji = 742137941211611208
@@ -160,9 +160,8 @@ async def report(messageId, guild, channel, user, param = ""):
     e.add_field(name = "Channel", value=channelName, inline=False)
     e.add_field(name = "Reporter", value=f"<@{reporter}>", inline=False)
     if param is not None:
-        if isinstance(param, str):
-            e.add_field(name = "Link to message", value=msg.jump_url)
-        else:
+        e.add_field(name = "Link to message", value=msg.jump_url)
+        if param != "":
             e.add_field(name = "Details", value=param)
     msgReport = await reportChannel.send(embed = e)
 
