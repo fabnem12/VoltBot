@@ -394,7 +394,6 @@ def main():
             (':region_southamerica:', "South America", [])
         ]
 
-        print(ctx.guild.roles)
         countries = list(emojis.get(ctx.message.content))
         reg = regex.compile(r"<(:\w+:)\d+>")
         countries += reg.findall(ctx.message.content)
@@ -411,10 +410,6 @@ def main():
         roles_langs_add.append("English")
         reg_lang_remove = regex.compile(r"-(\w+)")
         roles_langs_remove = reg_lang_remove.findall(ctx.message.content)
-
-        print("Countries: ", roles_countries)
-        print("Languages+: ", roles_langs_add)
-        print("Languages-: ", roles_langs_remove)
 
         roles_langs = set(roles_langs_add) - set(roles_langs_remove)
 
