@@ -8,6 +8,8 @@ import datetime
 import os
 import requests
 import time
+import emojis
+import regex
 
 import constantes
 
@@ -266,6 +268,112 @@ def main():
     @bot.command(name = "ayo")
     async def ayo(ctx):
         await ctx.send("ayo")
+
+    @bot.command(name = "verify")
+    async def verify(ctx):
+        reference = ctx.message.reference
+        if reference is None:
+            return
+
+        db = [
+            ('🇪🇺', "Europe", []),
+            ('🇦🇱', "Albania", ["Albanian"]),
+            ('🇦🇲', "Armenia", ["Armenian"]),
+            ('🇦🇩', "Andorra", ["Catalan", "Spanish", "French"]),
+            ('🇦🇹', "Austria", ["German"]),
+            ('🇦🇿', "Azerbeijan", ["Azerbaijani"]),
+            ('🇧🇾', "Belarus", ["Belarusian", "Russian"]),
+            ('🇧🇪', "Belgium", ["Dutch", "French", "German"]),
+            ('🇧🇦', "Bosnia & Herzegovina", ["Bosnian"]),
+            ('🇧🇬', "Bulgaria", ["Bulgarian"]),
+            ('🇭🇷', "Croatia", ["Croatian"]),
+            ('🇨🇾', "Cyprus", ["Greek", "Turkish"]),
+            ('🇨🇿', "Czechia", ["Czech"]),
+            ('🇩🇰', "Denmark", ["Danish"]),
+            ('🇪🇪', "Estonia", ["Estonian"]),
+            ('🇫🇮', "Finland", ["Finnish", "Swedish"]),
+            ('🇫🇷', "France", ["French"]),
+            ('🇩🇪', "Germany", ["German"]),
+            ('🇬🇪', "Georgia", ["Georgian"]),
+            ('🇬🇷', "Greece", ["Greek"]),
+            ('🇭🇺', "Hungary", ["Hungarian"]),
+            ('🇮🇸', "Iceland", ["Icelandic"]),
+            ('🇮🇪', "Ireland", ["Irish"]),
+            ('🇮🇹', "Italy", ["Italian"]),
+            ('🇽🇰', "Kosovo", ["Kosovar"]),
+            ('🇰🇿', "Kazakhstan", ["Kazakh"]),
+            ('🇱🇻', "Latvia", ["Latvian"]),
+            ('🇱🇮', "Liechteinstein", ["German"]),
+            ('🇱🇹', "Lithuania", ["Lithuanian"]),
+            ('🇱🇺', "Luxembourg", ["Luxembourgish", "French", "German"]),
+            ('🇲🇹', "Malta", ["Maltese"]),
+            ('🇲🇩', "Moldova", ["Romanian"]),
+            ('🇲🇨', "Monaco", ["French"]),
+            ('🇲🇪', "Montenegro", ["Montenegrin"]),
+            ('🇳🇱', "Netherlands", ["Dutch"]),
+            ('🇲🇰', "North Macedonia", ["Macedonian", "Albanian"]),
+            ('🇳🇴', "Norway", ["Norwegian"]),
+            ('🇵🇱', "Poland", ["Polish"]),
+            ('🇵🇹', "Portugal", ["Portuguese"]),
+            ('🇷🇴', "Romania", ["Romanian"]),
+            ('🇷🇺', "Russia", ["Russian"]),
+            ('🇸🇲', "San Marino", ["Italian"]),
+            ('🇷🇸', "Serbia", ["Serbian"]),
+            ('🇸🇰', "Slovakia", ["Slovak"]),
+            ('🇸🇮', "Slovenia", ["Slovenian"]),
+            ('🇪🇸', "Spain", ["Spanish"]),
+            ('🇸🇪', "Sweden", ["Swedish"]),
+            ('🇨🇭', "Switzerland", ["German", "French", "Italian", "Romansh"]),
+            ('🇹🇷', "Turkey", ["Turkish"]),
+            ('🇬🇧', "United Kingdom", []),
+            ('🇺🇦', "Ukraine", ["Ukrainian", "Russian"]),
+            ('🇻🇦', "Vatican", ["Italian"]),
+            (':region_asia:', "Asia", []),
+            (':region_africa:', "Africa", []),
+            (':region_northamerica:', "North America", []),
+            (':region_oceania:', "Oceania", []),
+            (':region_southamerica:', "South America", [])
+        ]
+
+        print(ctx.guild.roles)
+        countries = list(emojis.get(ctx.message.content))
+        reg = regex.compile(r"<(:\w+:)\d+>")
+        countries += reg.findall(ctx.message.content)
+
+        roles_countries = []
+        roles_langs_add = []
+        for (emoji, country_name, languages) in db:
+            if emoji in countries:
+                roles_countries.append(country_name)
+                roles_langs_add.extend(languages)
+
+        reg_lang_add = regex.compile(r"\+(\w+)")
+        roles_langs_add.extend(reg_lang_add.findall(ctx.message.content))
+        roles_langs_add.append("English")
+        reg_lang_remove = regex.compile(r"-(\w+)")
+        roles_langs_remove = reg_lang_remove.findall(ctx.message.content)
+
+        print("Countries: ", roles_countries)
+        print("Languages+: ", roles_langs_add)
+        print("Languages-: ", roles_langs_remove)
+
+        roles_langs = set(roles_langs_add) - set(roles_langs_remove)
+
+        roles_to_add = []
+        success_countries = []
+        success_languages = []
+        for role in ctx.guild.roles:
+            if role.name in roles_countries:
+                success_countries.append(role.name)
+                roles_to_add.append(role)
+            if role.name in roles_langs:
+                success_languages.append(role.name)
+                roles_to_add.append(role)
+
+        og = await ctx.channel.fetch_message(reference.message_id)
+        await og.author.add_roles(*roles_to_add)
+        await ctx.send(f"Welcome <@{og.author.id}>, you have full access now. I assigned you the following countries/regions: {', '.join(success_countries)}, and the following languages: {', '.join(success_languages)}. If something is wrong, let a moderator online know!")
+
 
     @bot.command(name = "court")
     async def courtcommand(ctx, user: discord.Member, *, reason: Optional[str]):
