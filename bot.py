@@ -73,6 +73,9 @@ async def isMod(guild, memberId):
     member = await guild.fetch_member(memberId)
     return any(role.id in (voltDiscordTeam, voltSubTeam, voltAdmin) for role in member.roles)
 
+async def isWelcome(user):
+    return any(x.id == welcomeTeam for x in user.roles)
+
 async def ban(msg, banAppealOk = True):
     if msg.guild.id != voltServer or not await isMod(msg.guild, msg.author.id): #not on volt server or not a mod of the volt server
         return
@@ -177,20 +180,19 @@ async def report(messageId, guild, channel, user, param = ""):
         await reportChannel.send(file = discord.File(att.filename), reference = ref)
         os.remove(att.filename)
 
+async def assign_base_roles(newMember, guild):
+    roles = [guild.get_role(x) for x in (708313061764890694, 708315631774335008, 754029717211971705, 708313617686069269, 856620435164495902, 596511307209900053, 717132666721402949, 1101606908437221436)]
+    await newMember.add_roles(*roles)
+
 async def introreact(messageId, guild, emojiHash, channel, user):
     peaceFingersEmoji = 712416440099143708
     if emojiHash != peaceFingersEmoji:
         return
 
-    if channel.id == introChannel: #in introduction
-        if any(x.id == welcomeTeam for x in user.roles): #welcome team
-            message = await channel.fetch_message(messageId)
-            newMember = message.author
+    message = await channel.fetch_message(messageId)
+    await assign_base_roles(message.author, guild)
+    await message.add_reaction("👌")
 
-            roles = [guild.get_role(x) for x in (708313061764890694, 708315631774335008, 754029717211971705, 708313617686069269, 856620435164495902, 596511307209900053, 717132666721402949, 1101606908437221436)]
-            await newMember.add_roles(*roles)
-
-            await message.add_reaction("👌")
 
 async def reportreact(messageId, guild, emojiHash, channel, user):
     ruleEmoji = 742137941211611208
@@ -274,8 +276,8 @@ def main():
             emojiHash = traitement["emojiHash"]
             channel = traitement["channel"]
 
-            await introreact(messageId, guild, emojiHash, channel, user)
-            await reportreact(messageId, guild, emojiHash, channel, user)
+            if isWelcome(user) or isMod(guild, user.id):
+                await introreact(messageId, guild, emojiHash, channel, user)
 
     async def verif_word_train(message):
         """
@@ -326,6 +328,8 @@ def main():
 
     @bot.command(name = "verify")
     async def verify(ctx):
+        if not await isWelcome(ctx.message.author) and not await isMod(ctx.guild, ctx.message.author.id):
+            return
         reference = ctx.message.reference
         if reference is None:
             return
@@ -427,6 +431,7 @@ def main():
 
         og = await ctx.channel.fetch_message(reference.message_id)
         await og.author.add_roles(*roles_to_add)
+        await assign_base_roles(og.author, ctx.guild)
         await ctx.send(f"Welcome <@{og.author.id}>, you have full access now. I assigned you the following countries/regions: {', '.join(success_countries)}, and the following languages: {', '.join(success_languages)}. If something is wrong, let a moderator online know!")
 
 
