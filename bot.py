@@ -276,7 +276,7 @@ def main():
             emojiHash = traitement["emojiHash"]
             channel = traitement["channel"]
 
-            if isWelcome(user) or isMod(guild, user.id):
+            if await isWelcome(user) or await isMod(guild, user.id):
                 await introreact(messageId, guild, emojiHash, channel, user)
 
     async def verif_word_train(message):
