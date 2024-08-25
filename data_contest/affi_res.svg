@@ -1,0 +1,163 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="500" viewBox="0 0 700 500">
+    <style type="text/css">
+        @import url('https://fonts.googleapis.com/css2?family=Ubuntu+Sans:ital,wght@0,100..800;1,100..800');
+        text{font-family:'Ubuntu Sans';} 
+    </style>
+    <rect x="0" y="0" width="700" height="500" style="fill: #502379;" />
+
+    <text x="350" y="20" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="30">
+        First Semi-Final
+    </text>
+
+    <rect x="10" y="50" width="330" height="50" style="fill: #502379; stroke-width:2;stroke:white;" />
+    <image x="11" y="51" height="48" width="48" preserveAspectRatio="none" href="Cyprus.svg" />
+    <rect x="290" y="51" height="48" width="48" style="fill:#3F086F;" />
+    <text x="70" y="75" dominant-baseline="middle" fill="white" font-size="25">
+    Cyprus
+    </text>
+    <text x="315" y="75" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="23">
+    0
+    </text>
+
+    <rect x="10" y="100" width="330" height="50" style="fill: #502379; stroke-width:2;stroke:white;" />
+    <image x="11" y="101" height="48" width="48" preserveAspectRatio="none" href="Serbia.svg" />
+    <rect x="290" y="101" height="48" width="48" style="fill:#3F086F;" />
+    <text x="70" y="125" dominant-baseline="middle" fill="white" font-size="25">
+    Serbia
+    </text>
+    <text x="315" y="125" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="23">
+    0
+    </text>
+
+    <rect x="10" y="150" width="330" height="50" style="fill: #502379; stroke-width:2;stroke:white;" />
+    <image x="11" y="151" height="48" width="48" preserveAspectRatio="none" href="Lithuania.svg" />
+    <rect x="290" y="151" height="48" width="48" style="fill:#3F086F;" />
+    <text x="70" y="175" dominant-baseline="middle" fill="white" font-size="25">
+    Lithuania
+    </text>
+    <text x="315" y="175" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="23">
+    0
+    </text>
+
+    <rect x="10" y="200" width="330" height="50" style="fill: #502379; stroke-width:2;stroke:white;" />
+    <image x="11" y="201" height="48" width="48" preserveAspectRatio="none" href="Ireland.svg" />
+    <rect x="290" y="201" height="48" width="48" style="fill:#3F086F;" />
+    <text x="70" y="225" dominant-baseline="middle" fill="white" font-size="25">
+    Ireland
+    </text>
+    <text x="315" y="225" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="23">
+    0
+    </text>
+
+    <rect x="10" y="250" width="330" height="50" style="fill: #502379; stroke-width:2;stroke:white;" />
+    <image x="11" y="251" height="48" width="48" preserveAspectRatio="none" href="Ukraine.svg" />
+    <rect x="290" y="251" height="48" width="48" style="fill:#3F086F;" />
+    <text x="70" y="275" dominant-baseline="middle" fill="white" font-size="25">
+    Ukraine
+    </text>
+    <text x="315" y="275" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="23">
+    0
+    </text>
+
+    <rect x="10" y="300" width="330" height="50" style="fill: #502379; stroke-width:2;stroke:white;" />
+    <image x="11" y="301" height="48" width="48" preserveAspectRatio="none" href="Poland.svg" />
+    <rect x="290" y="301" height="48" width="48" style="fill:#3F086F;" />
+    <text x="70" y="325" dominant-baseline="middle" fill="white" font-size="25">
+    Poland
+    </text>
+    <text x="315" y="325" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="23">
+    0
+    </text>
+
+    <rect x="10" y="350" width="330" height="50" style="fill: #502379; stroke-width:2;stroke:white;" />
+    <image x="11" y="351" height="48" width="48" preserveAspectRatio="none" href="Croatia.svg" />
+    <rect x="290" y="351" height="48" width="48" style="fill:#3F086F;" />
+    <text x="70" y="375" dominant-baseline="middle" fill="white" font-size="25">
+    Croatia
+    </text>
+    <text x="315" y="375" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="23">
+    0
+    </text>
+
+    <rect x="10" y="400" width="330" height="50" style="fill: #502379; stroke-width:2;stroke:white;" />
+    <image x="11" y="401" height="48" width="48" preserveAspectRatio="none" href="Iceland.svg" />
+    <rect x="290" y="401" height="48" width="48" style="fill:#3F086F;" />
+    <text x="70" y="425" dominant-baseline="middle" fill="white" font-size="25">
+    Iceland
+    </text>
+    <text x="315" y="425" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="23">
+    0
+    </text>
+    
+    <!-- -->
+
+    <rect x="360" y="50" width="330" height="50" style="fill: #502379; stroke-width:2;stroke:white;" />
+    <image x="361" y="51" height="48" width="48" preserveAspectRatio="none" href="Slovenia.svg" />
+    <rect x="640" y="51" height="48" width="48" style="fill:#3F086F;" />
+    <text x="420" y="75" dominant-baseline="middle" fill="white" font-size="25">
+    Slovenia
+    </text>
+    <text x="665" y="75" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="23">
+    0
+    </text>
+
+    <rect x="360" y="100" width="330" height="50" style="fill: #502379; stroke-width:2;stroke:white;" />
+    <image x="361" y="101" height="48" width="48" preserveAspectRatio="none" href="Finland.svg" />
+    <rect x="640" y="101" height="48" width="48" style="fill:#3F086F;" />
+    <text x="420" y="125" dominant-baseline="middle" fill="white" font-size="25">
+    Finland
+    </text>
+    <text x="665" y="125" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="23">
+    0
+    </text>
+
+    <rect x="360" y="150" width="330" height="50" style="fill: #502379; stroke-width:2;stroke:white;" />
+    <image x="361" y="151" height="48" width="48" preserveAspectRatio="none" href="Moldova.svg" />
+    <rect x="640" y="151" height="48" width="48" style="fill:#3F086F;" />
+    <text x="420" y="175" dominant-baseline="middle" fill="white" font-size="25">
+    Moldova
+    </text>
+    <text x="665" y="175" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="23">
+    0
+    </text>
+
+    <rect x="360" y="200" width="330" height="50" style="fill: #502379; stroke-width:2;stroke:white;" />
+    <image x="361" y="201" height="48" width="48" preserveAspectRatio="none" href="Azerbaijan.svg" />
+    <rect x="640" y="201" height="48" width="48" style="fill:#3F086F;" />
+    <text x="420" y="225" dominant-baseline="middle" fill="white" font-size="25">
+    Azerbaijan
+    </text>
+    <text x="665" y="225" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="23">
+    0
+    </text>
+
+    <rect x="360" y="250" width="330" height="50" style="fill: #502379; stroke-width:2;stroke:white;" />
+    <image x="361" y="251" height="48" width="48" preserveAspectRatio="none" href="Australia.svg" />
+    <rect x="640" y="251" height="48" width="48" style="fill:#3F086F;" />
+    <text x="420" y="275" dominant-baseline="middle" fill="white" font-size="25">
+    Australia
+    </text>
+    <text x="665" y="275" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="23">
+    0
+    </text>
+
+    <rect x="360" y="300" width="330" height="50" style="fill: #502379; stroke-width:2;stroke:white;" />
+    <image x="361" y="301" height="48" width="48" preserveAspectRatio="none" href="Portugal.svg" />
+    <rect x="640" y="301" height="48" width="48" style="fill:#3F086F;" />
+    <text x="420" y="325" dominant-baseline="middle" fill="white" font-size="25">
+    Portugal
+    </text>
+    <text x="665" y="325" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="23">
+    0
+    </text>
+
+    <rect x="360" y="350" width="330" height="50" style="fill: #502379; stroke-width:2;stroke:white;" />
+    <image x="361" y="351" height="48" width="48" preserveAspectRatio="none" href="Luxembourg.svg" />
+    <rect x="640" y="351" height="48" width="48" style="fill:#3F086F;" />
+    <text x="420" y="375" dominant-baseline="middle" fill="white" font-size="25">
+    Luxembourg
+    </text>
+    <text x="665" y="375" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="23">
+    0
+    </text>
+</svg>

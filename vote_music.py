@@ -15,7 +15,7 @@ from data_contest.genSvg import generateSvgs
 ADMIN_ID = 619574125622722560
 
 try:
-    if "vote_music.p" in os.listdir():
+    if "vote_music.p" in os.listdir("data_contest"):
         JURY, infoVote, votes, msgVote = pickle.load(open("data_contest/vote_music.p", "rb"))
     else:
         raise Exception
@@ -24,12 +24,17 @@ except:
     #JURY = {ADMIN_ID}
     infoVote = {k: [] for k in JURY}
     votes = []
-    msgVote = [0]
-    songs = ["Cyprus", "Serbia", "Lithuania", "Ireland", "Ukraine", "Poland", "Croatia", "Iceland", "Slovenia", "Finland", "Moldova", "Azerbaijan", "Australia", "Portugal", "Luxembourg"]
+    msgVote = [0, 0, 0]
+
+#songs = ["Malta", "Albania", "Greece", "Switzerland", "Czechia", "Austria", "Denmark", "Armenia", "Latvia", "San Marino", "Georgia", "Belgium", "Estonia", "Israel", "Norway", "Netherlands"]
+songs = ["Sweden", "Ukraine", "Germany", "Luxembourg", "Israel", "Lithuania", "Spain", "Estonia", "Ireland", "Latvia", "Greece", "UK", "Norway", "Italy", "Serbia", "Finland", "Portugal", "Armenia", "Cyprus", "Switzerland", "Slovenia", "Croatia", "Georgia", "France", "Austria"]
 
 countryCodes = {"Cyprus": "CY", "Serbia": "RS", "Lithuania": "LT", "Ireland": "IE", "Ukraine": "UA", "Poland": "PL",
                 "Croatia": "HR", "Iceland": "IS", "Slovenia": "SI", "Finland": "FI", "Moldova": "MD", "Azerbaijan": "AZ",
-                "Australia": "AU", "Portugal": "PT", "Luxembourg": "LU"}
+                "Australia": "AU", "Portugal": "PT", "Luxembourg": "LU", "Malta": "MT", "Albania": "AL", "Greece": "GR",
+                "Switzerland": "CH", "Czechia": "CZ", "Austria": "AT", "Denmark": "DK", "Armenia": "AM", "Latvia": "LV",
+                "San Marino": "SM", "Georgia": "GE", "Belgium": "BE", "Estonia": "EE", "Israel": "IL", "Norway": "NO",
+                "Netherlands": "NL", "Sweden": "SE", "UK": "GB", "Germany": "DE", "France": "FR", "Italy": "IT", "Spain": "ES"}
 flags = {country: flag.flag(countryCodes[country]) for country in songs}
 flagsRev = {v: k for k, v in flags.items()}
 timeClickVote = dict()
@@ -56,7 +61,7 @@ def countVotes():
     tele = {e: 0 for e in songs}
 
     calPointsJury = lambda i: 12 if i == 0 else 10 if i == 1 else 10-i
-    pointsJury = lambda top: tuple((e, calPointsJury(i)) for i, e in enumerate(top))
+    pointsJury = lambda top: tuple((e, calPointsJury(i)) for i, e in enumerate(top[:10]))
     
     votesLoc = {i: x for i, x in enumerate(votes)}
     
@@ -197,29 +202,33 @@ class Select(nextcord.ui.Select):
             break
 
         infoUser = infoVote[self.parentView.userId]
-        print(infoUser == [])
-        if infoUser != []: print("tutu", infoUser[-1], infoUser)
         
         if infoUser == [] or infoUser[-1] is not None: infoUser.append(None)
         await interaction.response.send_message(content=f"Confirm {self.values[0]} as #{num}" + " (you can still select another song thanks to the previous message)", view=ButtonConfirm(self.values[0], self.remaining-1, self.parentView, self.listSongs))
 
-async def vote(user, jury: bool):
+async def vote(user):
     channel = await dmChannelUser(user)
 
     infoVote[user.id] = []
-    await channel.send("__**List of songs**__\n\n" + "\n".join(f"- {r} **{e}**" for r, e in songsLoc))
-    commandMessage = await channel.send("Select the #1 song you prefer", view=ViewSelect(songsLoc, 10 if jury else 3, user.id))
+    await channel.send("__**_Jury voting_**__\n\nList of songs:\n" + "\n".join(f"- {r} **{e}**" for r, e in songsLoc))
+    await channel.send("Select the #1 song you prefer.\n**Your jury vote will be counted only if you provide a full top 10.**\nYou can also cast non-jury votes by just reacting with country flags on the server.", view=ViewSelect(songsLoc, numberVotesJury, user.id))
 
-async def saveVotePublic(user, country):
-    nbVotesOfUser = sum(user.name == username and not isJury for (username, isJury, _) in reversed(votes))
+async def saveVotePublic(user, song):
+    votesOfUser = [song for (username, isJury, song) in reversed(votes) if user.name == username and not isJury]
+    nbVotesOfUser = len(votesOfUser)
+    otherVotesSong = len(list(filter(lambda x: x == song, votesOfUser)))
+    maxVotesPerSong = 3
+
     channel = await dmChannelUser(user)
 
-    if nbVotesOfUser < numberMaxVotesPublic:
-        votes.append((user.name, False, country))
-        await channel.send(f"Your vote for **{country.upper()}** has been properly saved.")
+    if otherVotesSong < maxVotesPerSong and nbVotesOfUser < numberMaxVotesPublic:
+        votes.append((user.name, False, song))
+        await channel.send(f"**Your televote for __{song.upper()}__ has been properly saved.**\nYou have {numberMaxVotesPublic-nbVotesOfUser-1} televotes left.")
         save()
+    elif otherVotesSong >= maxVotesPerSong:
+        await channel.send(f"**You tried to vote for __{song.upper()}__, but you reached the limit of {maxVotesPerSong} televotes for the same country.**\nThis vote has not been taken into account.")
     else:
-        await channel.send(f"You already reached the limit of {numberMaxVotesPublic} votes, you can no longer vote with a country flag.")
+        await channel.send(f"**You already reached the limit of {numberMaxVotesPublic} votes, you can no longer vote with a country flag.**")
 
 async def react_vote(messageId, user, guild, emojiHash, channel):
     if user.bot: return
@@ -227,29 +236,34 @@ async def react_vote(messageId, user, guild, emojiHash, channel):
     if (user.id in timeClickVote and time.time() - timeClickVote[user.id] > 60) or user.id not in timeClickVote:
         infoVote[user.id] = []
 
-    if messageId == msgVote[0]:
+    if messageId in msgVote:
         timeClickVote[user.id] = time.time()
-        if emojiHash == "🗳️" and messageId == msgVote[0] and infoVote[user.id] == []:
-            await vote(user, jury=True)
+        if emojiHash == "🗳️" and infoVote[user.id] == []:
+            await vote(user)
         elif emojiHash in flagsRev:
             await saveVotePublic(user, flagsRev[emojiHash])
             msg = await channel.fetch_message(messageId)
             await msg.remove_reaction(emojiHash, user)
 
 async def startVote(channel):
-    msg = await channel.send(f"**Jury vote**: React with 🗳️ to vote with a **full top 10** (if you vote again with 🗳️, only your latest top 10 counts as a jury vote)\n\n**Televote**: You can also make **unranked votes by simply reacting with country flags** (only your first {numberMaxVotesPublic} votes will be counted)")
-    await msg.add_reaction("🗳️")
+    msg = await channel.send(f"**__Televote__**\nYou can also make **unranked votes by simply reacting with country flags** (only your first {numberMaxVotesPublic} votes will be counted)")
+    msg2 = await channel.send("(Jury voting will also be available tonight, but only after the end of the last performance)")
     msgVote[0] = msg.id
+    msgVote[1] = msg2.id
+    msgVote[2] = channel.id
     save()
 
-    for country in songs:
+    for country in songs[:len(songs)//2]:
         await msg.add_reaction(flags[country])
+    for country in songs[len(songs)//2:]:
+        await msg2.add_reaction(flags[country])
 
 async def showResults(channel):
-    await channel.send("**Time for the results of the First Semi-Final!**")
+    await channel.send("**Time for the results of the Volt Europa Discord's vote for the Grand Final of the Eurovision Song Contest!**")
     await channel.send("Let's start with Jury votes…")
     await asyncio.sleep(5)
 
+    i = 0
     for filePath, currentVoter, nextVoter in generateSvgs():
         if currentVoter != "public":
             await channel.send(f"Thank you **{currentVoter}** for your votes <:meowhuggies_left:780807943704412241>", file=discord.File(filePath, filename="viewvotes.png"))
@@ -257,18 +271,30 @@ async def showResults(channel):
             await asyncio.sleep(5)
             if nextVoter is not None:
                 await channel.send(f"Our next voter is… {nextVoter}")
+                await asyncio.sleep(15)
+            elif currentVoter == "jurors":
+                await channel.send("**And now it is time to see the results of the Televote** :eyes:")
+                await asyncio.sleep(5)
+                await channel.send("So…")
+                await asyncio.sleep(5)
+                await channel.send("Waiting for the results right?")
+                await asyncio.sleep(5)
+                await channel.send("Okay, gimme a second")
                 await asyncio.sleep(10)
+                await channel.send("The points from the Televote will be announced in the ascending order of the Jury results")
+                await asyncio.sleep(5)
+                await channel.send("Here we go!")
+        elif nextVoter:
+            i += 1
+            country, points = nextVoter
+            await channel.send(f"**{points}** for **{country}** {flags[country]}", file=discord.File(filePath, filename="viewvotes.png"))
+            if i < 15:
+                await asyncio.sleep(10)
+            elif i < 20:
+                await asyncio.sleep(15)
+            else:
+                await asyncio.sleep(30)
         else:
-            await channel.send("**And now it is time to see the results of the Televote** :eyes:")
-            await asyncio.sleep(5)
-            await channel.send("So…")
-            await asyncio.sleep(5)
-            await channel.send("Waiting for the results right?")
-            await asyncio.sleep(5)
-            await channel.send("Okay, gimme a second")
-            await asyncio.sleep(10)
-            await channel.send("I promise it's worth waiting, just that it takes some time to gather all of those votes…")
-            await asyncio.sleep(20)
             await channel.send(f"**Here are the full results of the Televote!**\nThank you for your votes <:meowhuggies_left:780807943704412241>", file=discord.File(filePath, filename="viewvotes.png"))
 
 #MAIN ##########################################################################
@@ -309,6 +335,15 @@ def main():
     async def voteCommand(ctx):
         if ctx.author.id == ADMIN_ID:
             await startVote(ctx.channel)
+    
+    @bot.command(name = "start_jury")
+    async def startJuryCommand(ctx):
+        if ctx.author.id == ADMIN_ID and msgVote[0]:
+            channel = await bot.fetch_channel(msgVote[2])
+            msg = await channel.fetch_message(msgVote[1])
+            
+            await msg.edit(content = "__**Jury vote**__\nReact with 🗳️ to vote with a **full top 10** (if you vote again with 🗳️, only your latest top 10 counts as a jury vote)")
+            await msg.add_reaction("🗳️")
 
     @bot.command(name = "count")
     async def countCommand(ctx):
@@ -320,7 +355,8 @@ def main():
     async def stopCommand(ctx):
         if ctx.author.id == ADMIN_ID:
             msgVote[0] = None
-            await getVotesCommand(ctx)
+            msgVote[1] = None
+            msgVote[2] = None
     
     @bot.command(name = "get_votes")
     async def getVotesCommand(ctx):
