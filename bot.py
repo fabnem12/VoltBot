@@ -424,10 +424,16 @@ def main():
                 success_languages.append(role.name)
                 roles_to_add.append(role)
 
+        member_msg = ""
+        if "member" in ctx.message.content:
+            member_msg = f"\n\nTo get verified as Volt Member and get a <:volt:698844154418954311> purple role, DM (private message) your **full name** and **birth date** to <@{ctx.message.author.id}> or any other mod online.\n"
+
         og = await ctx.channel.fetch_message(reference.message_id)
+
         await og.author.add_roles(*roles_to_add)
         await assign_base_roles(og.author, ctx.guild)
-        await ctx.send(f"Welcome <@{og.author.id}>, you have full access now. I assigned you the following countries/regions: {', '.join(success_countries)}, and the following languages: {', '.join(success_languages)}. If something is wrong, let a moderator online know!")
+        await ctx.send(f"Welcome <@{og.author.id}>, you have full access now. I assigned you the following countries/regions: {', '.join(success_countries)}, and the following languages: {', '.join(success_languages)}.{member_msg}\n-# Feel free to ask mods for help. [Volt Europa](<https://volteuropa.org/>)")
+        await ctx.message.delete()
 
 
     @bot.command(name = "court")
