@@ -382,7 +382,7 @@ def main():
             ('🇸🇮', "Slovenia", ["Slovenian"]),
             ('🇪🇸', "Spain", ["Spanish"]),
             ('🇸🇪', "Sweden", ["Swedish"]),
-            ('🇨🇭', "Switzerland", ["German", "French", "Italian", "Romansh"]),
+            ('🇨🇭', "Switzerland", ["German", "French", "Italian"]),
             ('🇹🇷', "Turkey", ["Turkish"]),
             ('🇬🇧', "United Kingdom", []),
             ('🇺🇦', "Ukraine", ["Ukrainian", "Russian"]),
@@ -413,6 +413,8 @@ def main():
 
         roles_langs = set(roles_langs_add) - set(roles_langs_remove)
 
+
+
         roles_to_add = []
         success_countries = []
         success_languages = []
@@ -424,11 +426,15 @@ def main():
                 success_languages.append(role.name)
                 roles_to_add.append(role)
 
+        og = await ctx.channel.fetch_message(reference.message_id)
+
         member_msg = ""
         if "member" in ctx.message.content:
             member_msg = f"\n\nTo get verified as Volt Member and get a <:volt:698844154418954311> purple role, DM (private message) your **full name** and **birth date** to <@{ctx.message.author.id}> or any other mod online.\n"
 
-        og = await ctx.channel.fetch_message(reference.message_id)
+            volt_membership_claimed = [role for role in ctx.guild.roles if role.id == 715763050413686814]
+            assert len(volt_membership_claimed) == 1, "Volt Membership Claimed role not found"
+            await og.author.add_roles(volt_membership_claimed[0])
 
         await og.author.add_roles(*roles_to_add)
         await assign_base_roles(og.author, ctx.guild)
