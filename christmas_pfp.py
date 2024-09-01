@@ -761,6 +761,7 @@ async def resultats(bot):
 
             if threadId in votes1:
                 for voterId, subUrl in votes1[threadId]:
+                    if subUrl not in url2sub: continue
                     voteWeight = 1 if voterId != url2sub[subUrl][1] else 0.5
                     #when you vote for yourself, your vote is worth 0.5 only
 
@@ -771,7 +772,6 @@ async def resultats(bot):
                     votesDeanonymized[subUrl].add(voterId)
                 
             for i, (messageId, (subUrl, authorId, _)) in enumerate(subs.items()):
-                msg = await thread.fetch_message(messageId)
                 votesGlob, votesCont = globalVotes[subUrl], votesContestants[subUrl]
 
                 e = discord.Embed(description = f"This photo by <@{authorId}> got {votesGlob} upvotes, of which {votesCont} were from contestants")
@@ -791,7 +791,7 @@ async def resultats(bot):
 
         printF()
         printF()
-    
+    print(1)
     with open("results_submission_period.txt", "w") as f:
         f.write("".join(infoSubmissionPeriod))
     
@@ -814,6 +814,7 @@ async def resultats(bot):
 
         if channelId in votes1: #should be true but who knows
             for voterId, subUrl in votes1[channelId]:
+                if subUrl not in url2sub: continue
                 voteWeight = 1 if voterId != url2sub[subUrl][1] else 0.5
                 #when you vote for yourself, your vote is worth 0.5 only
 
@@ -824,7 +825,6 @@ async def resultats(bot):
                 votesDeanonymized[subUrl].add(voterId)
 
         for i, (messageId, (subUrl, authorId, _)) in enumerate(entries.items()):
-            msg = await channel.fetch_message(messageId)
             votesGlob, votesCont = globalVotes[subUrl], votesContestants[subUrl]
 
             e = discord.Embed(description = f"**Photo #{i+1} for {channel.mention}**\nSubmitted by <@{authorId}>, got {votesGlob} upvotes, of which {votesCont} were from contestants")
@@ -840,6 +840,7 @@ async def resultats(bot):
             printF()
         printF()
 
+    print(2)
     with open("results_semis.txt", "w") as f:
         f.write("".join(infoSemis))
 
@@ -889,11 +890,12 @@ async def resultats(bot):
         
         printF()
     
+    print(3)
     with open("results_gf.txt", "w") as f:
         f.write("".join(infoGF))
     
     channel = await bot.fetch_channel(grandFinalChannel)
-    await channel.send("Detailed deanonymized voting results:", attachments = [])
+    #await channel.send("Detailed deanonymized voting results:", attachments = [])
 
 #######################################################################
 
@@ -908,7 +910,8 @@ def main():
 
     @bot.event
     async def on_ready():
-        autoplanner.start()
+        #autoplanner.start()
+        await resultats(bot)
 
     @bot.event
     async def on_message(message):

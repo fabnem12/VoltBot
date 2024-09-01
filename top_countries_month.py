@@ -13,7 +13,7 @@ outputsPath = "outputs"
 
 #token = "" #bot token
 #prefix = ","
-byLength = False
+byLength = True
 
 multinationalMembers = dict()
 if not os.path.isfile("multinationals.p"):
@@ -110,16 +110,18 @@ async def countMessages(guild, bot):
     countries = {"Europe", 'Vatican', 'Ukraine', 'United Kingdom', 'Turkey', 'Switzerland', 'Sweden', 'Spain', 'Slovenia', 'Slovakia', 'Serbia', 'San Marino', 'Portugal', 'Russia', 'Romania', 'Poland', 'Norway', 'North Macedonia', 'Netherlands', 'Montenegro', 'Monaco', 'Moldova', 'Malta', 'Luxembourg', 'Lithuania', 'Liechtenstein', 'Latvia', 'Kazakhstan', 'Kosovo', 'Italy', 'Ireland', 'Iceland', 'Hungary', 'Greece', 'Georgia', 'Germany', 'France', 'Finland', 'Estonia', 'Denmark', 'Czechia', 'Cyprus', 'Croatia', 'Bulgaria', 'Bosnia & Herzegovina', 'Belgium', 'Belarus', 'Azerbaijan', 'Austria', 'Andorra', 'Armenia', 'Albania', 'Asia', 'Africa', 'North America', 'Oceania', 'South America'}
 
     async def readChannel(channel):
-        await bot.change_presence(activity=discord.Game(name=f"Counting messages in #{channel.name} - {totalNbMsgs[0]}+ messages counted so far"))
+        showName = channel.name if channel.category and channel.category.id != 567029949538500640 else "[redacted]"
+        print(showName)
+        await bot.change_presence(activity=discord.Game(name=f"Counting messages in #{showName} - {totalNbMsgs[0]}+ messages counted so far"))
 
         topChannel = dict()
-        topPerChannel[channel.id] = (topChannel, channel.name if isinstance(channel, discord.TextChannel) else f"{channel.parent.name}-{channel.name}")
+        topPerChannel[channel.id] = (topChannel, channel.name if not hasattr(channel, "parent") else f"{channel.parent.name}-{channel.name}")
 
         async for msg in channel.history(limit = None, after = timeLimitEarly, before = timeLimitLate): #let's read the messages sent last month in the current channel
             totalNbMsgs[0] += 1
 
             if totalNbMsgs[0] % 2000 == 0:
-                await bot.change_presence(activity=discord.Game(name=f"Counting messages in #{channel.name} - {totalNbMsgs[0]}+ messages counted so far"))
+                await bot.change_presence(activity=discord.Game(name=f"Counting messages in #{showName} - {totalNbMsgs[0]}+ messages counted so far"))
 
             author = msg.author
             try:
@@ -180,15 +182,18 @@ async def countMessages(guild, bot):
             else:
                 topChannel[author.id] += msgLength
 
-    for channel in filter((lambda x: "logs" not in x.name), guild.text_channels + sum([x.threads for x in guild.forum_channels], [])): #let's read all the channels
+    for channel in filter((lambda x: "logs" not in x.name and (hasattr(x, "history") or hasattr(x, "threads"))), guild.channels): #let's read all the channels
         try: #discord raises Forbidden error if the bot is not allowed to read messages in "channel"
             await readChannel(channel)
-
-            if hasattr(channel, "threads"):
-                for thread in channel.threads:
-                    await readChannel(thread)
         except Exception as e:
-            print(e)
+            print(channel.name, e)
+
+        if hasattr(channel, "threads"):
+            for thread in channel.threads:
+                try:
+                    await readChannel(thread)
+                except Exception as e:
+                    print(thread.name, e)
 
     with open(pathSave, "w") as f:
         f.write("Top countries (with mono-nationals only):\n\n")
