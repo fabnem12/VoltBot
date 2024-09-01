@@ -426,6 +426,8 @@ def main():
                 success_languages.append(role.name)
                 roles_to_add.append(role)
 
+        await ctx.message.delete()
+
         og = await ctx.channel.fetch_message(reference.message_id)
 
         member_msg = ""
@@ -439,7 +441,6 @@ def main():
         await og.author.add_roles(*roles_to_add)
         await assign_base_roles(og.author, ctx.guild)
         await ctx.send(f"Welcome <@{og.author.id}>, you have full access now. I assigned you the following countries/regions: {', '.join(success_countries)}, and the following languages: {', '.join(success_languages)}.{member_msg}\n-# Feel free to ask mods for help. [Volt Europa](<https://volteuropa.org/>)")
-        await ctx.message.delete()
 
 
     @bot.command(name = "court")
