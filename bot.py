@@ -390,7 +390,8 @@ def main():
             (':region_asia:', "asia", "Asia", []),
             (':region_africa:', "africa", "Africa", []),
             (':region_northamerica:', "us", "North America", []),
-            (':region_northamerica:', "ca", "North America", []),
+            (':region_northamerica:', "ca", "North America", ["French"]),
+            (':region_northamerica:', 'mx', "North America", ["Spanish"]),
             (':region_oceania:', "oceania", "Oceania", []),
             (':region_southamerica:', "south_america", "South America", [])
         ]
