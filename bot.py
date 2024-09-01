@@ -561,10 +561,11 @@ def main():
     @bot.command(name="màj")
     async def maj(ctx):
         if ctx.author.id == constantes.mainAdminId:
-            from subprocess import Popen, DEVNULL
+            import os
 
+            os.system('git pull')
             await ctx.message.add_reaction("👌")
-            Popen(["python3", "maj.py"], stdout = DEVNULL)
+            os.system('systemctl restart volt')
 
     @bot.command(name = "ban")
     async def bancommand(ctx):
