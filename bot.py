@@ -400,12 +400,10 @@ def main():
         reg = regex.compile(r"<(:\w+:)\d+>")
         countries += reg.findall(msgContent)
 
-        country_codes = set(x.lower() for x in msgContent[len(constantes.prefixVolt)+len("verify "):].split("+")[0].split("-")[0].split())
-
         roles_countries = []
         roles_langs_add = []
         for (emoji, country_code, country_name, languages) in db:
-            if emoji in countries or country_code in country_codes:
+            if emoji in countries or f" {country_code} " in msgContent:
                 roles_countries.append(country_name)
                 roles_langs_add.extend(languages)
 
