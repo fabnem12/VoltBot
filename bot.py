@@ -397,6 +397,7 @@ def main():
         ]
 
         msgContent = ctx.message.content
+        msgContentSplit = set(msgContent.split())
         countries = list(emojis.get(msgContent))
         reg = regex.compile(r"<(:\w+:)\d+>")
         countries += reg.findall(msgContent)
@@ -404,7 +405,7 @@ def main():
         roles_countries = []
         roles_langs_add = []
         for (emoji, country_code, country_name, languages) in db:
-            if emoji in countries or f" {country_code} " in msgContent:
+            if emoji in countries or country_code in msgContentSplit:
                 roles_countries.append(country_name)
                 roles_langs_add.extend(languages)
 
