@@ -188,6 +188,9 @@ async def introreact(messageId, guild, emojiHash, channel, user):
     peaceFingersEmoji = 712416440099143708
     if emojiHash != peaceFingersEmoji:
         return
+    
+    if not await isWelcome(user) and not await isMod(guild, user.id):
+        return
 
     message = await channel.fetch_message(messageId)
     await assign_base_roles(message.author, guild)
@@ -276,8 +279,8 @@ def main():
             emojiHash = traitement["emojiHash"]
             channel = traitement["channel"]
 
-            if await isWelcome(user) or await isMod(guild, user.id):
-                await introreact(messageId, guild, emojiHash, channel, user)
+            await introreact(messageId, guild, emojiHash, channel, user)
+            await reportreact(messageId, guild, emojiHash, channel, user)
 
     async def verif_word_train(message):
         """
