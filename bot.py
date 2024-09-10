@@ -125,7 +125,7 @@ async def exclusion(before, after):
         e = discord.Embed(title = "time out", timestamp = time, color = 0x502379)
         e.add_field(name = "User:", value = f"{after}", inline=False)
         e.add_field(name = "Reason:", value = reason, inline=False)
-        e.add_field(name = "Reponsible moderator:", value = f"{mod}", inline=False)
+        e.add_field(name = "Responsible moderator:", value = f"{mod}", inline=False)
         e.set_footer(text = f"ID: {after.id}")
 
         await modlog.send(embed = e)
@@ -465,7 +465,7 @@ def main():
         e = discord.Embed(title = "Courting", timestamp = datetime.datetime.fromtimestamp(time.time()), color = 0x502379)
         e.add_field(name = "User:", value = user.mention, inline=False)
         e.add_field(name = "Reason:", value = reason, inline=False)
-        e.add_field(name = "Reponsible moderator:", value = ctx.author.mention, inline=False)
+        e.add_field(name = "Responsible moderator:", value = ctx.author.mention, inline=False)
         e.set_footer(text = f"ID: {user.id}")
 
         await modlog.send(embed = e)
@@ -501,7 +501,7 @@ def main():
         e = discord.Embed(title = "Court case closed", timestamp = datetime.datetime.fromtimestamp(time.time()), color = 0x502379)
         e.add_field(name = "User:", value = user.mention, inline=False)
         e.add_field(name = "Reason:", value = reason, inline=False)
-        e.add_field(name = "Reponsible moderator:", value = ctx.author.mention, inline=False)
+        e.add_field(name = "Responsible moderator:", value = ctx.author.mention, inline=False)
         e.set_footer(text = f"ID: {user.id}")
 
         await modlog.send(embed = e)
