@@ -188,6 +188,9 @@ async def introreact(messageId, guild, emojiHash, channel, user):
     peaceFingersEmoji = 712416440099143708
     if emojiHash != peaceFingersEmoji:
         return
+    
+    if not await isWelcome(user) and not await isMod(guild, user.id):
+        return
 
     message = await channel.fetch_message(messageId)
     await assign_base_roles(message.author, guild)
@@ -276,8 +279,8 @@ def main():
             emojiHash = traitement["emojiHash"]
             channel = traitement["channel"]
 
-            if await isWelcome(user) or await isMod(guild, user.id):
-                await introreact(messageId, guild, emojiHash, channel, user)
+            await introreact(messageId, guild, emojiHash, channel, user)
+            await reportreact(messageId, guild, emojiHash, channel, user)
 
     async def verif_word_train(message):
         """
@@ -335,85 +338,87 @@ def main():
             return
 
         db = [
-            ('🇪🇺', "Europe", []),
-            ('🇦🇱', "Albania", ["Albanian"]),
-            ('🇦🇲', "Armenia", ["Armenian"]),
-            ('🇦🇩', "Andorra", ["Catalan", "Spanish", "French"]),
-            ('🇦🇹', "Austria", ["German"]),
-            ('🇦🇿', "Azerbeijan", ["Azerbaijani"]),
-            ('🇧🇾', "Belarus", ["Belarusian", "Russian"]),
-            ('🇧🇪', "Belgium", ["Dutch", "French", "German"]),
-            ('🇧🇦', "Bosnia & Herzegovina", ["Bosnian"]),
-            ('🇧🇬', "Bulgaria", ["Bulgarian"]),
-            ('🇭🇷', "Croatia", ["Croatian"]),
-            ('🇨🇾', "Cyprus", ["Greek", "Turkish"]),
-            ('🇨🇿', "Czechia", ["Czech"]),
-            ('🇩🇰', "Denmark", ["Danish"]),
-            ('🇪🇪', "Estonia", ["Estonian"]),
-            ('🇫🇮', "Finland", ["Finnish", "Swedish"]),
-            ('🇫🇷', "France", ["French"]),
-            ('🇩🇪', "Germany", ["German"]),
-            ('🇬🇪', "Georgia", ["Georgian"]),
-            ('🇬🇷', "Greece", ["Greek"]),
-            ('🇭🇺', "Hungary", ["Hungarian"]),
-            ('🇮🇸', "Iceland", ["Icelandic"]),
-            ('🇮🇪', "Ireland", ["Irish"]),
-            ('🇮🇹', "Italy", ["Italian"]),
-            ('🇽🇰', "Kosovo", ["Kosovar"]),
-            ('🇰🇿', "Kazakhstan", ["Kazakh"]),
-            ('🇱🇻', "Latvia", ["Latvian"]),
-            ('🇱🇮', "Liechteinstein", ["German"]),
-            ('🇱🇹', "Lithuania", ["Lithuanian"]),
-            ('🇱🇺', "Luxembourg", ["Luxembourgish", "French", "German"]),
-            ('🇲🇹', "Malta", ["Maltese"]),
-            ('🇲🇩', "Moldova", ["Romanian"]),
-            ('🇲🇨', "Monaco", ["French"]),
-            ('🇲🇪', "Montenegro", ["Montenegrin"]),
-            ('🇳🇱', "Netherlands", ["Dutch"]),
-            ('🇲🇰', "North Macedonia", ["Macedonian", "Albanian"]),
-            ('🇳🇴', "Norway", ["Norwegian"]),
-            ('🇵🇱', "Poland", ["Polish"]),
-            ('🇵🇹', "Portugal", ["Portuguese"]),
-            ('🇷🇴', "Romania", ["Romanian"]),
-            ('🇷🇺', "Russia", ["Russian"]),
-            ('🇸🇲', "San Marino", ["Italian"]),
-            ('🇷🇸', "Serbia", ["Serbian"]),
-            ('🇸🇰', "Slovakia", ["Slovak"]),
-            ('🇸🇮', "Slovenia", ["Slovenian"]),
-            ('🇪🇸', "Spain", ["Spanish"]),
-            ('🇸🇪', "Sweden", ["Swedish"]),
-            ('🇨🇭', "Switzerland", ["German", "French", "Italian"]),
-            ('🇹🇷', "Turkey", ["Turkish"]),
-            ('🇬🇧', "United Kingdom", []),
-            ('🇺🇦', "Ukraine", ["Ukrainian", "Russian"]),
-            ('🇻🇦', "Vatican", ["Italian"]),
-            (':region_asia:', "Asia", []),
-            (':region_africa:', "Africa", []),
-            (':region_northamerica:', "North America", []),
-            (':region_oceania:', "Oceania", []),
-            (':region_southamerica:', "South America", [])
+            ('🇪🇺', "eu", "Europe", []),
+            ('🇦🇱', "al", "Albania", ["Albanian"]),
+            ('🇦🇲', "am", "Armenia", ["Armenian"]),
+            ('🇦🇩', "ad", "Andorra", ["Catalan", "Spanish", "French"]),
+            ('🇦🇹', "at", "Austria", ["German"]),
+            ('🇦🇿', "az", "Azerbeijan", ["Azerbaijani"]),
+            ('🇧🇾', "by", "Belarus", ["Belarusian", "Russian"]),
+            ('🇧🇪', "be", "Belgium", ["Dutch", "French", "German"]),
+            ('🇧🇦', "ba", "Bosnia & Herzegovina", ["Bosnian"]),
+            ('🇧🇬', "bg", "Bulgaria", ["Bulgarian"]),
+            ('🇭🇷', "hr", "Croatia", ["Croatian"]),
+            ('🇨🇾', "cy", "Cyprus", ["Greek", "Turkish"]),
+            ('🇨🇿', "cz", "Czechia", ["Czech"]),
+            ('🇩🇰', "dk", "Denmark", ["Danish"]),
+            ('🇪🇪', "ee", "Estonia", ["Estonian"]),
+            ('🇫🇮', "fi", "Finland", ["Finnish", "Swedish"]),
+            ('🇫🇷', "fr", "France", ["French"]),
+            ('🇩🇪', "de", "Germany", ["German"]),
+            ('🇬🇪', "ge", "Georgia", ["Georgian"]),
+            ('🇬🇷', "gr", "Greece", ["Greek"]),
+            ('🇭🇺', "hu", "Hungary", ["Hungarian"]),
+            ('🇮🇸', "is", "Iceland", ["Icelandic"]),
+            ('🇮🇪', "ie", "Ireland", ["Irish"]),
+            ('🇮🇹', "it", "Italy", ["Italian"]),
+            ('🇽🇰', "xk", "Kosovo", ["Kosovar"]),
+            ('🇰🇿', "kz", "Kazakhstan", ["Kazakh"]),
+            ('🇱🇻', "lv", "Latvia", ["Latvian"]),
+            ('🇱🇮', "li", "Liechteinstein", ["German"]),
+            ('🇱🇹', "lt", "Lithuania", ["Lithuanian"]),
+            ('🇱🇺', "lu", "Luxembourg", ["Luxembourgish", "French", "German"]),
+            ('🇲🇹', "mt", "Malta", ["Maltese"]),
+            ('🇲🇩', "md", "Moldova", ["Romanian"]),
+            ('🇲🇨', "mc", "Monaco", ["French"]),
+            ('🇲🇪', "me", "Montenegro", ["Montenegrin"]),
+            ('🇳🇱', "nl", "Netherlands", ["Dutch"]),
+            ('🇲🇰', "mk", "North Macedonia", ["Macedonian", "Albanian"]),
+            ('🇳🇴', "no", "Norway", ["Norwegian"]),
+            ('🇵🇱', "pl", "Poland", ["Polish"]),
+            ('🇵🇹', "pt", "Portugal", ["Portuguese"]),
+            ('🇷🇴', "ro", "Romania", ["Romanian"]),
+            ('🇷🇺', "ru", "Russia", ["Russian"]),
+            ('🇸🇲', "sm", "San Marino", ["Italian"]),
+            ('🇷🇸', "rs", "Serbia", ["Serbian"]),
+            ('🇸🇰', "sk", "Slovakia", ["Slovak"]),
+            ('🇸🇮', "si", "Slovenia", ["Slovenian"]),
+            ('🇪🇸', "es", "Spain", ["Spanish"]),
+            ('🇸🇪', "se", "Sweden", ["Swedish"]),
+            ('🇨🇭', "ch", "Switzerland", ["German", "French", "Italian"]),
+            ('🇹🇷', "tr", "Turkey", ["Turkish"]),
+            ('🇬🇧', "gb", "United Kingdom", []),
+            ('🇺🇦', "ua", "Ukraine", ["Ukrainian", "Russian"]),
+            ('🇻🇦', "va", "Vatican", ["Italian"]),
+            (':region_asia:', "asia", "Asia", []),
+            (':region_africa:', "africa", "Africa", []),
+            (':region_northamerica:', "us", "North America", []),
+            (':region_northamerica:', "ca", "North America", ["French"]),
+            (':region_northamerica:', 'mx', "North America", ["Spanish"]),
+            (':region_oceania:', "oceania", "Oceania", []),
+            (':region_southamerica:', "south_america", "South America", [])
         ]
 
-        countries = list(emojis.get(ctx.message.content))
+        msgContent = ctx.message.content
+        msgContentSplit = set(msgContent.split())
+        countries = list(emojis.get(msgContent))
         reg = regex.compile(r"<(:\w+:)\d+>")
-        countries += reg.findall(ctx.message.content)
+        countries += reg.findall(msgContent)
 
         roles_countries = []
         roles_langs_add = []
-        for (emoji, country_name, languages) in db:
-            if emoji in countries:
+        for (emoji, country_code, country_name, languages) in db:
+            if emoji in countries or country_code in msgContentSplit:
                 roles_countries.append(country_name)
                 roles_langs_add.extend(languages)
 
         reg_lang_add = regex.compile(r"\+(\w+)")
-        roles_langs_add.extend(reg_lang_add.findall(ctx.message.content))
+        roles_langs_add.extend(reg_lang_add.findall(msgContent))
         roles_langs_add.append("English")
         reg_lang_remove = regex.compile(r"-(\w+)")
-        roles_langs_remove = reg_lang_remove.findall(ctx.message.content)
+        roles_langs_remove = reg_lang_remove.findall(msgContent)
 
         roles_langs = set(roles_langs_add) - set(roles_langs_remove)
-
-
 
         roles_to_add = []
         success_countries = []
@@ -431,7 +436,7 @@ def main():
         og = await ctx.channel.fetch_message(reference.message_id)
 
         member_msg = ""
-        if "member" in ctx.message.content:
+        if "member" in msgContent:
             member_msg = f"\n\nTo get verified as Volt Member and get a <:volt:698844154418954311> purple role, DM (private message) your **full name** and **birth date** to <@{ctx.message.author.id}> or any other mod online.\n"
 
             volt_membership_claimed = [role for role in ctx.guild.roles if role.id == 715763050413686814]
