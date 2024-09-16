@@ -179,8 +179,6 @@ async def setup(*channels: discord.TextChannel):
     submissions.update({c.id: dict() for c in channels})
 
     for channel in channels:
-        await channel.send(mapUrl)
-
         channelInfo = submissions[channel.id]
         for region in channelInfo.keys():
             txt = f"Photos from {region}"
@@ -188,6 +186,8 @@ async def setup(*channels: discord.TextChannel):
             thread = await msg.create_thread(name = txt, auto_archive_duration = 60 * 24 * 7) #1 week
             
             channelInfo[thread.id] = []
+        
+        await channel.send(mapUrl)
     
     saveData()
 
@@ -289,7 +289,7 @@ async def end_submissions(bot):
         count = 0
         for threadId, subs in channelInfo.items():
 
-            #count the votes of authors and global votes
+            #count the votes of contestants and global votes
             votesContestants, globalVotes = {subs[s][0]: 0 for s in subs}, {subs[s][0]: 0 for s in subs}
             url2sub = {subs[s][0]: subs[s] for s in subs}
 
@@ -304,7 +304,7 @@ async def end_submissions(bot):
                     globalVotes[subUrl] += voteWeight
             
             #find out which submissions got selected
-            #the best photo according to contestants, and the top 4 of the global vote (except the photo that got already selected)
+            #the best photo according to contestants (wildcard), and the top 4 of the global vote (except the photo that got already selected)
             if len(votesContestants):
                 selected = [max(votesContestants, key=lambda x: (votesContestants[x], globalVotes[x], -url2sub[x][2]))]
                 #the tie breaker for the vote among contestants is the global vote, then photos that got submitted earlier get the priority
@@ -471,7 +471,7 @@ async def start_gf2(bot):
 
     channel = await bot.fetch_channel(grandFinalChannel)
 
-    msg = await channel.send("**Vote for the winner of the 2023 edition of the Volt Photo Contest!**\nReact to this message with ✅ and the bot will ask you in DMs to rank the remaining 4 photos.\nYou have to rank them all for your vote to count.")
+    msg = await channel.send("**Vote for the winner of the 2024 edition of the Volt Photo Contest!**\nReact to this message with ✅ and the bot will ask you in DMs to rank the remaining 4 photos.\nYou have to rank them all for your vote to count.")
     await msg.add_reaction("✅")
 
 async def end_gf2(bot):
@@ -483,7 +483,7 @@ async def end_gf2(bot):
     winnerGF, _ = condorcet(votes2[grandFinalChannel], entriesInGF[grandFinalChannel])
     
     url, authorId, _ = winnerGF
-    e = discord.Embed(description = f"**Congratulations <@{authorId}>, you won the 2023 edition of the Photo Contest!**")
+    e = discord.Embed(description = f"**Congratulations <@{authorId}>, you won the 2024 edition of the Photo Contest!**")
     e.set_image(url = url)
 
     await channel.send(embed = e)
