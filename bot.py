@@ -276,6 +276,7 @@ def main():
             emojiHash = traitement["emojiHash"]
             channel = traitement["channel"]
 
+            await reportreact(messageId, guild, emojiHash, channel, user)
             if await isWelcome(user) or await isMod(guild, user.id):
                 await introreact(messageId, guild, emojiHash, channel, user)
 
@@ -566,6 +567,11 @@ def main():
             os.system('git pull')
             await ctx.message.add_reaction("👌")
             os.system('systemctl restart volt')
+        
+    @bot.command(name="user_history")
+    async def user_history(ctx, user: discord.Member):
+        async for msg in user.history(limit=None, before=datetime.datetime(2023, 8, 2), oldest_first=True):
+            print(msg.created_at, msg.content)
 
     @bot.command(name = "ban")
     async def bancommand(ctx):
