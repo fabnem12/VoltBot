@@ -29,7 +29,7 @@ stockePID()
 voltServer = 567021913210355745
 organizerId = 619574125622722560
 mapUrl = "https://cdn.discordapp.com/attachments/1288567770098696324/1290066333857353729/MapChart_Map_3.png?ex=66fb1b66&is=66f9c9e6&hm=71d9338f9a43d24f175ff65ae632ab143254cbdfea6d39206d787fd2e2252ce2&"
-regions = ["Northern Europe", "Western Europe", "Central Europe", "Eastern Europe", "Southern Europe", "Rest of the World"]
+regions = ["Northern Europe", "Western Europe", "Eastern Europe", "Southern Europe", "Rest of the World"]
 saveChannelId = 1157987716919734293
 grandFinalChannel = 1290061898779332681
 roleJury = 1290062262303854689
@@ -192,7 +192,7 @@ async def setup(*channels: discord.TextChannel):
 
     for channel in channels:
         channelInfo = submissions[channel.id]
-        for region in channelInfo.keys():
+        for region in regions:
             txt = f"Photos from {region}"
             msg = await channel.send(txt)
             thread = await msg.create_thread(name = txt, auto_archive_duration = 60 * 24 * 7) #1 week
