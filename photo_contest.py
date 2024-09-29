@@ -205,7 +205,7 @@ async def setup(*channels: discord.TextChannel):
 
 async def planner(now, bot):
     date, hour = (now.day, now.month), (now.hour, now.minute)
-    if hour == (23, 51) and date == (29, 9):
+    if hour == (23, 57) and date == (29, 9):
         await start_submissions(bot)
     if hour == (23, 59) and date == (6, 10):
         await end_submissions(bot)
@@ -275,7 +275,7 @@ async def start_submissions(bot):
     - the bot object (to recover the channels)
     """
 
-    txt = f"**Hey! The photo contest is starting now!**\n\nPlease read the submission rules in <#1155785196029890570>.\nOne can submit **up to 2 photos** in this thread. You can upvote **as many proposals as you want**, the 4 photos with most upvotes will reach the semi-final, as well as the photo with most upvotes from contestants.\n\nSubmit photos in this thread that are **related with its geographic area**."
+    txt = f"**Hey! The photo contest is starting now!**\n\nPlease read the submission rules in <#1288568050810880001>.\nOne can submit **up to 2 photos** in this thread. You can upvote **as many proposals as you want**, the 4 photos with most upvotes will reach the semi-final, as well as the photo with most upvotes from contestants.\n\nSubmit photos in this thread that are **related with its geographic area**."
     #TODO corriger le texte ici
     for channelInfo in submissions.values():
         for threadId in channelInfo.keys():
@@ -534,6 +534,7 @@ class ButtonConfirm(discord.ui.View):
             #e = discord.Embed(description = f"**You can upvote this photo with 👍**")
             nbSumissions = len(submissions[parent.id][thread.id]) + 1
             e = discord.Embed(description = f"**Submission #{nbSumissions}**")
+            print(self.url)
             e.set_image(url = self.url)
             msgVote = await thread.send(embed = e)
             #await msgVote.add_reaction("👍")
@@ -966,7 +967,7 @@ def main():
 
         if hasattr(message.channel, "parent") and message.channel.parent and message.channel.parent.id in submissions and ";submit" not in message.content:
             ref = discord.MessageReference(message_id = message.id, channel_id = message.channel.id)
-            await message.channel.send("This doesn't count as a valid submission, please use the `;submit` command as explained in <#1155785196029890570>", delete_after = 3600, reference = ref)
+            await message.channel.send("This doesn't count as a valid submission, please use the `;submit` command as explained in <#1288568050810880001>", delete_after = 3600, reference = ref)
 
     @bot.event
     async def on_raw_reaction_add(payload):
