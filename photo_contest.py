@@ -197,7 +197,7 @@ async def setup(*channels: discord.TextChannel):
             msg = await channel.send(txt)
             thread = await msg.create_thread(name = txt, auto_archive_duration = 60 * 24 * 7) #1 week
             
-            channelInfo[thread.id] = []
+            channelInfo[thread.id] = dict()
         
         await channel.send(mapUrl)
     
@@ -205,7 +205,7 @@ async def setup(*channels: discord.TextChannel):
 
 async def planner(now, bot):
     date, hour = (now.day, now.month), (now.hour, now.minute)
-    if hour == (23, 40) and date == (29, 9):
+    if hour == (23, 51) and date == (29, 9):
         await start_submissions(bot)
     if hour == (23, 59) and date == (6, 10):
         await end_submissions(bot)
