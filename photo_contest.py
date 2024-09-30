@@ -204,7 +204,7 @@ async def setup(*channels: discord.TextChannel):
 
 async def planner(now, bot):
     date, hour = (now.day, now.month), (now.hour, now.minute)
-    if hour == (8, 8) and date == (30, 9):
+    if hour == (8, 20) and date == (30, 9):
         await start_submissions(bot)
     if hour == (23, 59) and date == (6, 10):
         await end_submissions(bot)
