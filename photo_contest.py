@@ -238,7 +238,6 @@ async def resendFile(url: str, saveChannelId: int) -> str:
     filename = "-".join(url.replace("https://","").replace(":","").split("/")).split("?")[0]
     outputsPath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs")
     savePath = os.path.join(outputsPath, filename)
-    print(url)
     os.system(f'wget -O {savePath} "{url}"')
 
     channelRefresh = await bot.fetch_channel(saveChannelId)
@@ -532,7 +531,6 @@ class ButtonConfirm(discord.ui.View):
             #e = discord.Embed(description = f"**You can upvote this photo with 👍**")
             nbSumissions = len(submissions[parent.id][thread.id]) + 1
             e = discord.Embed(description = f"**Submission #{nbSumissions}**")
-            print(self.url)
             e.set_image(url = self.url)
             msgVote = await thread.send(embed = e)
             #await msgVote.add_reaction("👍")
@@ -619,7 +617,6 @@ async def submit(ctx, url: Optional[str]):
             if url is None:
                 if message.attachments != []:
                     url = message.attachments[0].url
-                    print([x.url for x in message.attachments])
             
             if url:
                 if "#" in url: url = url.split("#")[0]
@@ -969,7 +966,7 @@ def main():
                 ref = discord.MessageReference(message_id = message.id, channel_id = message.channel.id)
                 await message.channel.send(f"This doesn't count as a valid submission, please use the `{constantes.prefixVolt}submit` command as explained in <#1288568050810880001>. So I'm deleting your message.", delete_after = 3600, reference = ref)
                 await message.delete()
-            else:
+            elif "submit" not in message.content:
                 await submit(message, None)
 
     @bot.event
