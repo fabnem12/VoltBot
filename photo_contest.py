@@ -5,7 +5,6 @@ from nextcord.ext import commands, tasks
 import constantes
 import os
 import json
-import requests
 from arrow import utcnow
 from random import shuffle
 from typing import Dict, List, Tuple, Optional, Set, Any
@@ -28,7 +27,7 @@ stockePID()
 #constants
 voltServer = 567021913210355745
 organizerId = 619574125622722560
-mapUrl = "https://cdn.discordapp.com/attachments/1288567770098696324/1290066333857353729/MapChart_Map_3.png?ex=66fb1b66&is=66f9c9e6&hm=71d9338f9a43d24f175ff65ae632ab143254cbdfea6d39206d787fd2e2252ce2&"
+mapUrl = "https://cdn.discordapp.com/attachments/1288567770098696324/1290068767061053490/MapChart_Map_4.png?ex=66fb1daa&is=66f9cc2a&hm=766453dba0d1d6ed794cd3e6c14c9ec0a57aab6a42efdca73c97c074885d72b1&"
 regions = ["Northern Europe", "Western Europe", "Eastern Europe", "Southern Europe", "Rest of the World"]
 saveChannelId = 1157987716919734293
 grandFinalChannel = 1290061898779332681
@@ -205,7 +204,7 @@ async def setup(*channels: discord.TextChannel):
 
 async def planner(now, bot):
     date, hour = (now.day, now.month), (now.hour, now.minute)
-    if hour == (23, 57) and date == (29, 9):
+    if hour == (8, 8) and date == (30, 9):
         await start_submissions(bot)
     if hour == (23, 59) and date == (6, 10):
         await end_submissions(bot)
@@ -236,12 +235,11 @@ async def resendFile(url: str, saveChannelId: int) -> str:
 
     Returns the new url of the file
     """ #renvoi chez le serveur squadro pour avoir une image quelque part
-    filename = "-".join(url.replace(":","").split("/"))
+    filename = "-".join(url.replace("https://","").replace(":","").split("/")).split("?")[0]
     outputsPath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs")
     savePath = os.path.join(outputsPath, filename)
-    r = requests.get(url)
-    with open(savePath, "wb") as f:
-        f.write(r.content)
+    print(url)
+    os.system(f'wget -O {savePath} "{url}"')
 
     channelRefresh = await bot.fetch_channel(saveChannelId)
     msgTmp = await channelRefresh.send(file = discord.File(savePath))
@@ -605,9 +603,10 @@ async def submit(ctx, url: Optional[str]):
     """
 
     userId = ctx.author.id
+    message = ctx.message if hasattr(ctx, "message") else ctx
 
     if contestState[0] != 1:
-        await ctx.send("Sorry, you can't make submissions for the photo contest at the moment…")
+        await ctx.channel.send("Sorry, you can't make submissions for the photo contest at the moment…")
         return
     
     #submissions have to be made in threads
@@ -618,27 +617,27 @@ async def submit(ctx, url: Optional[str]):
             subsThread = submissions[parent.id][ctx.channel.id]
 
             if url is None:
-                if ctx.message.attachments != []:
-                    url = ctx.message.attachments[0].url
+                if message.attachments != []:
+                    url = message.attachments[0].url
+                    print([x.url for x in message.attachments])
             
             if url:
                 if "#" in url: url = url.split("#")[0]
-                if "?" in url: url = url.split("?")[0]
 
-                ref = discord.MessageReference(message_id = ctx.message.id, channel_id = ctx.channel.id)
+                ref = discord.MessageReference(message_id = message.id, channel_id = ctx.channel.id)
 
                 if checkNbSubsPerThread(subsThread, userId): #the user is still allowed to make submissions in that thread
                     newUrl = await resendFile(url, saveChannelId)
-                    await ctx.send("Are you sure that:\n- you took this photo yourself?\n- the photo somewhat fits the channel and the geographic area of the thread?\n- the photo has been taken **after October 9, 2023?**", view = ButtonConfirm(newUrl, userId, utcnow().timestamp(), ctx.message), reference = ref)
+                    await ctx.channel.send("Are you sure that:\n- you took this photo **__yourself__**?\n- the photo somewhat **fits the channel and the geographic area of the thread**?\n- the photo has been taken **after October 9, 2023?**", view = ButtonConfirm(newUrl, userId, utcnow().timestamp(), message), reference = ref)
                 else:
-                    await ctx.send("You are not allowed to submit more than 2 photos per thread. If you really want to submit this photo, withdraw one of your previous submissions by reacting to it with ❌, then submit this photo again.", reference = ref)
-                    await ctx.message.delete()
+                    await ctx.channel.send("You are not allowed to submit more than 2 photos per thread. If you really want to submit this photo, withdraw one of your previous submissions by reacting to it with ❌, then submit this photo again.", reference = ref)
+                    await message.delete()
             else:
-                await ctx.send("The submission seems to be invalid, I can't find a valid URL for your image.")
+                await ctx.channel.send("The submission seems to be invalid, I can't find a valid URL for your image.")
         else:
-            await ctx.send("Submissions for the photo contest are not allowed in this thread.")
+            await ctx.channel.send("Submissions for the photo contest are not allowed in this thread.")
     else:
-        await ctx.send("Submissions for the photo contest are not allowed in this channel.")
+        await ctx.channel.send("Submissions for the photo contest are not allowed in this channel.")
     
 async def withdraw_submission(messageId, user, guild, emojiHash, channel):
     """
@@ -965,9 +964,13 @@ def main():
 
         if message.author.bot: return
 
-        if hasattr(message.channel, "parent") and message.channel.parent and message.channel.parent.id in submissions and ";submit" not in message.content:
-            ref = discord.MessageReference(message_id = message.id, channel_id = message.channel.id)
-            await message.channel.send("This doesn't count as a valid submission, please use the `;submit` command as explained in <#1288568050810880001>", delete_after = 3600, reference = ref)
+        if hasattr(message.channel, "parent") and message.channel.parent and message.channel.parent.id in submissions:
+            if len(message.attachments) == 0:
+                ref = discord.MessageReference(message_id = message.id, channel_id = message.channel.id)
+                await message.channel.send(f"This doesn't count as a valid submission, please use the `{constantes.prefixVolt}submit` command as explained in <#1288568050810880001>. So I'm deleting your message.", delete_after = 3600, reference = ref)
+                await message.delete()
+            else:
+                await submit(message, None)
 
     @bot.event
     async def on_raw_reaction_add(payload):
