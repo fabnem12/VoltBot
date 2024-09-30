@@ -201,6 +201,15 @@ async def reportreact(messageId, guild, emojiHash, channel, user):
 
     await report(messageId, guild, channel, user)
 
+async def photocontestping(messageId, guild, emojiHash, channel, user):
+    pingEmoji = "📢"
+    photoContestPingRole = 1290196320602030090
+    if messageId != 1290205343158108203 or emojiHash != pingEmoji:
+        return
+    
+    member = await guild.fetch_member(user.id)
+    await member.add_roles(guild.get_role(photoContestPingRole))
+
 def main():
     intents = discord.Intents.all()
     bot = commands.Bot(command_prefix=constantes.prefixVolt, help_command=None, intents = intents)
@@ -277,6 +286,7 @@ def main():
             channel = traitement["channel"]
 
             await reportreact(messageId, guild, emojiHash, channel, user)
+            await photocontestping(messageId, guild, emojiHash, channel, user)
             if await isWelcome(user) or await isMod(guild, user.id):
                 await introreact(messageId, guild, emojiHash, channel, user)
 

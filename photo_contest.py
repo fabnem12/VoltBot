@@ -204,7 +204,7 @@ async def setup(*channels: discord.TextChannel):
 
 async def planner(now, bot):
     date, hour = (now.day, now.month), (now.hour, now.minute)
-    if hour == (8, 20) and date == (30, 9):
+    if hour == (9, 0) and date == (30, 9):
         await start_submissions(bot)
     if hour == (23, 59) and date == (6, 10):
         await end_submissions(bot)
@@ -272,7 +272,7 @@ async def start_submissions(bot):
     - the bot object (to recover the channels)
     """
 
-    txt = f"**Hey! The photo contest is starting now!**\n\nPlease read the submission rules in <#1288568050810880001>.\nOne can submit **up to 2 photos** in this thread. You can upvote **as many proposals as you want**, the 4 photos with most upvotes will reach the semi-final, as well as the photo with most upvotes from contestants.\n\nSubmit photos in this thread that are **related with its geographic area**."
+    txt = f"**Hey! The photo contest is starting now!**\n\nPlease read the submission rules in <#1288568050810880001>.\nOne can submit **up to 2 photos** in this thread.\n\nSubmit photos in this thread that are **related with its geographic area**."
     #TODO corriger le texte ici
     for channelInfo in submissions.values():
         for threadId in channelInfo.keys():
