@@ -625,7 +625,7 @@ async def submit(ctx, url: Optional[str]):
 
                 if checkNbSubsPerThread(subsThread, userId): #the user is still allowed to make submissions in that thread
                     newUrl = await resendFile(url, saveChannelId)
-                    await ctx.channel.send("Are you sure that:\n- you took this photo **__yourself__**?\n- the photo somewhat **fits the channel and the geographic area of the thread**?\n- the photo has been taken **after October 9, 2023?**", view = ButtonConfirm(newUrl, userId, utcnow().timestamp(), message), reference = ref)
+                    await ctx.channel.send("Are you sure that:\n- you took this photo **__yourself__**?\n- the photo somewhat **fits the channel and the geographic area of the thread**?\n- the photo **did NOT compete in previous editions of the contest**?", view = ButtonConfirm(newUrl, userId, utcnow().timestamp(), message), reference = ref)
                 else:
                     await ctx.channel.send("You are not allowed to submit more than 2 photos per thread. If you really want to submit this photo, withdraw one of your previous submissions by reacting to it with ❌, then submit this photo again.", reference = ref)
                     await message.delete()
