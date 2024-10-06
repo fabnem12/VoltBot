@@ -168,7 +168,7 @@ def condorcet(rankings: Dict[int, List[Submission]], candidates: List[Submission
         else:
             return borda_elim(), winsDuels
 
-def europoints(rankings: Dict[int, List[Submission]], candidates: List[Submission], howManyWinners: int, semiMode: bool = True) -> Tuple[List[Submission], Dict[Submission, int]]:
+def europoints(rankings: Dict[int, List[Submission]], candidates: List[Submission], howManyWinners: int, semiMode: bool = True, tieBreak = None) -> Tuple[List[Submission], Dict[Submission, int]]:
     points = [12, 10, 8, 7, 6, 5, 4, 3, 2, 1] if semiMode else [7, 5, 3, 2, 1]
 
     totalPoints = {candidate: 0 for candidate in candidates}
@@ -176,7 +176,11 @@ def europoints(rankings: Dict[int, List[Submission]], candidates: List[Submissio
         for nbPoints, candidate in enumerate(points, ranking):
             totalPoints[candidate] += nbPoints
         
-    return sorted(totalPoints.keys(), key=lambda x: totalPoints[x])[:howManyWinners], totalPoints
+    if tieBreak is None:
+        tieBreakLoc = lambda x: totalPoints[x]
+    else:
+        tieBreakLoc = lambda x: (totalPoints[x], tieBreak(x))
+    return sorted(totalPoints.keys(), key=tieBreakLoc)[:howManyWinners], totalPoints
 
 #######################################################################
 async def setup(*channels: discord.TextChannel):
@@ -208,6 +212,10 @@ async def planner(now, bot):
         await start_submissions(bot)
     if hour == (23, 59) and date == (6, 10):
         await end_submissions(bot)
+    if hour == (8, 0) and date == (7, 10):
+        await start_vote_threads(bot)
+    if hour == (21, 59) and date == (10, 10):
+        await end_vote_threads(bot)
     if hour == (8, 0) and date == (11, 10):
         await start_semis(bot)
     if hour == (21, 59) and date == (14, 10):
@@ -223,7 +231,7 @@ async def planner(now, bot):
     if hour == (21, 59) and date == (26, 10):
         #end of grand final
         await end_gf2(bot)
-    if hour == (22, 5) and date == (26, 10):
+    if hour == (22, 0) and date == (26, 10):
         await resultats(bot)
 
 async def resendFile(url: str, saveChannelId: int) -> str:
@@ -289,10 +297,62 @@ async def end_submissions(bot):
     - the bot object (to recover the channels)
     """
 
+    contestState[0] = 0 #neutral mode
+    saveData()
+
+    channel = await bot.fetch_channel(1288567833546199171) #photo-contest-chat
+    await channel.send("Submissions are closed, thanks for participating!\nVoting in threads will start in a few hours!")
+
+    #change the submission numbers since it got messed by withdrawn submissions
+    for channelInfo in submissions.values():
+        for threadId, subs in channelInfo.items():
+            thread = await bot.fetch_channel(threadId)
+
+            for i, (messageId, (subUrl, _, _)) in enumerate(sorted(subs.items(), key=lambda x: x[0])):
+                msg = await thread.fetch_message(messageId)
+                e = discord.Embed(description = f"**Submission #{i+1}**")
+                e.set_image(subUrl)
+                await msg.edit(embed = e)
+
+async def start_vote_threads(bot):
+    """Starts the vote in threads
+
+    Args:
+    - the bot object (to recover the channels)
+    """
+
+    for channelInfo in submissions.values():
+        for threadId, subs in channelInfo.items():
+            thread = await bot.fetch_channel(threadId)
+
+            if len(subs) <= 5:
+                await thread.send(f"There are {len(subs)} submissions in this thread, they are few enough to qualify directly for the semi-final!")
+            else:
+                for messageId in subs.keys():
+                    msg = await thread.fetch_message(messageId)
+                    await msg.add_reaction("👍")
+
+                if len(subs) >= 12: #special voting for jurors
+                    votes2[threadId] = dict()
+                    msgVoteJury = await thread.send(f"**Special voting for <@&{roleJury}>!**\nReact to this message with ✅, the bot will send you a message to vote with your top 10.\n(in addition to your top 10, you can still upvote photos above like regular users)")
+                    await msgVoteJury.add_reaction("✅")
+    
+    guild = bot.get_guild(voltServer)
+    channel = await guild.fetch_channel(1288567833546199171) #photo-contest-chat
+    await channel.send("<@&1290196320602030090> It's time to vote in submission threads! You can upvote as many photos as you want.")
+    
+    contestState[0] = 42 #mode "voting in threads"
+    saveData()
+
+async def end_vote_threads(bot):
+    """Ends the vote in threads
+
+    Args:
+    - the bot object (to recover the channels)
+    """
     contestants = set(authorId for channelInfo in submissions.values() for subs in channelInfo.values() for _, authorId, _ in subs.values())
     roleJury = bot.get_guild(voltServer).get_role(roleJury)
     jury = contestants | set(x.id for x in roleJury.members)
-    #TODO créer le rôle jury et mettre l'id ici
 
     for channelId, channelInfo in submissions.items():
         channel = await bot.fetch_channel(channelId)
@@ -300,7 +360,6 @@ async def end_submissions(bot):
 
         count = 0
         for threadId, subs in channelInfo.items():
-
             #count the votes of the jury and global votes
             votesJury, globalVotes = {subs[s][0]: 0 for s in subs}, {subs[s][0]: 0 for s in subs}
             url2sub = {subs[s][0]: subs[s] for s in subs}
@@ -317,11 +376,15 @@ async def end_submissions(bot):
             
             #find out which submissions got selected
             #the best 2 photos according to the jury (wildcard), and the top 3 of the global vote (except the photos that got already selected)
-            if len(votesJury):
-                selected = sorted(votesJury, key=lambda x: (votesJury[x], globalVotes[x], -url2sub[x][2]))[:2]
-                #the tie breaker for the vote among jurors is the global vote, then photos that got submitted earlier get the priority
+            if len(subs) < 12: #too few submissions for a detailed europoints jury vote
+                if len(votesJury):
+                    selected = sorted(votesJury, key=lambda x: (votesJury[x], globalVotes[x], -url2sub[x][2]))[:2]
+                    #the tie breaker for the vote among jurors is the global vote, then photos that got submitted earlier get the priority
+                else:
+                    selected = []
+
             else:
-                selected = []
+                selected = [x[0] for x in europoints(votes2[channelId], subs, 2, True, lambda x: (globalVotes[x], -url2sub[x][2]))[0]]
             selected += sorted(filter(lambda x: x not in selected, globalVotes), key=lambda x: (globalVotes[x], votesJury[x], -url2sub[x][2]), reverse=True)[:5-len(selected)]
             shuffle(selected) #we don't want to show the selected photos in the order of their number of votes
 
@@ -407,7 +470,7 @@ async def end_semis(bot):
         #the best photo 3 according to the jury, and the top 3 of the global vote (except the photos that got already selected)
         if len(votesContestants):
             #selected = [max(votesContestants, key=lambda x: (votesContestants[x], globalVotes[x], -url2sub[x][2]))]
-            selected = europoints(votes2[channelId], list(entries.values()), 3, True)
+            selected = [x[0] for x in europoints(votes2[channelId], list(entries.values()), 3, True, lambda x: (globalVotes[x], -url2sub[x][2]))[0]]
             #the tie breaker for the vote among contestants is the global vote, then photos that got submitted earlier get the priority
         else:
             selected = []
@@ -478,7 +541,6 @@ async def end_gf1(bot):
             pass
 
         entriesInGF[grandFinalChannel].append(winnerGF)
-
         saveData()
 
 async def start_gf2(bot):
@@ -547,7 +609,7 @@ class ButtonConfirm(discord.ui.View):
             await interaction.message.delete()
             await self.message.delete()
 
-def VoteGF(submissions: List[Submission], channelOfOrigin: int):
+def VoteGF(submissions: List[Submission], channelOfOrigin: int, nbToRank: Optional[int] = None):
     """
     Defines the view for voting in the Grand Final
     """
@@ -568,13 +630,13 @@ def VoteGF(submissions: List[Submission], channelOfOrigin: int):
             #trick to keep idPhoto correct, because otherwise it would be evaluated at the end of the loop
             #with i = 4 for all callbacks
 
-            affi = f"Photo #F{idPhoto+1}"
+            affi = f"Photo #{idPhoto+1}"
             @discord.ui.button(label = affi)
             async def callback(self, button: discord.ui.Button, interaction: discord.Interaction):
                 self.selectedItems.append((submissions[idPhoto], affi))
                 button.disabled = True
 
-                if len(self.selectedItems) < len(submissions):
+                if len(self.selectedItems) < (nbToRank or len(submissions)):
                     await interaction.message.edit(content = self.showSelected() + "\n" + f"Please click on a button below to select **your #{len(self.selectedItems)+1} preferred photo** (you have to rank all photos for your vote to be taken into account)", view=self)
                 else:
                     if channelOfOrigin not in votes2:
@@ -661,12 +723,8 @@ async def cast_vote_submission_period(messageId, user, guild, emojiHash, channel
     Save an upvote during the submission period.
     """
 
-    return
-    if emojiHash != "👍":
-        return
-
-    if contestState[0] != 1:
-        return #today is not a day of the submission period
+    if emojiHash != "👍" or contestState[0] != 42:
+        return #!=42 -> voting in threads is disabled
 
     if channel.parent and channel.parent.id in submissions:
         parentId = channel.parent.id
@@ -701,6 +759,39 @@ async def cast_vote_submission_period(messageId, user, guild, emojiHash, channel
             await (await channel.fetch_message(messageId)).remove_reaction("👍", user)
 
             saveData()
+
+async def cast_vote_jury(messageId, user, guild, emojiHash, channel):
+    """
+    Let a juror vote.
+    """
+
+    if emojiHash != "✅" or channel.id not in votes2 or contestState[0] != 42:
+        return
+    
+    dmChannel = await dmChannelUser(user)
+
+    roleJury = guild.get_role(roleJury)
+    if user.id not in (x.id for x in roleJury.members):
+        await dmChannel.send("You are not part of the jury, sorry.")
+        return
+
+    parentId = channel.parent.id
+    threadId = channel.id
+
+    subs = submissions[parentId][threadId]
+
+    await dmChannel.send(f"**You can vote for your top 10 from {channel.mention} among submissions made by others**\nBeware that you have to provide a full top 10 for your jury vote to count.")
+    validSubs = []
+    for i, sub in enumerate(subs.values()):
+        url, authorId, _ = sub
+        if authorId != user.id:
+            e = discord.Embed(description = f"Photo #{i+1}")
+            e.set_image(url = url)
+            await dmChannel.send(embed = e)
+
+            validSubs.append(sub)
+    
+    await dmChannel.send(view = VoteGF(validSubs, threadId, 10))
 
 async def cast_vote_semi(messageId, user, guild, emojiHash, channel):
     """
@@ -983,6 +1074,7 @@ def main():
         
             await withdraw_submission(messageId, user, guild, emojiHash, channel)
             await cast_vote_submission_period(messageId, user, guild, emojiHash, channel)
+            await cast_vote_jury(messageId, user, guild, emojiHash, channel)
             await cast_vote_semi(messageId, user, guild, emojiHash, channel)
             await cast_vote_gf(messageId, user, guild, emojiHash, channel)
     
