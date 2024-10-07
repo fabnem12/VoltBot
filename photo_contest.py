@@ -609,7 +609,7 @@ class ButtonConfirm(discord.ui.View):
             await interaction.message.delete()
             await self.message.delete()
 
-def VoteGF(submissions: List[Submission], channelOfOrigin: int, nbToRank: Optional[int] = None):
+def VoteGF(submissions: List[Submission], channelOfOrigin: int, labels: Optional[List[str]] = None, nbToRank: Optional[int] = None):
     """
     Defines the view for voting in the Grand Final
     """
@@ -630,7 +630,7 @@ def VoteGF(submissions: List[Submission], channelOfOrigin: int, nbToRank: Option
             #trick to keep idPhoto correct, because otherwise it would be evaluated at the end of the loop
             #with i = 4 for all callbacks
 
-            affi = f"Photo #{idPhoto+1}"
+            affi = f"Photo #{idPhoto+1}" if labels is None else labels[i]
             @discord.ui.button(label = affi)
             async def callback(self, button: discord.ui.Button, interaction: discord.Interaction):
                 self.selectedItems.append((submissions[idPhoto], affi))
@@ -782,16 +782,19 @@ async def cast_vote_jury(messageId, user, guild, emojiHash, channel):
 
     await dmChannel.send(f"**You can vote for your top 10 from {channel.mention} among submissions made by others**\nBeware that you have to provide a full top 10 for your jury vote to count.")
     validSubs = []
+    labels = []
     for i, sub in enumerate(subs.values()):
         url, authorId, _ = sub
         if authorId != user.id:
-            e = discord.Embed(description = f"Photo #{i+1}")
+            label = f"Photo #{i+1}"
+            e = discord.Embed(description = label)
             e.set_image(url = url)
             await dmChannel.send(embed = e)
 
             validSubs.append(sub)
+            labels.append(label)
     
-    await dmChannel.send(view = VoteGF(validSubs, threadId, 10))
+    await dmChannel.send(view = VoteGF(validSubs, threadId, labels, 10))
 
 async def cast_vote_semi(messageId, user, guild, emojiHash, channel):
     """
