@@ -633,6 +633,10 @@ def VoteGF(submissions: List[Submission], channelOfOrigin: int, labels: Optional
             affi = f"Photo #{idPhoto+1}" if labels is None else labels[i]
             @discord.ui.button(label = affi)
             async def callback(self, button: discord.ui.Button, interaction: discord.Interaction):
+                if len(self.selectedItems) == (nbToRank or len(submissions)):
+                    button.disabled = True
+                    return
+
                 self.selectedItems.append((submissions[idPhoto], affi))
                 button.disabled = True
 
