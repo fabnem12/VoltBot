@@ -637,7 +637,7 @@ def VoteGF(submissions: List[Submission], channelOfOrigin: int, labels: Optional
                 button.disabled = True
 
                 if len(self.selectedItems) < (nbToRank or len(submissions)):
-                    await interaction.message.edit(content = self.showSelected() + "\n" + f"Please click on a button below to select **your #{len(self.selectedItems)+1} preferred photo** (you have to rank all photos for your vote to be taken into account)", view=self)
+                    await interaction.message.edit(content = self.showSelected() + "\n" + f"Please click on a button below to select **your #{len(self.selectedItems)+1} preferred photo** (you have to rank {nbToRank or 'all'} photos for your vote to be taken into account)", view=self)
                 else:
                     if channelOfOrigin not in votes2:
                         votes2[channelOfOrigin] = dict()
@@ -751,9 +751,6 @@ async def cast_vote_submission_period(messageId, user, guild, emojiHash, channel
                 await (await dmChannelUser(user)).send(embed = e)
             except:
                 pass
-
-            #the following works because channel is a Thread
-            if user.id not in {x.id for x in channel.members}: await channel.add_user(user)
 
             #remove the reaction to make the vote invisible
             await (await channel.fetch_message(messageId)).remove_reaction("👍", user)
