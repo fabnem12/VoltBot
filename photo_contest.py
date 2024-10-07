@@ -311,7 +311,7 @@ async def end_submissions(bot):
             for i, (messageId, (subUrl, _, _)) in enumerate(sorted(subs.items(), key=lambda x: x[0])):
                 msg = await thread.fetch_message(messageId)
                 e = discord.Embed(description = f"**Submission #{i+1}**")
-                e.set_image(subUrl)
+                e.set_image(subUrl) 
                 await msg.edit(embed = e)
 
 async def start_vote_threads(bot):
@@ -770,8 +770,8 @@ async def cast_vote_jury(messageId, user, guild, emojiHash, channel):
     
     dmChannel = await dmChannelUser(user)
 
-    roleJury = guild.get_role(roleJury)
-    if user.id not in (x.id for x in roleJury.members):
+    roleJuryObj = guild.get_role(roleJury)
+    if user.id not in (x.id for x in roleJuryObj.members):
         await dmChannel.send("You are not part of the jury, sorry.")
         return
 
