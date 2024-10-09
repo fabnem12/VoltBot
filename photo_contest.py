@@ -753,7 +753,7 @@ async def cast_vote_submission_period(messageId, user, guild, emojiHash, channel
             nbVotes = emojiNb[emojiHash]
             votes1[channelId] += [voteInfo] * nbVotes
 
-            e = discord.Ember(description = f"I saved {nbVotes} points from you for this photo")
+            e = discord.Embed(description = f"I saved {nbVotes} points from you for this photo")
             e.set_image(url = url)
             try:
                 await (await dmChannelUser(user)).send(embed = e)
@@ -837,7 +837,7 @@ async def cast_vote_semi(messageId, user, guild, emojiHash, channel):
             
             votes1[channelId] += [voteInfo] * nbVotes
 
-            e = discord.Ember(description = f"I saved {nbVotes} points from you for this photo")
+            e = discord.Embed(description = f"I saved {nbVotes} points from you for this photo")
             e.set_image(url = url)
             try:
                 await (await dmChannelUser(user)).send(embed = e)
