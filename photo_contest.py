@@ -737,6 +737,9 @@ async def cast_vote_submission_period(messageId, user, guild, emojiHash, channel
         channelId = channel.id
 
         if channelId in submissions[parentId] and messageId in submissions[parentId][channelId]:
+            #remove the reaction to make the vote invisible
+            await (await channel.fetch_message(messageId)).remove_reaction(emojiHash, user)
+
             url, authorId, _ = submissions[parentId][channelId][messageId]
             if authorId == user.id: #votes for one's own entry are forbidden
                 return
@@ -753,15 +756,12 @@ async def cast_vote_submission_period(messageId, user, guild, emojiHash, channel
             nbVotes = emojiNb[emojiHash]
             votes1[channelId] += [voteInfo] * nbVotes
 
-            e = discord.Embed(description = f"I saved {nbVotes} points from you for this photo")
+            e = discord.Embed(description = f"I saved {nbVotes} point{'s' if nbVotes != 1 else ''} from you for this photo")
             e.set_image(url = url)
             try:
                 await (await dmChannelUser(user)).send(embed = e)
             except:
                 pass
-
-            #remove the reaction to make the vote invisible
-            await (await channel.fetch_message(messageId)).remove_reaction(emojiHash, user)
 
             saveData()
 
@@ -818,12 +818,12 @@ async def cast_vote_semi(messageId, user, guild, emojiHash, channel):
 
     if emojiHash in emojiNb:
         if channelId in entriesInSemis and messageId in entriesInSemis[channelId]:
+            #remove the reaction to make the vote invisible
+            await (await channel.fetch_message(messageId)).remove_reaction(emojiHash, user)
+            
             submission = entriesInSemis[channelId][messageId]
             url, authorId, _ = submission
             if authorId == user.id: return #votes for one's own entry are forbidden
-            
-            #remove the reaction to make the vote invisible
-            await (await channel.fetch_message(messageId)).remove_reaction(emojiHash, user)
 
             voteInfo = (user.id, url)
 
