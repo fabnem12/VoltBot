@@ -7,7 +7,7 @@ import os
 import json
 from arrow import utcnow
 from random import shuffle
-from typing import Dict, List, Tuple, Optional, Set, Any
+from typing import Dict, List, Tuple, Optional
 
 #temporary way to update the bot
 def stockePID():
@@ -41,7 +41,7 @@ Vote = Tuple[int, str] #voter_id, url of the submission
 submissions: Dict[int, Dict[int, Dict[int, Submission]]] = dict() #{channel_id: {thread_id: {message_id: submission}}}
 entriesInSemis: Dict[int, Dict[int, Submission]] = dict() #{channel_id: {message_id: submission}}
 entriesInGF: Dict[int, List[Submission]] = dict() #{channel_of_origin_id: [submissions]} #channel_of_origin_id is grandFinalChannel for the last 4
-votes1: Dict[int, Set[Vote]] = dict() #{thread_id: list of votes}
+votes1: Dict[int, List[Vote]] = dict() #{thread_id: list of votes}
 votes2: Dict[int, Dict[int, List[Submission]]] = dict() #{channel_id: {voter_id: submissions}}
 contestState: List[int] = [0] #0 for inactive, 1 for submission period, 2-3-4-5 for semi-finals (depending on the order of channels), 6 for the first final, 7 for the grand final
 contestData = (submissions, entriesInSemis, entriesInGF, votes1, votes2, contestState)
@@ -54,7 +54,7 @@ if "photo_contest_data.json" in os.listdir():
     submissions = {int(i): {int(j): {int(k): tuple(w) for k, w in v.items()} for j, v in entries.items()} for i, entries in submissions.items()}
     entriesInSemis = {int(i): {int(j): tuple(w) for j, w in channels.items()} for i, channels in entriesInSemis.items()}
     entriesInGF = {int(i): [tuple(x) for x in listSubs] for i, listSubs in entriesInGF.items()}
-    votes1 = {int(k): {tuple(x) for x in v} for k, v in votes1.items()} #for the jsonification, the set needs to be stored as a list. so we have to convert it here
+    votes1 = {int(k): [tuple(x) for x in v] for k, v in votes1.items()} #for the jsonification, the set needs to be stored as a list. so we have to convert it here
     votes2 = {int(i): {int(j): [tuple(x) for x in v] for j, v in val.items()} for i, val in votes2.items()}
 
 #-roles
@@ -727,29 +727,33 @@ async def cast_vote_submission_period(messageId, user, guild, emojiHash, channel
     Save an upvote during the submission period.
     """
 
-    if emojiHash != "👍" or contestState[0] != 42:
+    emojiNb = {"0️⃣": 0, "1️⃣": 1, "2️⃣": 2, "3️⃣": 3}
+
+    if emojiHash not in emojiNb or contestState[0] != 42:
         return #!=42 -> voting in threads is disabled
 
-    if channel.parent and channel.parent.id in submissions:
+    if hasattr(channel, "parent") and channel.parent.id in submissions:
         parentId = channel.parent.id
         channelId = channel.id
 
         if channelId in submissions[parentId] and messageId in submissions[parentId][channelId]:
-            url, _, _ = submissions[parentId][channelId][messageId]
+            url, authorId, _ = submissions[parentId][channelId][messageId]
+            if authorId == user.id: #votes for one's own entry are forbidden
+                return
 
             if channelId not in votes1:
-                votes1[channelId] = set()
+                votes1[channelId] = []
             
-            #register the vote or withdraw it, then tell the voter
+            #withdraw past votes of the user, then add the appropriate number, then tell the voter
             voteInfo = (user.id, url)
 
-            if voteInfo not in votes1[channelId]:
-                votes1[channelId].add(voteInfo)
-                e = discord.Embed(description = "Your upvote for this photo has been saved. You can withdraw it by reacting again with 👍 (in the server, not here).")
-            else:
+            while voteInfo in votes1[channelId]:
                 votes1[channelId].remove(voteInfo)
-                e = discord.Embed(description = "Your upvote for this photo has been properly withdrawn.")
-            
+
+            nbVotes = emojiNb[emojiHash]
+            votes1[channelId] += [voteInfo] * nbVotes
+
+            e = discord.Ember(description = f"I saved {nbVotes} points from you for this photo")
             e.set_image(url = url)
             try:
                 await (await dmChannelUser(user)).send(embed = e)
@@ -757,7 +761,7 @@ async def cast_vote_submission_period(messageId, user, guild, emojiHash, channel
                 pass
 
             #remove the reaction to make the vote invisible
-            await (await channel.fetch_message(messageId)).remove_reaction("👍", user)
+            await (await channel.fetch_message(messageId)).remove_reaction(emojiHash, user)
 
             saveData()
 
@@ -805,31 +809,35 @@ async def cast_vote_semi(messageId, user, guild, emojiHash, channel):
     if contestState[0] != 2:
         return #the semi-finals are not open
 
-    if emojiHash != "👍" and emojiHash != "✅":
+    emojiNb = {"0️⃣": 0, "1️⃣": 1, "2️⃣": 2, "3️⃣": 3}
+
+    if emojiHash not in emojiNb and emojiHash != "✅":
         return
 
     channelId = channel.id
 
-    if emojiHash == "👍":
+    if emojiHash in emojiNb:
         if channelId in entriesInSemis and messageId in entriesInSemis[channelId]:
             submission = entriesInSemis[channelId][messageId]
-            url, _, _ = submission
+            url, authorId, _ = submission
+            if authorId == user.id: return #votes for one's own entry are forbidden
             
             #remove the reaction to make the vote invisible
-            await (await channel.fetch_message(messageId)).remove_reaction("👍", user)
+            await (await channel.fetch_message(messageId)).remove_reaction(emojiHash, user)
 
             voteInfo = (user.id, url)
 
             if channelId not in votes1:
                 votes1[channelId] = set()
 
-            if voteInfo not in votes1[channelId]:
-                votes1[channelId].add(voteInfo)
-                e = discord.Embed(description = "Your upvote for this photo has been saved. You can withdraw it by reacting again with 👍 (in the server, not here).")
-            else:
+            #remove the current votes and add the right number of votes
+            nbVotes = emojiNb[emojiHash]
+            while voteInfo in votes1[channelId]:
                 votes1[channelId].remove(voteInfo)
-                e = discord.Embed(description = "Your upvote for this photo has been properly withdrawn.")
             
+            votes1[channelId] += [voteInfo] * nbVotes
+
+            e = discord.Ember(description = f"I saved {nbVotes} points from you for this photo")
             e.set_image(url = url)
             try:
                 await (await dmChannelUser(user)).send(embed = e)
@@ -845,8 +853,31 @@ async def cast_vote_semi(messageId, user, guild, emojiHash, channel):
             return
         else:
             #send the voting information
-            pass
-            #TODO
+            dmChannel = await dmChannelUser(user)
+
+            roleJuryObj = guild.get_role(roleJury)
+            if user.id not in (x.id for x in roleJuryObj.members):
+                await dmChannel.send("You are not part of the jury, sorry.")
+                return
+
+            if channelId in entriesInSemis:
+                subs = list(entriesInSemis[channelId].values())
+
+                await dmChannel.send(f"**You can vote for your top 10 from {channel.mention} among submissions made by others**\nBeware that you have to provide a full top 10 for your jury vote to count.")
+                validSubs: List[Submission] = []
+                labels: List[str] = []
+                for i, sub in enumerate(subs):
+                    url, authorId, _ = sub
+                    if authorId != user.id:
+                        label = f"Photo #{i+1}"
+                        e = discord.Embed(description = label)
+                        e.set_image(url = url)
+                        await dmChannel.send(embed = e)
+
+                        validSubs.append(sub)
+                        labels.append(label)
+                
+                await dmChannel.send(view = VoteGF(validSubs, channelId, labels, 10))
     
 async def cast_vote_gf(messageId, user, guild, emojiHash, channel):
     """
@@ -897,21 +928,22 @@ async def resultats(bot):
             #count the votes of authors and global votes
             votesContestants, globalVotes = {subs[s][0]: 0 for s in subs}, {subs[s][0]: 0 for s in subs}
             url2sub = {subs[s][0]: subs[s] for s in subs}
-            votesDeanonymized: Dict[str, Set[int]] = {subs[s][0]: set() for s in subs} #{sub_url: {user id of voters}}
+            votesDeanonymized: Dict[str, List[int]] = {subs[s][0]: [] for s in subs} #{sub_url: {user id of voters}}
 
             if threadId in votes1:
                 for voterId, subUrl in votes1[threadId]:
-                    voteWeight = 1 if voterId != url2sub[subUrl][1] else 0.5
-                    #when you vote for yourself, your vote is worth 0.5 only
+                    voteWeight = 1 if voterId != url2sub[subUrl][1] else 0
+                    #self-votes don't count
+                    #this can happen because they were allowed at the beginning of the contest
+                    #so there are already self-votes in the registry
 
                     if voterId in contestants:
                         votesContestants[subUrl] += voteWeight
                     
                     globalVotes[subUrl] += voteWeight
-                    votesDeanonymized[subUrl].add(voterId)
+                    votesDeanonymized[subUrl].append(voterId)
                 
             for i, (messageId, (subUrl, authorId, _)) in enumerate(subs.items()):
-                msg = await thread.fetch_message(messageId)
                 votesGlob, votesCont = globalVotes[subUrl], votesContestants[subUrl]
 
                 e = discord.Embed(description = f"This photo by <@{authorId}> got {votesGlob} upvotes, of which {votesCont} were from contestants")
@@ -950,7 +982,7 @@ async def resultats(bot):
         #count the votes of authors and global votes
         votesContestants, globalVotes = {v[0]: 0 for v in entries.values()}, {v[0]: 0 for v in entries.values()}
         url2sub = {v[0]: v for v in entries.values()}
-        votesDeanonymized: Dict[str, Set[int]] = {v[0]: set() for v in entries.values()} #{sub_url: {user id of voters}}
+        votesDeanonymized: Dict[str, List[int]] = {v[0]: [] for v in entries.values()} #{sub_url: {user id of voters}}
 
         if channelId in votes1: #should be true but who knows
             for voterId, subUrl in votes1[channelId]:
@@ -961,7 +993,7 @@ async def resultats(bot):
                     votesContestants[subUrl] += voteWeight
                 
                 globalVotes[subUrl] += voteWeight
-                votesDeanonymized[subUrl].add(voterId)
+                votesDeanonymized[subUrl].append(voterId)
 
         for i, (messageId, (subUrl, authorId, _)) in enumerate(entries.items()):
             msg = await channel.fetch_message(messageId)
@@ -1049,6 +1081,19 @@ def main():
     @bot.event
     async def on_ready():
         autoplanner.start()
+
+        emojiNb = {"0️⃣": 0, "1️⃣": 1, "2️⃣": 2, "3️⃣": 3}
+        for key, channelInfo in submissions.items():
+            print(key)
+            for threadId, subs in channelInfo.items():
+                print("--", threadId)
+                thread = await bot.fetch_channel(threadId)
+
+                if len(subs) > 5:
+                    for messageId in subs.keys():
+                        msg = await thread.fetch_message(messageId)
+                        await msg.remove_reaction("👍", bot.user)
+                        for emo in emojiNb: await msg.add_reaction(emo)
 
     @bot.event
     async def on_message(message):
