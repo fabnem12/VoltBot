@@ -1082,19 +1082,6 @@ def main():
     async def on_ready():
         autoplanner.start()
 
-        emojiNb = {"0️⃣": 0, "1️⃣": 1, "2️⃣": 2, "3️⃣": 3}
-        for key, channelInfo in submissions.items():
-            print(key)
-            for threadId, subs in channelInfo.items():
-                print("--", threadId)
-                thread = await bot.fetch_channel(threadId)
-
-                if len(subs) > 5:
-                    for messageId in subs.keys():
-                        msg = await thread.fetch_message(messageId)
-                        await msg.remove_reaction("👍", bot.user)
-                        for emo in emojiNb: await msg.add_reaction(emo)
-
     @bot.event
     async def on_message(message):
         await bot.process_commands(message)
