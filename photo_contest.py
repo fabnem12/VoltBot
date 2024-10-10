@@ -214,24 +214,24 @@ async def planner(now, bot):
         await end_submissions(bot)
     if hour == (8, 0) and date == (7, 10):
         await start_vote_threads(bot)
-    if hour == (21, 59) and date == (10, 10):
+    if hour == (21, 59) and date == (12, 10):
         await end_vote_threads(bot)
-    if hour == (8, 0) and date == (11, 10):
+    if hour == (8, 0) and date == (13, 10):
         await start_semis(bot)
-    if hour == (21, 59) and date == (14, 10):
+    if hour == (21, 59) and date == (16, 10):
         await end_semis(bot)
-    if hour == (8, 0) and date == (15, 10):
+    if hour == (8, 0) and date == (17, 10):
         await start_gf1(bot)
-    if hour == (21, 59) and date == (20, 10):
+    if hour == (21, 59) and date == (22, 10):
         #end of best of each semi-final
         await end_gf1(bot)
-    if hour == (8, 0) and date == (21, 10):
+    if hour == (8, 0) and date == (23, 10):
         #grand final
         await start_gf2(bot)
-    if hour == (21, 59) and date == (26, 10):
+    if hour == (21, 59) and date == (28, 10):
         #end of grand final
         await end_gf2(bot)
-    if hour == (22, 0) and date == (26, 10):
+    if hour == (22, 0) and date == (28, 10):
         await resultats(bot)
 
 async def resendFile(url: str, saveChannelId: int) -> str:
@@ -1081,6 +1081,17 @@ def main():
     @bot.event
     async def on_ready():
         autoplanner.start()
+
+        emojiNb = {"0️⃣": 0, "1️⃣": 1, "2️⃣": 2, "3️⃣": 3}
+
+        thread = await bot.fetch_channel(1290206056856817715)
+        print("you")
+        for messageId in submissions[1290061801974661251][1290206056856817715].keys():
+            msg = await thread.fetch_message(messageId)
+            await msg.remove_reaction("👍", bot.user)
+            for emo in emojiNb:
+                await msg.add_reaction(emo)
+        print("yay")
 
     @bot.event
     async def on_message(message):
