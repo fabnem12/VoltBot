@@ -350,9 +350,12 @@ async def end_vote_threads(bot):
     Args:
     - the bot object (to recover the channels)
     """
-    contestants = set(authorId for channelInfo in submissions.values() for subs in channelInfo.values() for _, authorId, _ in subs.values())
+    
     roleJury = bot.get_guild(voltServer).get_role(roleJury)
-    jury = contestants | set(x.id for x in roleJury.members)
+    jury = set(x.id for x in roleJury.members)
+
+    contestState[0] = 0 #neutral mode, voting is no longer allowed
+    saveData()
 
     for channelId, channelInfo in submissions.items():
         channel = await bot.fetch_channel(channelId)
@@ -366,8 +369,8 @@ async def end_vote_threads(bot):
 
             if threadId in votes1:
                 for voterId, subUrl in votes1[threadId]:
-                    voteWeight = 1 if voterId != url2sub[subUrl][1] else 0.5
-                    #when you vote for yourself, your vote is worth 0.5 only
+                    voteWeight = 1 if voterId != url2sub[subUrl][1] else 0
+                    #self-votes are no longer allowed. but some may still be present in the data
 
                     if voterId in jury:
                         votesJury[subUrl] += voteWeight
@@ -384,7 +387,11 @@ async def end_vote_threads(bot):
                     selected = []
 
             else:
-                selected = [x[0] for x in europoints(votes2[channelId], subs, 2, True, lambda x: (globalVotes[x], -url2sub[x][2]))[0]]
+                #vote according to eurovision points for jurors, the global vote is still used as the tie breaker, then precedence
+                top, scores = europoints(votes2[channelId], list(subs.values()), 2, True, lambda x: (globalVotes[x], -url2sub[x][2]))
+                selected = [x[0] for x in top]
+                votesJury = {url: nbPoints for (url, _, _), nbPoints in scores.items()}
+
             selected += sorted(filter(lambda x: x not in selected, globalVotes), key=lambda x: (globalVotes[x], votesJury[x], -url2sub[x][2]), reverse=True)[:5-len(selected)]
             shuffle(selected) #we don't want to show the selected photos in the order of their number of votes
 
@@ -442,39 +449,53 @@ async def end_semis(bot):
     - bot, the object representing the bot
     """
 
+    contestState[0] = 0 #neutral mode, voting is no longer allowed
+    saveData()
+
+    roleJury = bot.get_guild(voltServer).get_role(roleJury)
+    jury = set(x.id for x in roleJury.members)
+
     for channelId, entries in entriesInSemis.items():
         if channelId == grandFinalChannel: continue
 
         entriesInGF[channelId] = []
 
-        contestants = set(authorId for channelInfo in submissions.values() for subs in channelInfo.values() for _, authorId, _ in subs.values())
         channel = await bot.fetch_channel(channelId)
         count = 0
 
         #count the upvotes
         #the votes of contestants and jurors are used as a tie breaker
-        votesContestants, globalVotes = {v[0]: 0 for v in entries.values()}, {v[0]: 0 for v in entries.values()}
+        votesJury, globalVotes = {v[0]: 0 for v in entries.values()}, {v[0]: 0 for v in entries.values()}
         url2sub = {v[0]: v for v in entries.values()}
 
         if channelId in votes1: #should be true but who knows
             for voterId, subUrl in votes1[channelId]:
-                voteWeight = 1 if voterId != url2sub[subUrl][1] else 0.5
-                #when you vote for yourself, your vote is worth 0.5 only
+                voteWeight = 1 if voterId != url2sub[subUrl][1] else 0
+                #self-votes are no longer allowed, but they might still be in the data
 
-                if voterId in contestants:
-                    votesContestants[subUrl] += voteWeight
+                if voterId in jury:
+                    votesJury[subUrl] += voteWeight
                 
                 globalVotes[subUrl] += voteWeight
         
         #find out which submissions got selected
         #the best photo 3 according to the jury, and the top 3 of the global vote (except the photos that got already selected)
-        if len(votesContestants):
-            #selected = [max(votesContestants, key=lambda x: (votesContestants[x], globalVotes[x], -url2sub[x][2]))]
-            selected = [x[0] for x in europoints(votes2[channelId], list(entries.values()), 3, True, lambda x: (globalVotes[x], -url2sub[x][2]))[0]]
-            #the tie breaker for the vote among contestants is the global vote, then photos that got submitted earlier get the priority
+        #find out which submissions got selected
+        #the best 2 photos according to the jury (wildcard), and the top 3 of the global vote (except the photos that got already selected)
+        if len(entries) < 12: #too few submissions for a detailed europoints jury vote
+            if len(votesJury):
+                selected = sorted(votesJury, key=lambda x: (votesJury[x], globalVotes[x], -url2sub[x][2]))[:3]
+                #the tie breaker for the vote among jurors is the global vote, then photos that got submitted earlier get the priority
+            else:
+                selected = []
+
         else:
-            selected = []
-        selected += sorted(filter(lambda x: x not in selected, globalVotes), key=lambda x: (globalVotes[x], votesContestants[x], -url2sub[x][2]), reverse=True)[:6-len(selected)]
+            #vote according to eurovision points for jurors, the global vote is still used as the tie breaker, then precedence
+            top, scores = europoints(votes2[channelId], list(entries.values()), 2, True, lambda x: (globalVotes[x], -url2sub[x][2]))
+            selected = [x[0] for x in top]
+            votesJury = {url: nbPoints for (url, _, _), nbPoints in scores.items()}
+        
+        selected += sorted(filter(lambda x: x not in selected, globalVotes), key=lambda x: (globalVotes[x], votesJury[x], -url2sub[x][2]), reverse=True)[:6-len(selected)]
         shuffle(selected) #we don't want to show the selected photos in the order of their number of votes
 
         #post an announcement
@@ -710,7 +731,7 @@ async def withdraw_submission(messageId, user, guild, emojiHash, channel):
     if emojiHash != "❌":
         return #we can ignore other reactions
 
-    if channel.parent and channel.parent.id in submissions: #good start
+    if hasattr(channel, "parent") and channel.parent.id in submissions: #good start
         parentId = channel.parent.id
         channelId = channel.id
 
@@ -1081,17 +1102,6 @@ def main():
     @bot.event
     async def on_ready():
         autoplanner.start()
-
-        emojiNb = {"0️⃣": 0, "1️⃣": 1, "2️⃣": 2, "3️⃣": 3}
-
-        thread = await bot.fetch_channel(1290206056856817715)
-        print("you")
-        for messageId in submissions[1290061801974661251][1290206056856817715].keys():
-            msg = await thread.fetch_message(messageId)
-            await msg.remove_reaction("👍", bot.user)
-            for emo in emojiNb:
-                await msg.add_reaction(emo)
-        print("yay")
 
     @bot.event
     async def on_message(message):
