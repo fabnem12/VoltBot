@@ -426,12 +426,15 @@ async def start_semis(bot):
     - bot, the object representing the bot
     """
 
+    emojiNb = {"0️⃣": 0, "1️⃣": 1, "2️⃣": 2, "3️⃣": 3}
+
     for channelId, entries in entriesInSemis.items():
         channel = await bot.fetch_channel(channelId)
 
         for msgId in entries:
             msg = await channel.fetch_message(msgId)
-            await msg.add_reaction("👍")
+            for emoji in emojiNb:
+                await msg.add_reaction(emoji)
 
         await channel.send("**You can upvote as many photos as you want among those above this message**\nThen the photos that will reach the grand-final will be the one that ranked the best among contestants' votes and the top 4 among the global vote.")
 
