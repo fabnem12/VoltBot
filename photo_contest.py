@@ -173,14 +173,14 @@ def europoints(rankings: Dict[int, List[Submission]], candidates: List[Submissio
 
     totalPoints = {candidate: 0 for candidate in candidates}
     for ranking in rankings.values():
-        for nbPoints, candidate in enumerate(points, ranking):
+        for nbPoints, candidate in zip(points, ranking):
             totalPoints[candidate] += nbPoints
         
     if tieBreak is None:
         tieBreakLoc = lambda x: totalPoints[x]
     else:
         tieBreakLoc = lambda x: (totalPoints[x], tieBreak(x))
-    return sorted(totalPoints.keys(), key=tieBreakLoc)[:howManyWinners], totalPoints
+    return sorted(totalPoints.keys(), key=tieBreakLoc, reverse=True)[:howManyWinners], totalPoints
 
 #######################################################################
 async def setup(*channels: discord.TextChannel):
@@ -351,8 +351,8 @@ async def end_vote_threads(bot):
     - the bot object (to recover the channels)
     """
     
-    roleJury = bot.get_guild(voltServer).get_role(roleJury)
-    jury = set(x.id for x in roleJury.members)
+    roleJuryObj = bot.get_guild(voltServer).get_role(roleJury)
+    jury = set(x.id for x in roleJuryObj.members)
 
     contestState[0] = 0 #neutral mode, voting is no longer allowed
     saveData()
@@ -381,14 +381,14 @@ async def end_vote_threads(bot):
             #the best 2 photos according to the jury (wildcard), and the top 3 of the global vote (except the photos that got already selected)
             if len(subs) < 12: #too few submissions for a detailed europoints jury vote
                 if len(votesJury):
-                    selected = sorted(votesJury, key=lambda x: (votesJury[x], globalVotes[x], -url2sub[x][2]))[:2]
+                    selected = sorted(votesJury, key=lambda x: (votesJury[x], globalVotes[x], -url2sub[x][2]), reverse=True)[:2]
                     #the tie breaker for the vote among jurors is the global vote, then photos that got submitted earlier get the priority
                 else:
                     selected = []
 
             else:
                 #vote according to eurovision points for jurors, the global vote is still used as the tie breaker, then precedence
-                top, scores = europoints(votes2[channelId], list(subs.values()), 2, True, lambda x: (globalVotes[x], -url2sub[x][2]))
+                top, scores = europoints(votes2[threadId], list(subs.values()), 2, True, lambda x: (globalVotes[x[0]], -x[2]))
                 selected = [x[0] for x in top]
                 votesJury = {url: nbPoints for (url, _, _), nbPoints in scores.items()}
 
@@ -397,7 +397,7 @@ async def end_vote_threads(bot):
 
             #post an announcement
             thread = await bot.fetch_channel(threadId)
-            await thread.send(f"Here are the photos selected for the semi-finals in this thread")
+            await thread.send(f"Here are the photos selected for the semi-finals in this thread:")
 
             for subUrl in selected:
                 #embed in the thread
@@ -452,8 +452,8 @@ async def end_semis(bot):
     contestState[0] = 0 #neutral mode, voting is no longer allowed
     saveData()
 
-    roleJury = bot.get_guild(voltServer).get_role(roleJury)
-    jury = set(x.id for x in roleJury.members)
+    roleJuryObj = bot.get_guild(voltServer).get_role(roleJury)
+    jury = set(x.id for x in roleJuryObj.members)
 
     for channelId, entries in entriesInSemis.items():
         if channelId == grandFinalChannel: continue
@@ -491,7 +491,7 @@ async def end_semis(bot):
 
         else:
             #vote according to eurovision points for jurors, the global vote is still used as the tie breaker, then precedence
-            top, scores = europoints(votes2[channelId], list(entries.values()), 2, True, lambda x: (globalVotes[x], -url2sub[x][2]))
+            top, scores = europoints(votes2[channelId], list(entries.values()), 2, True, lambda x: (globalVotes[x[0]], -x[2]))
             selected = [x[0] for x in top]
             votesJury = {url: nbPoints for (url, _, _), nbPoints in scores.items()}
         
