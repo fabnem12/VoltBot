@@ -852,7 +852,7 @@ async def cast_vote_semi(messageId, user, guild, emojiHash, channel):
             voteInfo = (user.id, url)
 
             if channelId not in votes1:
-                votes1[channelId] = set()
+                votes1[channelId] = []
 
             #remove the current votes and add the right number of votes
             nbVotes = emojiNb[emojiHash]
@@ -871,18 +871,13 @@ async def cast_vote_semi(messageId, user, guild, emojiHash, channel):
             saveData()
     else: #jury vote
         #check that the user is a juror
-        roleJury = guild.get_role(roleJury)
-        if user.id not in (x.id for x in roleJury.members):
+        roleJuryObj = guild.get_role(roleJury)
+        if user.id not in (x.id for x in roleJuryObj.members):
             await (await dmChannelUser(user)).send("You are not part of the jury, sorry.")
             return
         else:
             #send the voting information
             dmChannel = await dmChannelUser(user)
-
-            roleJuryObj = guild.get_role(roleJury)
-            if user.id not in (x.id for x in roleJuryObj.members):
-                await dmChannel.send("You are not part of the jury, sorry.")
-                return
 
             if channelId in entriesInSemis:
                 subs = list(entriesInSemis[channelId].values())
