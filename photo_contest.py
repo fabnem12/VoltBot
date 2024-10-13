@@ -436,7 +436,7 @@ async def start_semis(bot):
             for emoji in emojiNb:
                 await msg.add_reaction(emoji)
 
-        await channel.send("**You can upvote as many photos as you want among those above this message**\nThen the photos that will reach the grand-final will be the one that ranked the best among contestants' votes and the top 4 among the global vote.")
+        await channel.send("**You can give from 0 to 3 points to as many photos as you want among those above this message**")
 
         msgJuryVote = await channel.send(f"<@{roleJury}> You can vote by reacting to this message with ✅")
         await msgJuryVote.add_reaction("✅")
