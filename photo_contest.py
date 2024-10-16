@@ -837,6 +837,9 @@ async def cast_vote_semi(messageId, user, guild, emojiHash, channel):
 
     if emojiHash not in emojiNb and emojiHash != "✅":
         return
+    
+    if channelId not in votes1 and channelId not in votes2:
+        return
 
     channelId = channel.id
 
