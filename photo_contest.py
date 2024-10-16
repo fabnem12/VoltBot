@@ -210,28 +210,28 @@ async def planner(now, bot):
     date, hour = (now.day, now.month), (now.hour, now.minute)
     if hour == (9, 0) and date == (30, 9):
         await start_submissions(bot)
-    if hour == (23, 59) and date == (6, 10):
+    if hour == (0, 0) and date == (7, 10):
         await end_submissions(bot)
     if hour == (8, 0) and date == (7, 10):
         await start_vote_threads(bot)
-    if hour == (21, 59) and date == (12, 10):
+    if hour == (22, 0) and date == (12, 10):
         await end_vote_threads(bot)
     if hour == (8, 0) and date == (13, 10):
         await start_semis(bot)
-    if hour == (21, 59) and date == (16, 10):
+    if hour == (22, 0) and date == (19, 10):
         await end_semis(bot)
-    if hour == (8, 0) and date == (17, 10):
+    if hour == (22, 0) and date == (20, 10):
         await start_gf1(bot)
-    if hour == (21, 59) and date == (22, 10):
+    if hour == (22, 0) and date == (27, 10):
         #end of best of each semi-final
         await end_gf1(bot)
-    if hour == (8, 0) and date == (23, 10):
+    if hour == (8, 0) and date == (28, 10):
         #grand final
         await start_gf2(bot)
-    if hour == (21, 59) and date == (28, 10):
+    if hour == (22, 0) and date == (2, 11):
         #end of grand final
         await end_gf2(bot)
-    if hour == (22, 0) and date == (28, 10):
+    if hour == (22, 5) and date == (2, 11):
         await resultats(bot)
 
 async def resendFile(url: str, saveChannelId: int) -> str:
@@ -438,7 +438,7 @@ async def start_semis(bot):
 
         await channel.send("**You can give from 0 to 3 points to as many photos as you want among those above this message**")
 
-        msgJuryVote = await channel.send(f"<@{roleJury}> You can vote by reacting to this message with ✅")
+        msgJuryVote = await channel.send(f"<@&{roleJury}> You can vote by reacting to this message with ✅")
         await msgJuryVote.add_reaction("✅")
 
     contestState[0] = 2
