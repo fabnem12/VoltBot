@@ -487,14 +487,14 @@ async def end_semis(bot):
         #the best 2 photos according to the jury (wildcard), and the top 3 of the global vote (except the photos that got already selected)
         if len(entries) < 12: #too few submissions for a detailed europoints jury vote
             if len(votesJury):
-                selected = sorted(votesJury, key=lambda x: (votesJury[x], globalVotes[x], -url2sub[x][2]))[:3]
+                selected = sorted(votesJury, key=lambda x: (votesJury[x], globalVotes[x], -url2sub[x][2]), reverse=True)[:3]
                 #the tie breaker for the vote among jurors is the global vote, then photos that got submitted earlier get the priority
             else:
                 selected = []
 
         else:
             #vote according to eurovision points for jurors, the global vote is still used as the tie breaker, then precedence
-            top, scores = europoints(votes2[channelId], list(entries.values()), 2, True, lambda x: (globalVotes[x[0]], -x[2]))
+            top, scores = europoints(votes2[channelId], list(entries.values()), 3, True, lambda x: (globalVotes[x[0]], -x[2]))
             selected = [x[0] for x in top]
             votesJury = {url: nbPoints for (url, _, _), nbPoints in scores.items()}
         
@@ -516,14 +516,16 @@ async def end_semis(bot):
 
             #embed in the Grand Final channel
             count += 1
-            e2 = discord.Embed(description = f"Photo #F{count} for <#{channelId}>")
+            e2 = discord.Embed(description = f"Photo #{count} for <#{channelId}>")
             e2.set_image(url = subUrl)
             await (await bot.fetch_channel(grandFinalChannel)).send(embed = e2)
 
             entriesInGF[channelId].append(url2sub[subUrl])
         
-        contestState[0] = 0
+        votes2[channelId*10] = votes2[channelId]
+        del votes2[channelId]
         saveData()
+
 
 async def start_gf1(bot):
     """
