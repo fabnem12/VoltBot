@@ -485,7 +485,7 @@ async def end_semis(bot):
         #the best photo 3 according to the jury, and the top 3 of the global vote (except the photos that got already selected)
         #find out which submissions got selected
         #the best 2 photos according to the jury (wildcard), and the top 3 of the global vote (except the photos that got already selected)
-        if len(entries) < 12: #too few submissions for a detailed europoints jury vote
+        if len(entries) < 20: #too few submissions for a detailed europoints jury vote
             if len(votesJury):
                 selected = sorted(votesJury, key=lambda x: (votesJury[x], globalVotes[x], -url2sub[x][2]), reverse=True)[:3]
                 #the tie breaker for the vote among jurors is the global vote, then photos that got submitted earlier get the priority
@@ -522,9 +522,10 @@ async def end_semis(bot):
 
             entriesInGF[channelId].append(url2sub[subUrl])
         
-        votes2[channelId*10] = votes2[channelId]
-        del votes2[channelId]
-        saveData()
+        if channelId in votes2:
+            votes2[channelId*10] = votes2[channelId]
+            del votes2[channelId]
+            saveData()
 
 
 async def start_gf1(bot):
