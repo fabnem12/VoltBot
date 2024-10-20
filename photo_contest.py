@@ -539,7 +539,10 @@ async def start_gf1(bot):
     emoji2channel = {(await bot.fetch_channel(channelId)).name[0]: channelId for channelId in entriesInGF}
     channel = await bot.fetch_channel(grandFinalChannel)
 
-    msg = await channel.send("**Vote for the first part of the Grand-Final!**\nReact to this message and the bot will ask you in DMs to rank the remaining 5 photos of the category.\n" + "\n".join(f"{e} for <#{channelId}>" for e, channelId in emoji2channel.items()))
+    contestState[0] = 3
+    saveData()
+
+    msg = await channel.send("**Vote for the first part of the Grand-Final!**\nReact to this message and the bot will ask you in DMs to rank the remaining 6 photos of the category.\n" + "\n".join(f"{e} for <#{channelId}>" for e, channelId in emoji2channel.items()))
     for e in emoji2channel:
         await msg.add_reaction(e)
 
@@ -549,6 +552,9 @@ async def end_gf1(bot):
     """
 
     entriesInGF[grandFinalChannel] = []
+
+    contestState[0] = 0
+    saveData()
 
     channel = await bot.fetch_channel(grandFinalChannel)
     for channelId, submissionsFromChannel in entriesInGF.items():
@@ -580,6 +586,9 @@ async def start_gf2(bot):
     msg = await channel.send("**Vote for the winner of the 2024 edition of the Volt Photo Contest!**\nReact to this message with ✅ and the bot will ask you in DMs to rank the remaining 4 photos.\nYou have to rank them all for your vote to count.")
     await msg.add_reaction("✅")
 
+    contestState[0] = 4
+    saveData()
+
 async def end_gf2(bot):
     """
     End of the contest!
@@ -598,6 +607,9 @@ async def end_gf2(bot):
         await (await dmChannelUser(await bot.fetch_user(authorId))).send(embed = e)
     except:
         pass
+
+    contestState[0] = 0
+    saveData()
 
 class ButtonConfirm(discord.ui.View):
     """
@@ -657,7 +669,7 @@ def VoteGF(submissions: List[Submission], channelOfOrigin: int, labels: Optional
             #trick to keep idPhoto correct, because otherwise it would be evaluated at the end of the loop
             #with i = 4 for all callbacks
 
-            affi = f"Photo #{idPhoto+1}" if labels is None else labels[i]
+            affi = f"Photo #{idPhoto+1} for <#{channelOfOrigin}>" if labels is None else labels[i]
             @discord.ui.button(label = affi)
             async def callback(self, button: discord.ui.Button, interaction: discord.Interaction):
                 if len(self.selectedItems) == (nbToRank or len(submissions)):
@@ -908,24 +920,59 @@ async def cast_vote_gf(messageId, user, guild, emojiHash, channel):
     """
     Ask the bot to send a DM to vote in the first part of the Grand Final
     """
+
+    if contestState[0] not in (3, 4): return #grand final mode
     
     emoji2channel: Dict[str, int] = {(await guild.fetch_channel(channelId)).name[0]: channelId for channelId in entriesInGF}
     emoji2channel["✅"] = grandFinalChannel
 
     if emojiHash not in emoji2channel or channel.id != grandFinalChannel:
         return
+    
+    if (emojiHash == "✅" and contestState[0] != 4) or (emojiHash != "✅" and contestState[0] != 3):
+        return
 
     channelId = emoji2channel[emojiHash]
     dmChannel = await dmChannelUser(user)
+    entries = entriesInGF[channelId]
 
-    await dmChannel.send(f"**You can vote among the remaining 5 photos for <#{channelId}>**" if channelId != grandFinalChannel else "**You can vote among the 4 category winners to select the final winner of the contest!**")
-    for i, submission in enumerate(entriesInGF[channelId]):
+    #send the voting information
+    await dmChannel.send(f"**You can vote among the remaining 6 photos for <#{channelId}>**" if channelId != grandFinalChannel else "**You can vote among the 4 category winners to select the final winner of the contest!**")
+    photoIds = dict()
+    for i, submission in enumerate(entries):
         url, _, _ = submission
+        photoIds[url] = i+1
         
-        e = discord.Embed(description = f"Photo #F{i+1} for <#{channelId}>")
+        e = discord.Embed(description = f"Photo #{i+1} for <#{channelId}>")
         e.set_image(url = url)
         await dmChannel.send(embed = e)
     
+    #remind the user how they voted in the semi-final
+    #-find jury vote
+    if user.id in votes2[channelId * 10]:
+        #it is a juror
+
+        voteSemi = votes2[channelId * 10][user.id]
+        recap: List[Tuple[Submission, Optional[int]]] = []
+        for i, sub in enumerate(voteSemi):
+            if sub in entries:
+                recap.append((sub, i+1))
+        for sub in entries:
+            if sub not in voteSemi:
+                recap.append((sub, None))
+        
+        await dmChannel.send("\n".join(f"Photo #{photoIds[url]} was " + (f"your #{order}" if order else "not in your top 10)") + " in the semi-final" for (url, _, _), order in recap))
+    
+    #-find reactions votes
+    votes_reactions = votes1[channelId]
+    counts: Dict[int, int] = dict()
+    for voter, url in votes_reactions:
+        if voter == user.id and url in photoIds:
+            photoId = photoIds[url]
+            counts[photoId] = counts.get(photoId, 0) + 1
+    if len(counts):
+        await dmChannel.send("\n".join(f"You gave photo #{photoId} {nbPoints} point{'s' if nbPoints != 1 else ''} in the semi-final" for photoId, nbPoints in sorted(counts.items(), key=lambda x: x[1], reverse=True)))
+
     await dmChannel.send(f"Please click on a button below to select **your preferred photo** among the {len(entriesInGF[channelId])}", view = VoteGF(entriesInGF[channelId], channelId))
 
 async def resultats(bot):
