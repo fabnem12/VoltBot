@@ -220,7 +220,7 @@ async def planner(now, bot):
         await start_semis(bot)
     if hour == (22, 0) and date == (19, 10):
         await end_semis(bot)
-    if hour == (22, 0) and date == (20, 10):
+    if hour == (19, 0) and date == (20, 10):
         await start_gf1(bot)
     if hour == (22, 0) and date == (27, 10):
         #end of best of each semi-final
