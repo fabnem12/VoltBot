@@ -220,7 +220,7 @@ async def planner(now, bot):
         await start_semis(bot)
     if hour == (22, 0) and date == (19, 10):
         await end_semis(bot)
-    if hour == (19, 0) and date == (20, 10):
+    if hour == (20, 0) and date == (20, 10):
         await start_gf1(bot)
     if hour == (22, 0) and date == (27, 10):
         #end of best of each semi-final
@@ -669,7 +669,7 @@ def VoteGF(submissions: List[Submission], channelOfOrigin: int, labels: Optional
             #trick to keep idPhoto correct, because otherwise it would be evaluated at the end of the loop
             #with i = 4 for all callbacks
 
-            affi = f"Photo #{idPhoto+1} for <#{channelOfOrigin}>" if labels is None else labels[i]
+            affi = f"Photo #{idPhoto+1}" if labels is None else labels[i]
             @discord.ui.button(label = affi)
             async def callback(self, button: discord.ui.Button, interaction: discord.Interaction):
                 if len(self.selectedItems) == (nbToRank or len(submissions)):
@@ -961,7 +961,7 @@ async def cast_vote_gf(messageId, user, guild, emojiHash, channel):
             if sub not in voteSemi:
                 recap.append((sub, None))
         
-        await dmChannel.send("\n".join(f"Photo #{photoIds[url]} was " + (f"your #{order}" if order else "not in your top 10)") + " in the semi-final" for (url, _, _), order in recap))
+        await dmChannel.send("\n".join(f"Photo #{photoIds[url]} was **" + (f"your #{order}" if order else "not in your top 10") + "** in the semi-final" for (url, _, _), order in recap))
     
     #-find reactions votes
     votes_reactions = votes1[channelId]
@@ -971,7 +971,7 @@ async def cast_vote_gf(messageId, user, guild, emojiHash, channel):
             photoId = photoIds[url]
             counts[photoId] = counts.get(photoId, 0) + 1
     if len(counts):
-        await dmChannel.send("\n".join(f"You gave photo #{photoId} {nbPoints} point{'s' if nbPoints != 1 else ''} in the semi-final" for photoId, nbPoints in sorted(counts.items(), key=lambda x: x[1], reverse=True)))
+        await dmChannel.send("\n".join(f"You gave photo #{photoId} **{nbPoints} point{'s' if nbPoints != 1 else ''}** in the semi-final" for photoId, nbPoints in sorted(counts.items(), key=lambda x: x[1], reverse=True)))
 
     await dmChannel.send(f"Please click on a button below to select **your preferred photo** among the {len(entriesInGF[channelId])}", view = VoteGF(entriesInGF[channelId], channelId))
 
