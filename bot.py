@@ -254,6 +254,10 @@ def main():
         dmChannel = await dmChannelUser(member)
         await dmChannel.send("Hey! **Welcome to the Volt Europa Discord server**\nTo get the access to the server, please introduce yourself in <#567024817128210433>, citing the country/countries you are from, the languages you speak and whether you are a <:volt:698844154418954311> member.\nOnce you get verified, you can check <#727489317210947655> to get access to topic channels.")
 
+        voltServer = bot.get_guild(567021913210355745)
+        introChannel = await voltServer.fetch_channel(567024817128210433)
+        await introChannel.send(f"Welcome {member.mention} :volt_comfy:\nPlease **introduce yourself** in this channel, mentionning:\n-your **country**\n-what **languages** you speak\n-whether you are a :volt: **member/volunteer** :volt_cool_glasses:.\nA mod will check and give you the appropriate roles. You can check the <#580529390933245972>")
+
     @bot.event
     async def on_member_update(before, after):
         await exclusion(before, after)
@@ -451,7 +455,7 @@ def main():
 
         await og.author.add_roles(*roles_to_add)
         await assign_base_roles(og.author, ctx.guild)
-        await ctx.send(f"Welcome <@{og.author.id}>, you have full access now. I assigned you the following countries/regions: {', '.join(success_countries)}, and the following languages: {', '.join(success_languages)}.{member_msg}\n-# Feel free to ask mods for help. [Volt Europa](<https://volteuropa.org/>)")
+        await ctx.send(f"Welcome <@{og.author.id}>, you have full access now. I assigned you the following countries/regions: {', '.join(success_countries)}, and the following languages: {', '.join(success_languages)}.{member_msg}\n-# Feel free to ask mods for help. [Volt Europa](<https://volteuropa.org/>)\nYou can check our opt-in <#727489317210947655> :fire:")
 
 
     @bot.command(name = "court")
