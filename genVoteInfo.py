@@ -97,7 +97,7 @@ def genVoteAnimFinal(channel_name: str, sub2photoid: Dict[Submission, int], id2n
             return {tuple(sub): nbP for sub, nbP in zip(ranking, points)}
 
         new_points: Dict[Submission, int] = dict()
-        for voter, ranking in ordered_votes[:(i+1) if i is not None else -1]:
+        for voter, ranking in ordered_votes[:(i+1) if i is not None else len(ordered_votes)]:
             isJuror = voter in jurors
             new_points = points_from_voter(ranking)
 
