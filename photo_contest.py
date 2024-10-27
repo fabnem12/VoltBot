@@ -571,7 +571,7 @@ async def end_gf1(bot):
 
         votes = votes2[channelId]
 
-        _, scores_jury = europoints({voter: ranking for voter, ranking in votes if voter in jurors})
+        _, scores_jury = europoints({voter: ranking for voter, ranking in votes if voter in jurors}, submissionsFromChannel, 1, False)
         winnerGF, _ = europoints(votes, submissionsFromChannel, 1, False, lambda x: (scores_jury[x], -x[2]))
 
         #showing all the votes
@@ -587,7 +587,7 @@ async def end_gf1(bot):
         await channel.send(f"It's time to check the results of the vote for the category.\n**{len(votes)} votes have been cast. Let's reveal them!**")
         for img_path, voter_id in genVoteInfo.genVoteAnimFinal(channel.name[2:].title(), sub2photoid, id2name, votes, jurors):
             if voter_id not in (None, -1):
-                await channel.send(f"Thank you <@{voter_id}> {'juror' if voter_id in jurors else ''}for your votes!", file=discord.File(img_path))
+                await channel.send(f"Thank you <@{voter_id}> {'(juror) ' if voter_id in jurors else ''}for your votes!", file=discord.File(img_path))
                 await asyncio.sleep(15)
             else:
                 await channel.send(file=discord.File(img_path))
@@ -627,9 +627,41 @@ async def end_gf2(bot):
     """
 
     channel = await bot.fetch_channel(grandFinalChannel)
-    winnerGF, _ = europoints(votes2[grandFinalChannel], entriesInGF[grandFinalChannel], 1, False)
+
+    await channel.send("Europe, stop voting!")
+    contestState[0] = 0
+    saveData()
+
+    jury_role = channel.guild.get_role(1290062262303854689)
+    jurors = set(x.id for x in jury_role.members)
+
+    votes = votes2[grandFinalChannel]
+    entries = entriesInGF[grandFinalChannel]
+
+    _, scores_jury = europoints({voter: ranking for voter, ranking in votes if voter in jurors}, entries, 1, False)
+    winnerGF, _ = europoints(votes, entries, 1, False, lambda x: (scores_jury[x], -x[2]))
     
-    url, authorId, _ = winnerGF
+    #showing all the votes
+    #-sub2id
+    sub2photoid = {x: i+1 for i, x in enumerate(entries)}
+
+    #-id2name of voters
+    id2name = dict()
+    for voterId in votes.keys():
+        voterId = int(voterId)
+        if voterId not in id2name:
+            id2name[voterId] = (await bot.fetch_user(voterId)).name
+    
+    await channel.send(f"It's time to check the results of the final vote!\n**{len(votes)} votes have been cast. Let's reveal them!**")
+    for img_path, voter_id in genVoteInfo.genVoteAnimFinal(channel.name[2:].title(), sub2photoid, id2name, votes, jurors, False):
+        if voter_id not in (None, -1):
+            await channel.send(f"Thank you <@{voter_id}> {'(juror) ' if voter_id in jurors else ''}for your votes!", file=discord.File(img_path))
+            await asyncio.sleep(15)
+        else:
+            await channel.send(file=discord.File(img_path))
+
+    #announcement of the winner
+    url, authorId, _ = winnerGF[0]
     e = discord.Embed(description = f"**Congratulations <@{authorId}>, you won the 2024 edition of the Photo Contest!**")
     e.set_image(url = url)
 
@@ -639,9 +671,6 @@ async def end_gf2(bot):
         await (await dmChannelUser(await bot.fetch_user(authorId))).send(embed = e)
     except:
         pass
-
-    contestState[0] = 0
-    saveData()
 
 class ButtonConfirm(discord.ui.View):
     """
