@@ -3,6 +3,8 @@ import nextcord as discord
 from nextcord.ext import commands, tasks
 
 import constantes
+import genVoteInfo
+
 import os
 import json
 from arrow import utcnow
@@ -556,24 +558,51 @@ async def end_gf1(bot):
     contestState[0] = 0
     saveData()
 
-    channel = await bot.fetch_channel(grandFinalChannel)
+    jury_role = channel.guild.get_role(1290062262303854689)
+    jurors = set(x.id for x in jury_role.members)
+
+    channelGF = await bot.fetch_channel(grandFinalChannel)
+    id2name = dict()
     for channelId, submissionsFromChannel in entriesInGF.items():
         if channelId == grandFinalChannel: continue
+        channel = await bot.fetch_channel(channelId)
 
-        winnerGF, _ = europoints(votes2[channelId], submissionsFromChannel, 1, False)
+        votes = votes2[channelId]
+
+        _, scores_jury = europoints({voter: ranking for voter, ranking in votes if voter in jurors})
+        winnerGF, _ = europoints(votes, submissionsFromChannel, 1, False, lambda x: (scores_jury[x], -x[2]))
+
+        #showing all the votes
+        #-sub2id
+        sub2photoid = {x: i+1 for i, x in enumerate(entriesInGF[channelId])}
+
+        #-id2name of voters
+        for voterId in votes.keys():
+            voterId = int(voterId)
+            if voterId not in id2name:
+                id2name[voterId] = (await bot.fetch_user(voterId)).name
         
+        await channel.send(f"It's time to check the results of the vote for the category.\n**{len(votes)} votes have been cast. Let's reveal them!**")
+        for img_path, voter_id in genVoteInfo.genVoteAnimFinal(channel.name[2:].title(), sub2photoid, id2name, votes, jurors):
+            if voter_id not in (None, -1):
+                await channel.send(f"Thank you <@{voter_id}> for your votes!", file=discord.File(img_path))
+            else:
+                await channel.send(file=discord.File(img_path))
+
+        #announcement of the winner
         e = discord.Embed(description = f"**Congratulations, this photo won the <#{channelId}> category!**")
-        e.set_image(url = winnerGF[0])
+        e.set_image(url = winnerGF[0][0])
         await channel.send(embed = e)
+        await channelGF.send(embed = e)
 
         #tell the author
-        authorId = winnerGF[1]
+        authorId = winnerGF[0][1]
         try:
             await (await dmChannelUser(await bot.fetch_user(authorId))).send(embed = e)
         except:
             pass
 
-        entriesInGF[grandFinalChannel].append(winnerGF)
+        entriesInGF[grandFinalChannel].append(winnerGF[0])
         saveData()
 
 async def start_gf2(bot):
