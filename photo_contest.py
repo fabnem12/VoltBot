@@ -571,7 +571,7 @@ async def end_gf1(bot):
 
         votes = votes2[channelId]
 
-        _, scores_jury = europoints({voter: ranking for voter, ranking in votes if voter in jurors}, submissionsFromChannel, 1, False)
+        _, scores_jury = europoints({voter: ranking for voter, ranking in votes.items() if voter in jurors}, submissionsFromChannel, 1, False)
         winnerGF, _ = europoints(votes, submissionsFromChannel, 1, False, lambda x: (scores_jury[x], -x[2]))
 
         #showing all the votes
@@ -638,7 +638,7 @@ async def end_gf2(bot):
     votes = votes2[grandFinalChannel]
     entries = entriesInGF[grandFinalChannel]
 
-    _, scores_jury = europoints({voter: ranking for voter, ranking in votes if voter in jurors}, entries, 1, False)
+    _, scores_jury = europoints({voter: ranking for voter, ranking in votes.items() if voter in jurors}, entries, 1, False)
     winnerGF, _ = europoints(votes, entries, 1, False, lambda x: (scores_jury[x], -x[2]))
     
     #showing all the votes
