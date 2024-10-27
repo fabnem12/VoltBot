@@ -586,6 +586,7 @@ async def end_gf1(bot):
         for img_path, voter_id in genVoteInfo.genVoteAnimFinal(channel.name[2:].title(), sub2photoid, id2name, votes, jurors):
             if voter_id not in (None, -1):
                 await channel.send(f"Thank you <@{voter_id}> {'juror' if voter_id in jurors else ''}for your votes!", file=discord.File(img_path))
+                await asyncio.sleep(20)
             else:
                 await channel.send(file=discord.File(img_path))
 
