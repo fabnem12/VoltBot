@@ -1009,30 +1009,31 @@ async def cast_vote_gf(messageId, user, guild, emojiHash, channel):
         await dmChannel.send(embed = e)
     
     #remind the user how they voted in the semi-final
-    #-find jury vote
-    if user.id in votes2[channelId * 10]:
-        #it is a juror
+    if contestState[0] == 3:
+        #-find jury vote
+        if user.id in votes2[channelId * 10]:
+            #it is a juror
 
-        voteSemi = votes2[channelId * 10][user.id]
-        recap: List[Tuple[Submission, Optional[int]]] = []
-        for i, sub in enumerate(voteSemi):
-            if sub in entries:
-                recap.append((sub, i+1))
-        for sub in entries:
-            if sub not in voteSemi:
-                recap.append((sub, None))
+            voteSemi = votes2[channelId * 10][user.id]
+            recap: List[Tuple[Submission, Optional[int]]] = []
+            for i, sub in enumerate(voteSemi):
+                if sub in entries:
+                    recap.append((sub, i+1))
+            for sub in entries:
+                if sub not in voteSemi:
+                    recap.append((sub, None))
+            
+            await dmChannel.send("\n".join(f"Photo #{photoIds[url]} was **" + (f"your #{order}" if order else "not in your top 10") + "** in the semi-final" for (url, _, _), order in recap))
         
-        await dmChannel.send("\n".join(f"Photo #{photoIds[url]} was **" + (f"your #{order}" if order else "not in your top 10") + "** in the semi-final" for (url, _, _), order in recap))
-    
-    #-find reactions votes
-    votes_reactions = votes1[channelId]
-    counts: Dict[int, int] = dict()
-    for voter, url in votes_reactions:
-        if voter == user.id and url in photoIds:
-            photoId = photoIds[url]
-            counts[photoId] = counts.get(photoId, 0) + 1
-    if len(counts):
-        await dmChannel.send("\n".join(f"You gave photo #{photoId} **{nbPoints} point{'s' if nbPoints != 1 else ''}** in the semi-final" for photoId, nbPoints in sorted(counts.items(), key=lambda x: x[1], reverse=True)))
+        #-find reactions votes
+        votes_reactions = votes1[channelId]
+        counts: Dict[int, int] = dict()
+        for voter, url in votes_reactions:
+            if voter == user.id and url in photoIds:
+                photoId = photoIds[url]
+                counts[photoId] = counts.get(photoId, 0) + 1
+        if len(counts):
+            await dmChannel.send("\n".join(f"You gave photo #{photoId} **{nbPoints} point{'s' if nbPoints != 1 else ''}** in the semi-final" for photoId, nbPoints in sorted(counts.items(), key=lambda x: x[1], reverse=True)))
 
     await dmChannel.send(f"Please click on a button below to select **your preferred photo** among the {len(entriesInGF[channelId])}", view = VoteGF(entriesInGF[channelId], channelId))
 
