@@ -73,8 +73,9 @@ async def isMod(guild, memberId):
     member = await guild.fetch_member(memberId)
     return any(role.id in (voltDiscordTeam, voltSubTeam, voltAdmin) for role in member.roles)
 
-async def isWelcome(user):
-    return any(x.id == welcomeTeam for x in user.roles)
+async def isWelcome(guild, memberId):
+    member = await guild.fetch_member(memberId)
+    return any(x.id == welcomeTeam for x in member.roles)
 
 async def ban(msg, banAppealOk = True):
     if msg.guild.id != voltServer or not await isMod(msg.guild, msg.author.id): #not on volt server or not a mod of the volt server
@@ -291,7 +292,7 @@ def main():
 
             await reportreact(messageId, guild, emojiHash, channel, user)
             await photocontestping(messageId, guild, emojiHash, channel, user)
-            if await isWelcome(user) or await isMod(guild, user.id):
+            if await isWelcome(guild, user.id) or await isMod(guild, user.id):
                 await introreact(messageId, guild, emojiHash, channel, user)
 
     async def verif_word_train(message):
@@ -343,7 +344,7 @@ def main():
 
     @bot.command(name = "verify")
     async def verify(ctx):
-        if not await isWelcome(ctx.message.author) and not await isMod(ctx.guild, ctx.message.author.id):
+        if not await isWelcome(ctx.guild, ctx.message.author.id) and not await isMod(ctx.guild, ctx.message.author.id):
             return
         reference = ctx.message.reference
         if reference is None:
