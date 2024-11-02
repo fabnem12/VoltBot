@@ -233,7 +233,7 @@ async def planner(now, bot):
     if hour == (22, 0) and date == (2, 11):
         #end of grand final
         await end_gf2(bot)
-    if hour == (22, 30) and date == (2, 11):
+    if hour == (12, 0) and date == (3, 11):
         await resultats(bot)
 
 async def resendFile(url: str, saveChannelId: int) -> str:
