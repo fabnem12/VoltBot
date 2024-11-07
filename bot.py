@@ -257,7 +257,8 @@ def main():
 
         voltServer = bot.get_guild(567021913210355745)
         introChannel = await voltServer.fetch_channel(567024817128210433)
-        await introChannel.send(f"Welcome {member.mention} <:volt_comfy:842875809526186026>\nPlease **introduce yourself** in this channel, mentioning:\n-your **country**\n-what **languages** you speak\n-whether you are a <:volt:698844154418954311> **member/volunteer** <:volt_cool_glasses:819137584722345984>.\nA mod will check and give you the appropriate roles. You can check the <#580529390933245972>")
+        e = discord.Embed(description = f"Welcome {member.mention} <:volt_comfy:842875809526186026>\nPlease **introduce yourself** in this channel, mentioning:\n-your **country**\n-what **languages** you speak\n-whether you are a <:volt:698844154418954311> **member/volunteer** <:volt_cool_glasses:819137584722345984>.\nA mod will check and give you the appropriate roles. You can check the <#580529390933245972>")
+        await introChannel.send(embed = e)
 
     @bot.event
     async def on_member_update(before, after):
@@ -455,8 +456,13 @@ def main():
             await og.author.add_roles(volt_membership_claimed[0])
 
         await og.author.add_roles(*roles_to_add)
-        await assign_base_roles(og.author, ctx.guild)
-        await ctx.send(f"Welcome <@{og.author.id}>, you have full access now. I assigned you the following countries/regions: {', '.join(success_countries)}, and the following languages: {', '.join(success_languages)}.{member_msg}\n-# Feel free to ask mods for help. [Volt Europa](<https://volteuropa.org/>)\nYou can check our opt-in <#727489317210947655> :fire:", reference = reference)
+
+        channel: discord.TextChannel = ctx.channel
+        async with channel.typing():
+            await assign_base_roles(og.author, ctx.guild)
+
+        e = discord.Embed(description = f"Welcome <@{og.author.id}>, you have full access now. I assigned you the following countries/regions: {', '.join(success_countries)}, and the following languages: {', '.join(success_languages)}.{member_msg}\n-# Feel free to ask mods for help. [Volt Europa](<https://volteuropa.org/>)\nYou can check our opt-in <#727489317210947655> :fire:")
+        await channel.send(embed=e, reference = reference)
 
 
     @bot.command(name = "court")
