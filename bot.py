@@ -211,6 +211,63 @@ async def photocontestping(messageId, guild, emojiHash, channel, user):
     member = await guild.fetch_member(user.id)
     await member.add_roles(guild.get_role(photoContestPingRole))
 
+async def verif_news_source(message):
+    """
+    Check that there is no untrusted news source in the message
+    """
+
+    untrusted = {"x.com/visegrad24": "Visegrád 24", "trtworld.com/": "TRT", "x.com/trtworld": "TRT"}
+
+    ref = discord.MessageReference(channel_id = message.channel.id, message_id = message.id)
+    msg_low = message.lower()
+    for link, source in untrusted.items():
+        if link in msg_low:
+            await message.channel.send(f":warning: This message contains a link to an untrusted news source ({source})", reference = ref)
+            return
+
+async def verif_word_train(message):
+    """
+    Word train channel:
+    your word has to start with the same letter as the word before ends. Example "The elephant tries snorkeling..."
+    """
+    
+    if message.channel.id != wordTrainChannel or message.author.bot:
+        return
+
+    isLetter = lambda x: x in "abcdefghijklmnopqrstuvwxyz "
+
+    msgTxt = unidecode(message.content.lower())
+    msgLetters = "".join(filter(isLetter, msgTxt))
+    words = msgLetters.split()
+
+    #previous logic
+    """
+    if len(words) > 1:
+        lastLetter = words[0][-1]
+
+        for word in words[1:]:
+            if word[0] != lastLetter:
+                await message.delete()
+                await message.channel.send(f"<:bonk:843489770918903819> {message.author.mention}")
+
+                return False
+            else:
+                lastLetter = word[-1]
+    """
+    #new logic
+    previousMsg = None
+    async for msg in message.channel.history(oldest_first=False, limit=None):
+        if msg != message and not msg.author.bot:
+            previousMsg = msg
+            previousMsgLetters = "".join(filter(isLetter, unidecode(previousMsg.content.lower())))
+            break
+
+    if len(words) > 1 or previousMsgLetters.strip().lower()[-1] != msgTxt[0] or previousMsg.author.id == message.author.id:
+        await message.delete()
+        await message.channel.send(f"<:bonk:843489770918903819> {message.author.mention}")
+
+    return True
+
 def main():
     intents = discord.Intents.all()
     bot = commands.Bot(command_prefix=constantes.prefixVolt, help_command=None, intents = intents)
@@ -223,6 +280,7 @@ def main():
             save()
 
         await verif_word_train(message)
+        await verif_news_source(message)
 
         if message.content.startswith(".ban"):
             await ban(message, banAppealOk = False)
@@ -295,49 +353,6 @@ def main():
             await photocontestping(messageId, guild, emojiHash, channel, user)
             if await isWelcome(guild, user.id) or await isMod(guild, user.id):
                 await introreact(messageId, guild, emojiHash, channel, user)
-
-    async def verif_word_train(message):
-        """
-        Word train channel:
-        your word has to start with the same letter as the word before ends. Example "The elephant tries snorkeling..."
-        """
-        
-        if message.channel.id != wordTrainChannel or message.author.bot:
-            return
-    
-        isLetter = lambda x: x in "abcdefghijklmnopqrstuvwxyz "
-    
-        msgTxt = unidecode(message.content.lower())
-        msgLetters = "".join(filter(isLetter, msgTxt))
-        words = msgLetters.split()
-
-        #previous logic
-        """
-        if len(words) > 1:
-            lastLetter = words[0][-1]
-
-            for word in words[1:]:
-                if word[0] != lastLetter:
-                    await message.delete()
-                    await message.channel.send(f"<:bonk:843489770918903819> {message.author.mention}")
-
-                    return False
-                else:
-                    lastLetter = word[-1]
-        """
-        #new logic
-        previousMsg = None
-        async for msg in message.channel.history(oldest_first=False, limit=None):
-            if msg != message and not msg.author.bot:
-                previousMsg = msg
-                previousMsgLetters = "".join(filter(isLetter, unidecode(previousMsg.content.lower())))
-                break
-
-        if len(words) > 1 or previousMsgLetters.strip().lower()[-1] != msgTxt[0] or previousMsg.author.id == message.author.id:
-            await message.delete()
-            await message.channel.send(f"<:bonk:843489770918903819> {message.author.mention}")
-
-        return True
 
     @bot.command(name = "ayo")
     async def ayo(ctx):
