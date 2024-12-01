@@ -219,7 +219,7 @@ async def verif_news_source(message):
     untrusted = {"x.com/visegrad24": "Visegrád 24", "trtworld.com/": "TRT", "x.com/trtworld": "TRT"}
 
     ref = discord.MessageReference(channel_id = message.channel.id, message_id = message.id)
-    msg_low = message.lower()
+    msg_low = message.content.lower()
     for link, source in untrusted.items():
         if link in msg_low:
             await message.channel.send(f":warning: This message contains a link to an untrusted news source ({source})", reference = ref)
