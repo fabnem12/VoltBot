@@ -202,21 +202,16 @@ async def reportreact(messageId, guild, emojiHash, channel, user):
 
     await report(messageId, guild, channel, user)
 
-async def photocontestping(messageId, guild, emojiHash, channel, user):
-    pingEmoji = "📢"
-    photoContestPingRole = 1290196320602030090
-    if messageId != 1290205343158108203 or emojiHash != pingEmoji:
-        return
-    
-    member = await guild.fetch_member(user.id)
-    await member.add_roles(guild.get_role(photoContestPingRole))
-
 async def verif_news_source(message):
     """
     Check that there is no untrusted news source in the message
     """
 
-    untrusted = {"x.com/visegrad24": "Visegrád 24", "trtworld.com/": "TRT", "x.com/trtworld": "TRT"}
+    untrusted = {
+        "x.com/visegrad24": "Visegrád 24", 
+        "trtworld.com/": "TRT", "x.com/trtworld": "TRT",
+        "x.com/afpost": "AF Post"
+        }
 
     ref = discord.MessageReference(channel_id = message.channel.id, message_id = message.id)
     msg_low = message.content.lower()
@@ -350,7 +345,6 @@ def main():
             channel = traitement["channel"]
 
             await reportreact(messageId, guild, emojiHash, channel, user)
-            await photocontestping(messageId, guild, emojiHash, channel, user)
             if await isWelcome(guild, user.id) or await isMod(guild, user.id):
                 await introreact(messageId, guild, emojiHash, channel, user)
 
