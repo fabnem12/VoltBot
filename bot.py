@@ -215,10 +215,10 @@ async def verif_news_source(message):
 
     ref = discord.MessageReference(channel_id = message.channel.id, message_id = message.id)
     msg_low = message.content.lower()
-    for link, source in untrusted.items():
-        if "x.com" in link.lower():
-            await message.channel.send(":warning: This server recommends no longer sharing content from x.com (formerly known as Twitter). For news, please send the direct link for them rather than a tweet referring to them.")
+    if "x.com" in msg_low:
+        await message.channel.send(":warning: This server recommends no longer sharing content from x.com (formerly known as Twitter). For news, please send the direct link for them rather than a tweet referring to them.")
 
+    for link, source in untrusted.items():    
         if link in msg_low:
             await message.channel.send(f":warning: This message contains a link to an untrusted news source ({source})", reference = ref)
             return
