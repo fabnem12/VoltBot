@@ -216,6 +216,9 @@ async def verif_news_source(message):
     ref = discord.MessageReference(channel_id = message.channel.id, message_id = message.id)
     msg_low = message.content.lower()
     for link, source in untrusted.items():
+        if "x.com" in link.lower():
+            await message.channel.send(":warning: This server recommends no longer sharing content from x.com (formerly known as Twitter). For news, please send the direct link for them rather than a tweet referring to them.")
+
         if link in msg_low:
             await message.channel.send(f":warning: This message contains a link to an untrusted news source ({source})", reference = ref)
             return
@@ -567,6 +570,15 @@ def main():
                 else:
                     await asyncio.sleep(1)
     
+    @bot.command(name = "purge_user")
+    async def purge_user(ctx, user: discord.User, channel: discord.TextChannel):
+        check = lambda msg: msg.author.id == user.id
+
+        await ctx.send("Starting the purge…")
+        deleted_msgs = await channel.purge(limit = None, check=check)
+        await ctx.send(f"Purge completed, {len(deleted_msgs)} deleted messages")
+
+
     @bot.command(name = "mod")
     async def command_mod_smart_ping(ctx):
         """
