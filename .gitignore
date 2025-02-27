@@ -162,3 +162,5 @@ cython_debug/
 constantes.py
 fichierPID.p
 *.json
+data_contest/*
+resource/*
