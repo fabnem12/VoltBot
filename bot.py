@@ -267,6 +267,17 @@ async def verif_word_train(message):
 
     return True
 
+async def report_automatic_warn(message):
+    """
+    Forwarding automatic warns to the report channel
+    """
+
+    if message.channel.id == modLogId:
+        e = message.embeds[0]
+        if "Automatic action" in e.description:
+            reportChannel = await message.channel.guild.fetch_channel(reportChannelId)
+            await message.forward(reportChannel)
+
 def main():
     intents = discord.Intents.all()
     bot = commands.Bot(command_prefix=constantes.prefixVolt, help_command=None, intents = intents)
@@ -280,6 +291,7 @@ def main():
 
         await verif_word_train(message)
         await verif_news_source(message)
+        await report_automatic_warn(message)
 
         if message.content.startswith(".ban"):
             await ban(message, banAppealOk = False)
