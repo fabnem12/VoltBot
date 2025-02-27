@@ -278,6 +278,40 @@ async def report_automatic_warn(message):
             reportChannel = await message.channel.guild.fetch_channel(reportChannelId)
             await message.forward(reportChannel)
 
+async def smart_tweet(msg: discord.Message, delete: bool = False):
+    """
+    Reply to messages with Twitter links whose video embed fails with fixupx
+    """
+    
+    msgId = msg.id
+    infoSmartTweet = info.get("smart_tweet")
+    if infoSmartTweet is None:
+        infoSmartTweet = info["smart_tweet"] = dict()
+
+    if delete and msgId in infoSmartTweet:
+        msgRep = await msg.channel.fetch_message(infoSmartTweet[msgId])
+        await msgRep.delete()
+        del infoSmartTweet[msgId]
+        return
+
+    links = regex.findall(r"https:\/\/([\w_-]+(?:(?:\.[\w_-]+)+))([\w.,@?^=%&:\/~+#-]*[\w@?^=%&\/~+#-])", msg.content)    
+    links = [(x.lower(), y.lower()) for x, y in links]
+    twitterLinks = ["https://" + x.replace("x.com", "twitter.com").replace("twitter.com", "fixupx.com") + y for x, y in links if (x.startswith("x.com") or x.startswith("twitter.com")) and "fxtwitter.com" not in x and "vxtwitter.com" not in x and "fixupx.com" not in x]
+    anyVideoTweet = any("amplify_video_thumb" in e.image.proxy_url for e in msg.embeds)
+
+    if len(twitterLinks) and anyVideoTweet:
+        ref = discord.MessageReference(channel_id = msg.channel.id, message_id = msgId)
+        
+        if msg.edited_at and msgId in infoSmartTweet:
+            msgRep = await msg.channel.fetch_message(infoSmartTweet[msgId])
+            await msgRep.edit(content = "\n".join(twitterLinks))
+        else:
+            rep = await msg.channel.send("\n".join(twitterLinks), reference = ref)
+            infoSmartTweet[msgId] = rep.id
+    elif msg.edited_at and msgId in infoSmartTweet:
+        msgRep = await msg.channel.fetch_message(infoSmartTweet[msgId])
+        await msgRep.edit(content = ".")
+
 def main():
     intents = discord.Intents.all()
     bot = commands.Bot(command_prefix=constantes.prefixVolt, help_command=None, intents = intents)
@@ -292,6 +326,7 @@ def main():
         await verif_word_train(message)
         await verif_news_source(message)
         await report_automatic_warn(message)
+        await smart_tweet(message)
 
         if message.content.startswith(".ban"):
             await ban(message, banAppealOk = False)
@@ -299,6 +334,7 @@ def main():
     @bot.event
     async def on_message_edit(before, after):
         await verif_word_train(after)
+        await smart_tweet(after)
         
     @bot.event
     async def on_message_delete(msg):
@@ -318,6 +354,8 @@ def main():
                 #await report(msg, entry.user.id)
             
             break
+    
+        await smart_tweet(msg, delete=True)
     
     @bot.event
     async def on_member_join(member: discord.Member):
