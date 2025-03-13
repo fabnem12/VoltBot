@@ -282,6 +282,8 @@ async def smart_tweet(msg: discord.Message, delete: bool = False):
     """
     Reply to messages with Twitter links whose video embed fails with fixupx
     """
+
+    if msg.author.bot: return
     
     msgId = msg.id
     infoSmartTweet = info.get("smart_tweet")
@@ -524,9 +526,9 @@ def main():
         async with channel.typing():
             await assign_base_roles(og.author, ctx.guild)
 
-        e = discord.Embed(description = f"Welcome <@{og.author.id}>, you have full access now. I assigned you the following countries/regions: {', '.join(success_countries)}, and the following languages: {', '.join(success_languages)}.{member_msg}\n-# Feel free to ask mods for help. [Volt Europa](<https://volteuropa.org/>)\nYou can check our <#580529390933245972> and our opt-in <#727489317210947655> :fire:")
+        e = discord.Embed(description = f"Welcome <@{og.author.id}>, you have full access to the Volt Europa server now. I assigned you the following countries/regions: {', '.join(success_countries)}, and the following languages: {', '.join(success_languages)}.{member_msg}\n-# Feel free to ask mods for help. [Volt Europa](<https://volteuropa.org/>)\nYou can check our rules (<#580529390933245972>) and our opt-in roles (<#727489317210947655>) :fire:")
         await channel.send(embed=e, reference = reference)
-
+        await (await dmChannelUser(og.author)).send(embed=e)
 
     @bot.command(name = "court")
     async def courtcommand(ctx, user: discord.Member, *, reason: Optional[str]):
