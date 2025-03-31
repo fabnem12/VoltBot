@@ -680,9 +680,6 @@ def main():
     async def resend_slash(interaction: discord.Interaction, taratata: Optional[str] = None, glbtskf: str = "", apzoeiruty: Optional[discord.Attachment] = None):
         role = discord.utils.get(interaction.guild.roles, name="Volt Discord Team")
 
-        if taratata is None and hasattr(interaction, "message") and interaction.message and interaction.message.reference:
-            taratata = str(interaction.message.reference.message_id)
-
         if role in interaction.user.roles:
             if taratata is None or taratata.isdigit():
                 if taratata: taratata = int(taratata)
