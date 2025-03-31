@@ -675,6 +675,46 @@ def main():
     async def reportcommand(ctx, *, param = ""):
         await report(ctx.message.id, ctx.guild, ctx.channel, ctx.author, param)
         #await report(ctx, param)
+    
+    @bot.slash_command(name = "skibidi")
+    async def resend_slash(interaction: discord.Interaction, taratata: Optional[str] = None, glbtskf: str = "", apzoeiruty: Optional[discord.Attachment] = None):
+        role = discord.utils.get(interaction.guild.roles, name="Volt Discord Team")
+
+        if role in interaction.user.roles:
+            if taratata is None or taratata.isdigit():
+                if taratata: taratata = int(taratata)
+                await resend([apzoeiruty] if apzoeiruty else [], interaction.channel, taratata, txt=glbtskf)
+                await interaction.send("Ok", ephemeral=True, delete_after=10)
+            else:
+                await interaction.send("Invalid message id", ephemeral=True)
+        else:
+            await interaction.send("No", ephemeral=True)
+
+    @bot.command(name = "resend")
+    async def resend(ctx, channel: Union[discord.TextChannel, discord.VoiceChannel, discord.StageChannel, discord.GroupChannel, discord.Thread], message_rep: Optional[int] = None, *, txt: str = ""):
+        msg = ctx.message if hasattr(ctx, "message") else None
+
+        ref = msg.reference if msg else None
+        if message_rep:
+            try:
+                msg_ref = await channel.fetch_message(message_rep)
+                ref = discord.MessageReference(message_id = message_rep, channel_id = channel.id)
+            except:
+                pass
+
+        files = []
+        if (msg.attachments if msg else ctx): #ctx is then the list of attachments from the slash command
+            for i, att in enumerate(msg.attachments if msg else ctx):
+                r = requests.get(att.url)
+                with open(str(i), "wb") as outfile:
+                    outfile.write(r.content)
+
+                files.append(discord.File(str(i), att.filename))
+
+        await channel.send(txt, reference = ref, embeds = msg.embeds if msg else None, files = files)
+
+        for i in range(len(files)):
+            os.remove(str(i))
 
     @bot.command(name = "top_of_month")
     async def topOfMonth(ctx):
