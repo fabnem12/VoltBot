@@ -7,6 +7,7 @@ import genVoteInfo
 
 import os
 import json
+import requests
 from arrow import utcnow
 from random import shuffle
 from typing import Dict, List, Tuple, Optional
@@ -1042,164 +1043,117 @@ async def resultats(bot):
     Show detailed results
     """
 
-    contestants = set(authorId for channelInfo in submissions.values() for subs in channelInfo.values() for _, authorId, _ in subs.values())
+    guild = bot.get_guild(voltServer)
+    jury_role = guild.get_role(1290062262303854689)
+    jurors = set(x.id for x in jury_role.members)
 
     #results of the submission period
-    infoSubmissionPeriod = [] #text of the file with all the votes of the submission period
 
-    printF = lambda *args, end = "\n": infoSubmissionPeriod.append(" ".join(str(x) for x in args) + end)
-    printF("Results of the votes cast during the submission period")
-
-    names: Dict[int, str] = dict() #{user_id: user_name}
+    id2name: Dict[int, str] = dict() #{user_id: user_name}
 
     for channelId, channelInfo in submissions.items():
-        printF(f"Category {(await bot.fetch_channel(channelId)).name}")
-        
+        #submissions
         for threadId, subs in channelInfo.items():
             thread = await bot.fetch_channel(threadId)
-            printF(f"Thread {thread.name}")
+            if threadId not in votes1:
+                continue
 
-            #count the votes of authors and global votes
-            votesContestants, globalVotes = {subs[s][0]: 0 for s in subs}, {subs[s][0]: 0 for s in subs}
-            url2sub = {subs[s][0]: subs[s] for s in subs}
-            votesDeanonymized: Dict[str, List[int]] = {subs[s][0]: [] for s in subs} #{sub_url: {user id of voters}}
-
-            if threadId in votes1:
-                for voterId, subUrl in votes1[threadId]:
-                    voteWeight = 1 if voterId != url2sub[subUrl][1] else 0
-                    #self-votes don't count
-                    #this can happen because they were allowed at the beginning of the contest
-                    #so there are already self-votes in the registry
-
-                    if voterId in contestants:
-                        votesContestants[subUrl] += voteWeight
-                    
-                    globalVotes[subUrl] += voteWeight
-                    votesDeanonymized[subUrl].append(voterId)
+            await thread.edit(archived = False)
                 
             for i, (messageId, (subUrl, authorId, _)) in enumerate(subs.items()):
-                votesGlob, votesCont = globalVotes[subUrl], votesContestants[subUrl]
+                #find the image file
+                msg = await thread.fetch_message(messageId)
+                urlImg = msg.embeds[0].image.url
 
-                e = discord.Embed(description = f"This photo by <@{authorId}> got {votesGlob} upvotes, of which {votesCont} were from contestants")
-                e.set_image(url = subUrl)
-                #await msg.edit(embed = e)
+                filename = os.path.basename(urlImg.split("?")[0])
+                img_path = "data_contest/"+filename
+                with open(img_path, "wb") as f:
+                    f.write(requests.get(urlImg).content)
 
-                if authorId not in names:
-                    names[authorId] = (await bot.fetch_user(authorId))
+                #retrieve the info for the infobox
+                photo_id = (i+1, subUrl, img_path, authorId)
 
-                printF(f"Photo {i+1} by {names[authorId]} ({subUrl}) got {votesGlob} upvotes, {votesCont} from contestants:")
-                for voterId in votesDeanonymized[subUrl]:
-                    if voterId not in names:
-                        names[voterId] = (await bot.fetch_user(voterId)).name
-                    printF(names[voterId])
+                #check the submission
+                upvotes = votes1[threadId]
+                if threadId in votes2:
+                    jury_votes = votes2[threadId]
+                else:
+                    jury_votes = dict()
+                    for voter, vote_url in upvotes:
+                        if voter in jurors and voter != authorId and vote_url == subUrl:
+                            jury_votes[voter] = jury_votes.get(voter, 0) + 1
+
+                #find the names of the users
+                if isinstance(jury_votes, dict):
+                    for voterId in jury_votes.keys():
+                        voterId = int(voterId)
+                        if voterId not in id2name:
+                            id2name[voterId] = (await bot.fetch_user(voterId)).name
+                for voterId, _ in upvotes:
+                    if voterId not in id2name:
+                        id2name[voterId] = (await bot.fetch_user(voterId)).name
+                if authorId not in id2name:
+                    id2name[authorId] = (await bot.fetch_user(authorId)).name
                 
-                printF()
+                #send the infobox
+                pathInfobox = genVoteInfo.genSemiThread(thread.parent.name[2:].title(), photo_id, id2name, jury_votes, upvotes, thread.name[12:])
+                channelRefresh = await bot.fetch_channel(saveChannelId)
+                msgTmp = await channelRefresh.send(file = discord.File(pathInfobox))
+                urlInfobox = msgTmp.attachments[0].url
 
-        printF()
-        printF()
-    
-    with open("results_submission_period.txt", "w") as f:
-        f.write("".join(infoSubmissionPeriod))
-    
-    infoSemis = [] #text of the file with all the votes of the semi-finals
-
-    printF = lambda *args, end = "\n": infoSemis.append(" ".join(str(x) for x in args) + end)
-    printF("Results of the votes cast during the semi-finals")
-
-    #results of semis
-    for channelId, entries in entriesInSemis.items():
-        channel = await bot.fetch_channel(channelId)
-        printF(f"Semi-final for {channel.name}")
-
-        contestants = set(authorId for channelInfo in submissions.values() for subs in channelInfo.values() for _, authorId, _ in subs.values())
-
-        #count the votes of authors and global votes
-        votesContestants, globalVotes = {v[0]: 0 for v in entries.values()}, {v[0]: 0 for v in entries.values()}
-        url2sub = {v[0]: v for v in entries.values()}
-        votesDeanonymized: Dict[str, List[int]] = {v[0]: [] for v in entries.values()} #{sub_url: {user id of voters}}
-
-        if channelId in votes1: #should be true but who knows
-            for voterId, subUrl in votes1[channelId]:
-                voteWeight = 1 if voterId != url2sub[subUrl][1] else 0.5
-                #when you vote for yourself, your vote is worth 0.5 only
-
-                if voterId in contestants:
-                    votesContestants[subUrl] += voteWeight
+                e = discord.Embed()
+                e.set_image(urlInfobox)
                 
-                globalVotes[subUrl] += voteWeight
-                votesDeanonymized[subUrl].append(voterId)
-
-        for i, (messageId, (subUrl, authorId, _)) in enumerate(entries.items()):
+                await msg.edit(embeds = [msg.embeds[0], e])
+                
+        channel = await guild.fetch_channel(channelId)
+        #semi
+        for i, (messageId, (subUrl, authorId, _)) in enumerate(entriesInSemis[channelId].items()):
+            #find the image file
             msg = await channel.fetch_message(messageId)
-            votesGlob, votesCont = globalVotes[subUrl], votesContestants[subUrl]
+            urlImg = msg.embeds[0].image.url
 
-            e = discord.Embed(description = f"**Photo #{i+1} for {channel.mention}**\nSubmitted by <@{authorId}>, got {votesGlob} upvotes, of which {votesCont} were from contestants")
-            e.set_image(url = subUrl)
-            #await msg.edit(embed = e)
+            filename = os.path.basename(urlImg.split("?")[0])
+            img_path = "data_contest/"+filename
+            with open(img_path, "wb") as f:
+                f.write(requests.get(urlImg).content)
 
-            printF(f"Photo {i+1} by {names[authorId]} ({subUrl}) got {votesGlob} upvotes, {votesCont} from contestants:")
-            for voterId in votesDeanonymized[subUrl]:
-                if voterId not in names:
-                    names[voterId] = (await bot.fetch_user(voterId)).name
-                printF(names[voterId])
+            #retrieve the info for the infobox
+            photo_id = (i+1, subUrl, img_path, authorId)
+
+            #check the submission
+            upvotes = votes1[channelId]
+            if channelId in votes2:
+                jury_votes = votes2[channelId * 10]
+            else:
+                jury_votes = dict()
+                for voter, vote_url in upvotes:
+                    if voter in jurors and voter != authorId and vote_url == subUrl:
+                        jury_votes[voter] = jury_votes.get(voter, 0) + 1
             
-            printF()
-        printF()
+            #find the names of the users
+            if isinstance(jury_votes, dict):
+                for voterId in jury_votes.keys():
+                    voterId = int(voterId)
+                    if voterId not in id2name:
+                        id2name[voterId] = (await bot.fetch_user(voterId)).name
+            for voterId, _ in upvotes:
+                if voterId not in id2name:
+                    id2name[voterId] = (await bot.fetch_user(voterId)).name
+            if authorId not in id2name:
+                id2name[authorId] = (await bot.fetch_user(authorId)).name
+            
+            #send the infobox
+            pathInfobox = genVoteInfo.genSemiThread(channel.name[2:].title(), photo_id, id2name, jury_votes, upvotes)
+            
+            channelRefresh = await bot.fetch_channel(saveChannelId)
+            msgTmp = await channelRefresh.send(file = discord.File(pathInfobox))
+            urlInfobox = msgTmp.attachments[0].url
 
-    with open("results_semis.txt", "w") as f:
-        f.write("".join(infoSemis))
-
-    infoGF = []
-
-    printF = lambda *args, end = "\n": infoGF.append(" ".join(str(x) for x in args) + end)
-    printF("Results of the votes cast during the Grand Final")
-
-    #results of grand-final
-    channel = await bot.fetch_channel(grandFinalChannel)
-    for channelId, subs in sorted(entriesInGF.items(), key=lambda x: x[1] == grandFinalChannel): #trick to make sure the 2nd step of the grand final is shown last
-        if channelId == grandFinalChannel:
-            printF("Results of the final vote")
-        else:
-            printF(f"Results of the Grand Final for {(await bot.fetch_channel(channelId)).name}")
-        
-        winnerGF, details = condorcet(votes2[channelId], subs)
-        sub2id = {sub: i for i, sub in enumerate(subs)}
-
-        #show the URL of the photos
-        for i, sub in enumerate(subs):
-            printF(f"Photo #F{i+1} by {names[sub[1]]} ({sub[0]})")
-        printF()
-        
-        #full rankings per voter
-        for voterId, vote in votes2[channelId].items():
-            if voterId not in names:
-                names[voterId] = (await bot.fetch_user(voterId)).name
-
-            printF(f"{names[voterId]}:", ", ".join(f"Photo #F{sub2id[sub]+1}" for sub in vote))
-
-        detailsProcessed: Dict[Submission, List[Tuple[Submission, float, float]]] = {sub: [] for sub in subs}
-
-        for (winner, loser), (pointsWinner, pointsLoser) in details.items():
-            detailsProcessed[winner].append((loser, pointsWinner, pointsLoser))
-        
-        affiResDuels = lambda sub: "\n".join(f"**It won against Photo #F{sub2id[loser] + 1}** ({pointsWinner}-{pointsLoser})" for loser, pointsWinner, pointsLoser in detailsProcessed[sub])
-
-        for i, sub in enumerate(subs):
-            subUrl, authorId, _ = sub
-            isWinner = ("won the Photo Contest" if sub == winnerGF else "") if channelId == grandFinalChannel else ("won its category" if sub == winnerGF else "")
-            fromChannel = f"for <#{channelId}> " if channelId != grandFinalChannel else ""
-
-            e = discord.Embed(description = f"**Photo #F{i+1} {fromChannel}{isWinner}**\nSubmitted by <@{authorId}>\n\n" + affiResDuels(sub))
-            e.set_image(url = subUrl)
-            #await channel.send(embed = e)
-        
-        printF()
-    
-    with open("results_gf.txt", "w") as f:
-        f.write("".join(infoGF))
-    
-    channel = await bot.fetch_channel(grandFinalChannel)
-    channel.send("Detailed deanonymized voting results:", attachments = [])
+            e = discord.Embed()
+            e.set_image(urlInfobox)
+            
+            await msg.edit(embeds = [msg.embeds[0], e])
 
 #######################################################################
 

@@ -66,7 +66,8 @@ def genSemiThread(channel_name: str, photo_id: PhotoId, id2name: Dict[int, str],
         fnt = fnt_bold_small if points == 3 else (fnt_regular if points == 2 else fnt_light)
         d.text((400, 135+i*25), f"{points} point{'s' if points != 1 else ''} from {voter}", anchor="lt", fill="white", font=fnt)
 
-    img.save("data_contest/"+photo_path+"_result.png")
+    img.save(photo_path+"_result.png")
+    return photo_path+"_result.png"
 
 def genVoteAnimFinal(channel_name: str, sub2photoid: Dict[Submission, int], id2name: Dict[int, str], votes: Dict[int, List[Submission]], jurors: Set[int], gf1: bool = True):
     points = [7, 5, 3, 2, 1, 0] if gf1 else [4, 2, 1, 0]
