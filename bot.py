@@ -693,6 +693,12 @@ def main():
     @bot.command(name = "resend")
     async def resend(ctx, channel: Union[discord.TextChannel, discord.VoiceChannel, discord.StageChannel, discord.GroupChannel, discord.Thread], message_rep: Optional[int] = None, *, txt: str = ""):
         msg = ctx.message if hasattr(ctx, "message") else None
+        if msg:
+            #check the role
+            author = msg.author
+            role = discord.utils.get(msg.guild.roles, name="Volt Discord Team")
+            if role not in author.roles:
+                return
 
         ref = msg.reference if msg else None
         if message_rep:
