@@ -211,7 +211,9 @@ async def verif_news_source(message):
     untrusted = {
         "x.com/visegrad24": "Visegrád 24", 
         "trtworld.com/": "TRT", "x.com/trtworld": "TRT",
-        "x.com/afpost": "AF Post"
+        "x.com/afpost": "AF Post",
+        "x.com/cerfia": "Cerfia",
+        "x.com/mediavenir": "Mediavenir"
         }
 
     ref = discord.MessageReference(channel_id = message.channel.id, message_id = message.id)
