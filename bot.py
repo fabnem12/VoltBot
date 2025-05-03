@@ -411,11 +411,11 @@ def main():
         await ctx.send("ayo")
 
     @bot.command(name = "verify")
-    async def verify(ctx):
+    async def verify(ctx, member: Optional[discord.Member]):
         if not await isWelcome(ctx.guild, ctx.message.author.id) and not await isMod(ctx.guild, ctx.message.author.id):
             return
         reference = ctx.message.reference
-        if reference is None:
+        if reference is None and member is None:
             return
 
         db = [
@@ -497,8 +497,6 @@ def main():
 
         roles_langs = set(roles_langs_add) - set(roles_langs_remove)
 
-
-
         roles_to_add = []
         success_countries = []
         success_languages = []
@@ -512,7 +510,9 @@ def main():
 
         await ctx.message.delete()
 
-        og = await ctx.channel.fetch_message(reference.message_id)
+        if member is None:
+            og = await ctx.channel.fetch_message(reference.message_id)
+            member = og.author
 
         member_msg = ""
         if "member" in ctx.message.content:
@@ -520,17 +520,17 @@ def main():
 
             volt_membership_claimed = [role for role in ctx.guild.roles if role.id == 715763050413686814]
             assert len(volt_membership_claimed) == 1, "Volt Membership Claimed role not found"
-            await og.author.add_roles(volt_membership_claimed[0])
+            await member.add_roles(volt_membership_claimed[0])
 
-        await og.author.add_roles(*roles_to_add)
+        await member.add_roles(*roles_to_add)
 
         channel: discord.TextChannel = ctx.channel
         async with channel.typing():
-            await assign_base_roles(og.author, ctx.guild)
+            await assign_base_roles(member, ctx.guild)
 
-        e = discord.Embed(description = f"Welcome <@{og.author.id}>, you have full access to the Volt Europa server now. I assigned you the following countries/regions: {', '.join(success_countries)}, and the following languages: {', '.join(success_languages)}.{member_msg}\n-# Feel free to ask mods for help. [Volt Europa](<https://volteuropa.org/>)\nYou can check our rules (<#580529390933245972>) and our opt-in roles (<#727489317210947655>) :fire:")
+        e = discord.Embed(description = f"Welcome <@{member.id}>, you have full access to the Volt Europa server now. I assigned you the following countries/regions: {', '.join(success_countries)}, and the following languages: {', '.join(success_languages)}.{member_msg}\n-# Feel free to ask mods for help. [Volt Europa](<https://volteuropa.org/>)\nYou can check our rules (<#580529390933245972>) and our opt-in roles (<#727489317210947655>) :fire:")
         await channel.send(embed=e, reference = reference)
-        await (await dmChannelUser(og.author)).send(embed=e)
+        await (await dmChannelUser(member)).send(embed=e)
 
     @bot.command(name = "court")
     async def courtcommand(ctx, user: discord.Member, *, reason: Optional[str]):
