@@ -1,6 +1,7 @@
 import asyncio
 import json
 import nextcord as discord
+from langdetect import detect
 from nextcord.ext import commands
 from typing import Optional, Union
 from unidecode import unidecode
@@ -300,10 +301,11 @@ async def smart_tweet(msg: discord.Message, delete: bool = False):
 
     links = regex.findall(r"https:\/\/([\w_-]+(?:(?:\.[\w_-]+)+))([\w.,@?^=%&:\/~+#-]*[\w@?^=%&\/~+#-])", msg.content)    
     links = [(x.lower(), y.lower()) for x, y in links]
-    twitterLinks = ["https://" + x.replace("x.com", "twitter.com").replace("twitter.com", "fixupx.com") + y for x, y in links if (x.startswith("x.com") or x.startswith("twitter.com")) and "fxtwitter.com" not in x and "vxtwitter.com" not in x and "fixupx.com" not in x]
+    twitterLinks = ["https://" + x.replace("x.com", "twitter.com").replace("twitter.com", "fixupx.com") + y.split("?")[0] + "/en" for x, y in links if (x.startswith("x.com") or x.startswith("twitter.com")) and "fxtwitter.com" not in x and "vxtwitter.com" not in x and "fixupx.com" not in x]
     anyVideoTweet = msg.embeds and any(e.image.proxy_url and "amplify_video_thumb" in e.image.proxy_url for e in msg.embeds)
+    nonEnglish = msg.embeds and any(len(e.description.split()) > 4 and detect(e.description) != "en" for e in msg.embeds)
 
-    if len(twitterLinks) and anyVideoTweet:
+    if len(twitterLinks) and (anyVideoTweet or nonEnglish):
         ref = discord.MessageReference(channel_id = msg.channel.id, message_id = msgId)
         
         if msg.edited_at and msgId in infoSmartTweet:
