@@ -3,11 +3,11 @@ from math import ceil
 from random import shuffle
 import os
 
-#songs = ["Cyprus", "Serbia", "Lithuania", "Ireland", "Ukraine", "Poland", "Croatia", "Iceland", "Slovenia", "Finland", "Moldova", "Azerbaijan", "Australia", "Portugal", "Luxembourg"]
-#songs = ["Malta", "Albania", "Greece", "Switzerland", "Czechia", "Austria", "Denmark", "Armenia", "Latvia", "San Marino", "Georgia", "Belgium", "Estonia", "Israel", "Norway", "Netherlands"]
-songs = ["Sweden", "Ukraine", "Germany", "Luxembourg", "Israel", "Lithuania", "Spain", "Estonia", "Ireland", "Latvia", "Greece", "UK", "Norway", "Italy", "Serbia", "Finland", "Portugal", "Armenia", "Cyprus", "Switzerland", "Slovenia", "Croatia", "Georgia", "France", "Austria"]
+songs = ["Iceland", "Poland", "Slovenia", "Estonia", "Ukraine", "Sweden", "Portugal", "Norway", "Belgium", "Azerbaijan", "San Marino", "Albania", "Netherlands", "Croatia", "Cyprus"]
+#songs = ["Australia", "Montenegro", "Ireland", "Latvia", "Armenia", "Austria", "Greece", "Lithuania", "Malta", "Georgia", "Denmark", "Czechia", "Luxembourg", "Israel", "Serbia", "Finland"]
+#songs = []
 
-boardHeight = 100+50*ceil(len(songs) / 2)
+boardHeight = 100+57*ceil(len(songs) / 2)
 beginningSvg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="700" height="{boardHeight}" viewBox="0 0 700 {boardHeight}">
     <style type="text/css">
         @import url('https://fonts.googleapis.com/css2?family=Ubuntu+Sans:ital,wght@0,100..800;1,100..800');
@@ -32,22 +32,22 @@ def seekFlag(countryName, x, y):
     with open(os.path.join(os.path.dirname(__file__), countryName.replace(" ", "_") + ".svg"), "r") as f:
         code = "".join(f.readlines())
     
-    return code[:4] + f' height="48" width="55" x="{x}" y="{y}" preserveAspectRatio="none"' + code[4:]
+    return code[:4] + f' height="55" width="55" x="{x}" y="{y}" preserveAspectRatio="none"' + code[4:]
 
 def svgCountry(countryName, x, y, currentPointsCountry, newPointsCountry, highlight = False) -> str:
-    codeCountry = f"""    <rect x="{10+x*350}" y="{50+y*50}" width="330" height="50" style="fill: #502379; stroke-width:2;stroke:white;" />
-    {seekFlag(countryName, 11+x*350, 51+y*50)}
-    <rect x="{290+x*350}" y="{51+y*50}" height="48" width="48" fill="#3F086F" />
-    <text x="{77+x*350}" y="{75+y*50}" dominant-baseline="middle" fill="white" font-size="25">
+    codeCountry = f"""    <rect x="{10+x*350}" y="{50+y*57}" width="330" height="57" style="fill: #502379; stroke-width:2;stroke:white;" />
+    {seekFlag(countryName, 11+x*350, 51+y*57)}
+    <rect x="{283+x*350}" y="{51+y*57}" height="55" width="55" fill="#3F086F" />
+    <text x="{77+x*350}" y="{78.5+y*57}" dominant-baseline="middle" fill="white" font-size="25">
     {countryName}
     </text>
-    <text x="{315+x*350}" y="{75+y*50}" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="23">
+    <text x="{312.5+x*350}" y="{78.5+y*57}" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="23">
     {currentPointsCountry}
     </text>
 """
     if newPointsCountry is not None:
-        if highlight: codeCountry += f"""<rect x="{240+x*350}" y="{51+y*50}" height="48" width="48" fill="white" />\n"""
-        codeCountry += f"""<text x="{265+x*350}" y="{75+y*50}" text-anchor="middle" dominant-baseline="middle" fill="{'#3F086F' if highlight else 'white'}" font-size="23">{newPointsCountry}</text>"""
+        if highlight: codeCountry += f"""<rect x="{229.5+x*350}" y="{51+y*57}" height="55" width="55" fill="white" />\n"""
+        codeCountry += f"""<text x="{258+x*350}" y="{78.5+y*57}" text-anchor="middle" dominant-baseline="middle" fill="{'#3F086F' if highlight else 'white'}" font-size="23">{newPointsCountry}</text>"""
 
     return codeCountry
 

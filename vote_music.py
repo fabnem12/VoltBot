@@ -26,15 +26,17 @@ except:
     votes = []
     msgVote = [0, 0, 0]
 
-#songs = ["Malta", "Albania", "Greece", "Switzerland", "Czechia", "Austria", "Denmark", "Armenia", "Latvia", "San Marino", "Georgia", "Belgium", "Estonia", "Israel", "Norway", "Netherlands"]
-songs = ["Sweden", "Ukraine", "Germany", "Luxembourg", "Israel", "Lithuania", "Spain", "Estonia", "Ireland", "Latvia", "Greece", "UK", "Norway", "Italy", "Serbia", "Finland", "Portugal", "Armenia", "Cyprus", "Switzerland", "Slovenia", "Croatia", "Georgia", "France", "Austria"]
+songs = ["Iceland", "Poland", "Slovenia", "Estonia", "Ukraine", "Sweden", "Portugal", "Norway", "Belgium", "Azerbaijan", "San Marino", "Albania", "Netherlands", "Croatia", "Cyprus"]
+#songs = ["Australia", "Montenegro", "Ireland", "Latvia", "Armenia", "Austria", "Greece", "Lithuania", "Malta", "Georgia", "Denmark", "Czechia", "Luxembourg", "Israel", "Serbia", "Finland"]
+#songs = []
 
 countryCodes = {"Cyprus": "CY", "Serbia": "RS", "Lithuania": "LT", "Ireland": "IE", "Ukraine": "UA", "Poland": "PL",
                 "Croatia": "HR", "Iceland": "IS", "Slovenia": "SI", "Finland": "FI", "Moldova": "MD", "Azerbaijan": "AZ",
                 "Australia": "AU", "Portugal": "PT", "Luxembourg": "LU", "Malta": "MT", "Albania": "AL", "Greece": "GR",
                 "Switzerland": "CH", "Czechia": "CZ", "Austria": "AT", "Denmark": "DK", "Armenia": "AM", "Latvia": "LV",
                 "San Marino": "SM", "Georgia": "GE", "Belgium": "BE", "Estonia": "EE", "Israel": "IL", "Norway": "NO",
-                "Netherlands": "NL", "Sweden": "SE", "UK": "GB", "Germany": "DE", "France": "FR", "Italy": "IT", "Spain": "ES"}
+                "Netherlands": "NL", "Sweden": "SE", "UK": "GB", "Germany": "DE", "France": "FR", "Italy": "IT", "Spain": "ES",
+                "Montenegro": "ME"}
 flags = {country: flag.flag(countryCodes[country]) for country in songs}
 flagsRev = {v: k for k, v in flags.items()}
 timeClickVote = dict()
@@ -259,7 +261,7 @@ async def startVote(channel):
         await msg2.add_reaction(flags[country])
 
 async def showResults(channel):
-    await channel.send("**Time for the results of the Volt Europa Discord's vote for the Grand Final of the Eurovision Song Contest!**")
+    await channel.send("**Time for the results of the Volt Europa Discord's vote for the First Semi-Final of the Eurovision Song Contest 2025!**")
     await channel.send("Let's start with Jury votes…")
     await asyncio.sleep(5)
 
