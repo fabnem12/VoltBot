@@ -26,8 +26,8 @@ except:
     votes = []
     msgVote = [0, 0, 0]
 
-songs = ["Iceland", "Poland", "Slovenia", "Estonia", "Ukraine", "Sweden", "Portugal", "Norway", "Belgium", "Azerbaijan", "San Marino", "Albania", "Netherlands", "Croatia", "Cyprus"]
-#songs = ["Australia", "Montenegro", "Ireland", "Latvia", "Armenia", "Austria", "Greece", "Lithuania", "Malta", "Georgia", "Denmark", "Czechia", "Luxembourg", "Israel", "Serbia", "Finland"]
+#songs = ["Iceland", "Poland", "Slovenia", "Estonia", "Ukraine", "Sweden", "Portugal", "Norway", "Belgium", "Azerbaijan", "San Marino", "Albania", "Netherlands", "Croatia", "Cyprus"]
+songs = ["Australia", "Montenegro", "Ireland", "Latvia", "Armenia", "Austria", "Greece", "Lithuania", "Malta", "Georgia", "Denmark", "Czechia", "Luxembourg", "Israel", "Serbia", "Finland"]
 #songs = []
 
 countryCodes = {"Cyprus": "CY", "Serbia": "RS", "Lithuania": "LT", "Ireland": "IE", "Ukraine": "UA", "Poland": "PL",
@@ -261,7 +261,7 @@ async def startVote(channel):
         await msg2.add_reaction(flags[country])
 
 async def showResults(channel):
-    await channel.send("**Time for the results of the Volt Europa Discord's vote for the First Semi-Final of the Eurovision Song Contest 2025!**")
+    await channel.send("**Time for the results of the Volt Europa Discord's vote for the Second Semi-Final of the Eurovision Song Contest 2025!**")
     await channel.send("Let's start with Jury votes…")
     await asyncio.sleep(5)
 
@@ -283,7 +283,7 @@ async def showResults(channel):
                 await asyncio.sleep(5)
                 await channel.send("Okay, gimme a second")
                 await asyncio.sleep(10)
-                await channel.send("The points from the Televote will be announced in the ascending order of the Jury results")
+                await channel.send("The points from the televote will be announced in the ascending order of the jury results")
                 await asyncio.sleep(5)
                 await channel.send("Here we go!")
         elif nextVoter:
