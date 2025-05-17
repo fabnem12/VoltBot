@@ -4,8 +4,8 @@ from random import shuffle
 import os
 
 #songs = ["Iceland", "Poland", "Slovenia", "Estonia", "Ukraine", "Sweden", "Portugal", "Norway", "Belgium", "Azerbaijan", "San Marino", "Albania", "Netherlands", "Croatia", "Cyprus"]
-songs = ["Australia", "Montenegro", "Ireland", "Latvia", "Armenia", "Austria", "Greece", "Lithuania", "Malta", "Georgia", "Denmark", "Czechia", "Luxembourg", "Israel", "Serbia", "Finland"]
-#songs = []
+#songs = ["Australia", "Montenegro", "Ireland", "Latvia", "Armenia", "Austria", "Greece", "Lithuania", "Malta", "Georgia", "Denmark", "Czechia", "Luxembourg", "Israel", "Serbia", "Finland"]
+songs = ["Norway", "Luxembourg", "Estonia", "Israel", "Lithuania", "Spain", "Ukraine", "UK", "Austria", "Iceland", "Latvia", "Netherlands", "Finland", "Italy", "Poland", "Germany", "Greece", "Armenia", "Switzerland", "Malta", "Portugal", "Denmark", "Sweden", "France", "San Marino", "Albania"]
 
 boardHeight = 100+57*ceil(len(songs) / 2)
 beginningSvg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="700" height="{boardHeight}" viewBox="0 0 700 {boardHeight}">
@@ -68,7 +68,7 @@ def genSvgUser(votes, currentPoints, username, changePoints = True) -> str:
     printF("Votes of", username, "</text>")
     printF()
 
-    for i, (country, points) in enumerate(sorted(currentPoints.items(), key=lambda x: (x[1], -songs.index(x[0])), reverse=True)):
+    for i, (country, points) in enumerate(sorted(currentPoints.items(), key=lambda x: (x[1], -votesUser.get("public", 0), -songs.index(x[0])), reverse=True)):
         pointsFromUser = votesUser.get(country, None)
         printF(svgCountry(country, *xyFromI(i), points, pointsFromUser, pointsFromUser == 12 and username != "public"))
     

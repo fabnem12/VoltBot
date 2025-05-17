@@ -27,8 +27,8 @@ except:
     msgVote = [0, 0, 0]
 
 #songs = ["Iceland", "Poland", "Slovenia", "Estonia", "Ukraine", "Sweden", "Portugal", "Norway", "Belgium", "Azerbaijan", "San Marino", "Albania", "Netherlands", "Croatia", "Cyprus"]
-songs = ["Australia", "Montenegro", "Ireland", "Latvia", "Armenia", "Austria", "Greece", "Lithuania", "Malta", "Georgia", "Denmark", "Czechia", "Luxembourg", "Israel", "Serbia", "Finland"]
-#songs = []
+#songs = ["Australia", "Montenegro", "Ireland", "Latvia", "Armenia", "Austria", "Greece", "Lithuania", "Malta", "Georgia", "Denmark", "Czechia", "Luxembourg", "Israel", "Serbia", "Finland"]
+songs = ["Norway", "Luxembourg", "Estonia", "Israel", "Lithuania", "Spain", "Ukraine", "UK", "Austria", "Iceland", "Latvia", "Netherlands", "Finland", "Italy", "Poland", "Germany", "Greece", "Armenia", "Switzerland", "Malta", "Portugal", "Denmark", "Sweden", "France", "San Marino", "Albania"]
 
 countryCodes = {"Cyprus": "CY", "Serbia": "RS", "Lithuania": "LT", "Ireland": "IE", "Ukraine": "UA", "Poland": "PL",
                 "Croatia": "HR", "Iceland": "IS", "Slovenia": "SI", "Finland": "FI", "Moldova": "MD", "Azerbaijan": "AZ",
@@ -219,7 +219,7 @@ async def saveVotePublic(user, song):
     votesOfUser = [song for (username, isJury, song) in reversed(votes) if user.name == username and not isJury]
     nbVotesOfUser = len(votesOfUser)
     otherVotesSong = len(list(filter(lambda x: x == song, votesOfUser)))
-    maxVotesPerSong = 3
+    maxVotesPerSong = 5
 
     channel = await dmChannelUser(user)
 
@@ -248,7 +248,7 @@ async def react_vote(messageId, user, guild, emojiHash, channel):
             await msg.remove_reaction(emojiHash, user)
 
 async def startVote(channel):
-    msg = await channel.send(f"**__Televote__**\nYou can also make **unranked votes by simply reacting with country flags** (only your first {numberMaxVotesPublic} votes will be counted)")
+    msg = await channel.send(f"**__Televote__**\nYou can make **unranked votes by simply reacting with country flags** (only your first {numberMaxVotesPublic} votes will be counted)")
     msg2 = await channel.send("(Jury voting will also be available tonight, but only after the end of the last performance)")
     msgVote[0] = msg.id
     msgVote[1] = msg2.id
@@ -261,7 +261,7 @@ async def startVote(channel):
         await msg2.add_reaction(flags[country])
 
 async def showResults(channel):
-    await channel.send("**Time for the results of the Volt Europa Discord's vote for the Second Semi-Final of the Eurovision Song Contest 2025!**")
+    await channel.send("**Time for the results of the Volt Europa Discord's vote for the Grand Final of the Eurovision Song Contest 2025!**")
     await channel.send("Let's start with Jury votes…")
     await asyncio.sleep(5)
 
