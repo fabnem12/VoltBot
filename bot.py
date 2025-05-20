@@ -366,11 +366,11 @@ def main():
     @bot.event
     async def on_member_join(member: discord.Member):
         dmChannel = await dmChannelUser(member)
-        await dmChannel.send("Hey! **Welcome to the Volt Europa Discord server!**\nTo get the access to the server, please introduce yourself in <#567024817128210433>, citing the country/countries you are from, the languages you speak and whether you are a <:volt:698844154418954311> member.\nOnce you get verified, you can check <#727489317210947655> to get access to topic channels.")
+        await dmChannel.send("Hey! **Welcome to the Volt Europa Discord server!**\nTo get the access to the server, please introduce yourself in <#567024817128210433>, citing the country/countries you are from, the languages you speak and whether you are a <:volt:698844154418954311> member.\nYou can check the server rules in <#1349478582354841610>.\nOnce you get verified, you can check <#727489317210947655> to get access to topic channels.")
 
         voltServer = bot.get_guild(567021913210355745)
         introChannel = await voltServer.fetch_channel(567024817128210433)
-        e = discord.Embed(description = f"Welcome {member.mention} <:volt_comfy:842875809526186026>\nPlease **introduce yourself** in this channel, mentioning:\n-your **country**\n-what **languages** you speak\n-whether you are a <:volt:698844154418954311> **member/volunteer** <:volt_cool_glasses:819137584722345984>.\nA mod will check and give you the appropriate roles. You can check the <#580529390933245972>")
+        e = discord.Embed(description = f"Welcome {member.mention} <:volt_comfy:842875809526186026>\nPlease **introduce yourself** in this channel, mentioning:\n-your **country**\n-what **languages** you speak\n-whether you are a <:volt:698844154418954311> **member/volunteer** <:volt_cool_glasses:819137584722345984>.\nA mod will check and give you the appropriate roles. You can check the <#1349478582354841610>")
         await introChannel.send(embed = e)
 
     @bot.event
