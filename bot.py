@@ -318,6 +318,27 @@ async def smart_tweet(msg: discord.Message, delete: bool = False):
         msgRep = await msg.channel.fetch_message(infoSmartTweet[msgId])
         await msgRep.edit(content = ".")
 
+async def reminder_meme(message: discord.Message, bot: discord.BotIntegration):
+    #check the message got sent in #european-memes and is not a bot message
+    if message.channel.id != 731895134639095909 or message.author.bot:
+        return 
+
+    me = bot.user.id
+    
+    i = 0
+    channel = message.channel
+    prevMsg = None
+    async for msg in channel.history(limit=5):
+        if i > 2 and msg.author.id == me and msg.content.startswith(":warning:"):
+            prevMsg = msg
+            break
+        
+        i += 1
+    
+    if prevMsg:
+        await prevMsg.delete()
+        await channel.send(":warning: **This channel is only for memes, not for regular messages.**\nIf you want to react to a meme with text, please make a thread.")
+    
 def main():
     intents = discord.Intents.all()
     bot = commands.Bot(command_prefix=constantes.prefixVolt, help_command=None, intents = intents)
@@ -333,6 +354,7 @@ def main():
         await verif_news_source(message)
         await report_automatic_warn(message)
         await smart_tweet(message)
+        await reminder_meme(message, bot)
 
         if message.content.startswith(".ban"):
             await ban(message, banAppealOk = False)
