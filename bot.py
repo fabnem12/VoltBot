@@ -730,11 +730,6 @@ def main():
             await ctx.message.add_reaction("👌")
             os.system('systemctl restart volt')
         
-    @bot.command(name="user_history")
-    async def user_history(ctx, user: discord.Member):
-        async for msg in user.history(limit=None, before=datetime.datetime(2023, 8, 2), oldest_first=True):
-            print(msg.created_at, msg.content)
-
     @bot.command(name = "ban")
     async def bancommand(ctx):
         await ban(ctx.message)
@@ -833,6 +828,18 @@ def main():
 
             if memberNew and len(memberNew.roles) == 1:
                 await memberNew.ban(reason = "raid - mass ban by Volt Europa Bot")
+
+    @bot.command(name="remove_banned_word")
+    async def remove_banned_word(ctx, user: discord.Member):
+        if await isMod(ctx.guild, ctx.author.id):
+            userId = str(user.id)
+            if "banned_words" in info and userId in info["banned_words"]:
+                banned_words_user = info["banned_words"][userId]
+                if banned_words_user:
+                    del banned_words_user[-1]
+                    save()
+                    
+                    await ctx.message.add_reaction("👌")
 
     banFrom = [0]
     @bot.command(name="ban_from")
