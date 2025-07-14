@@ -300,11 +300,11 @@ async def smart_tweet(msg: discord.Message, delete: bool = False):
         del infoSmartTweet[msgId]
         return
 
-    links = regex.findall(r"https:\/\/([\w_-]+(?:(?:\.[\w_-]+)+))([\w.,@?^=%&:\/~+#-]*[\w@?^=%&\/~+#-])", msg.content)    
+    links = regex.findall(r"https:\/\/([\w_-]+(?:(?:\.[\w_-]+)+))([\w.,@?^=%&:\/~+#-]*[\w@?^=%&\/~+#-])", msg.content)
     links = [(x.lower(), y.lower()) for x, y in links]
     twitterLinks = ["https://fixupx.com" + y.split("?")[0] + "/en" for x, y in links if any(x.startswith(link) for link in ("x.com", "twitter.com", "fxtwitter.com", "vxtwitter.com", "fixupx.com", "girlcockx.com"))]
     anyVideoTweet = msg.embeds and any(e.image.proxy_url and "amplify_video_thumb" in e.image.proxy_url for e in msg.embeds)
-    nonEnglish = msg.embeds and any(len(e.description.split()) > 4 and detect(e.description) != "en" for e in msg.embeds)
+    nonEnglish = msg.embeds and any(len(e.description.split()) > 4 and detect(e.description) != "en" and "/en" not in msg.content for e in msg.embeds)
 
     if len(twitterLinks) and (anyVideoTweet or nonEnglish):
         ref = discord.MessageReference(channel_id = msg.channel.id, message_id = msgId)
