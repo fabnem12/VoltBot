@@ -107,8 +107,9 @@ async def ban(msg, banAppealOk = True):
     else:
         await msg.add_reaction("👌")
 
+    banBy = f" (ban by {msg.author.mention})" if "(ban by" not in banReason else ""
     try:
-        await msg.guild.ban(user, reason = f"{banReason} (ban by {msg.author.mention})", delete_message_seconds = 0)
+        await msg.guild.ban(user, reason = banReason + banBy, delete_message_seconds = 0)
     except Exception as e:
         await (await dmChannelUser(msg.author)).send(f"Unable to ban {user.name}\n{e}")
     else:
@@ -339,6 +340,46 @@ async def reminder_meme(message: discord.Message, bot: discord.BotIntegration):
         await prevMsg.delete()
         await channel.send(":warning: **This channel is only for memes, not for regular messages.**\nIf you want to react to a meme with text, please make a thread.")
     
+async def count_banned_words(message: discord.Message):
+    banned_words = constantes.banned_words
+    
+    msg_lower = message.content.lower()
+    banned_word_used = None
+    for x in banned_words:
+        if x in msg_lower:
+            banned_word_used = x
+            break
+    
+    if banned_word_used:
+        author = message.author
+        authorId = str(author.id)
+        #report the user, the message got deleted for having a banned word in it
+        if "banned_words" not in info:
+            info["banned_words"] = dict()
+        
+        if authorId not in info:
+            info["banned_words"][authorId] = []
+        
+        banned_words_user = info["banned_words"][authorId]
+        save()
+        
+        banned_words_user.append((banned_word_used, time.time()))
+        
+        punishment = {1: "nothing", 2: "nothing", 3: "3h of mute", 4: "6h of mute", 5: "24h of mute", 6: "48h of mute"}.get(len(banned_words_user), "1 week")
+        
+        reportChannel = await message.channel.guild.fetch_channel(reportChannelId)
+        
+        await reportChannel.send(f"**User <@{authorId}> used the banned word {banned_word_used}**\nIt's the #{len(banned_words_user)} use of a banned word by the user since the 14th of July 2025.\n\nPrevious uses:\n" + "\n".join(f'{i+1}. {word} <t:{int(timestamp)}>' for i, (word, timestamp) in enumerate(banned_words_user)) + f"\n\n**Recommended punishment based on the number of offenses: __{punishment}__**")
+        
+        e = discord.Embed(description = message.content)
+        if author.avatar:
+            e.set_author(name = author.name, icon_url = author.avatar.url)
+        e.add_field(name = "Author", value=author.mention, inline=False)
+        e.add_field(name = "Channel", value=message.channel.name, inline=False)
+        
+        await reportChannel.send(embed = e)
+        
+
 def main():
     intents = discord.Intents.all()
     bot = commands.Bot(command_prefix=constantes.prefixVolt, help_command=None, intents = intents)
@@ -384,6 +425,7 @@ def main():
             break
     
         # await smart_tweet(msg, delete=True)
+        await count_banned_words(msg)
     
     @bot.event
     async def on_member_join(member: discord.Member):
