@@ -149,7 +149,6 @@ async def report(messageId, guild, channel, user, param = ""):
             msg = await channel.fetch_message(reference.message_id)
             await msgInit.delete()
         else: #report by reaction
-            await (await dmChannelUser(user)).send(f"The message got reported: {msg.jump_url}. Thanks!")
             ruleEmoji = 742137941211611208
             emoji = await guild.fetch_emoji(ruleEmoji)
 
@@ -865,6 +864,24 @@ def main():
 
             banFrom[0] = 0
             await ctx.message.add_reaction("👌")
+
+    @bot.command(name="del_sorra")
+    async def del_sorra(ctx):
+        print(ctx.author.id)
+        if ctx.author.id != botAdmin:
+            return
+
+        print("yes")
+        channel = await ctx.guild.fetch_channel(800171310940291103)
+        i = 1
+        async for msg in channel.history(limit=None, after=datetime.datetime(2025, 5, 14), before= datetime.datetime(2025, 6, 28), oldest_first=False):
+            i += 1
+            
+            if i % 100 == 0: print(i, msg.created_at, msg.author.id)
+            if msg.author.id == 876846893412528139:
+                print("yay")
+                await msg.delete("Purge asked by the user")
+                print(msg.content)
 
     return bot, constantes.TOKENVOLT
 
