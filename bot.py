@@ -349,7 +349,7 @@ async def count_banned_words(guild: discord.Guild, author: discord.Member, msg_t
             banned_word_used = x
             break
     
-    if banned_word_used:
+    if banned_word_used or channel is None: #channel is None means that it's a manual report by a mod
         authorId = str(author.id)
         #report the user, the message got deleted for having a banned word in it
         if "banned_words" not in info:
@@ -865,28 +865,12 @@ def main():
 
             banFrom[0] = 0
             await ctx.message.add_reaction("👌")
-
-    @bot.command(name="del_sorra")
-    async def del_sorra(ctx):
-        print(ctx.author.id)
-        if ctx.author.id != botAdmin:
-            return
-
-        print("yes")
-        channel = await ctx.guild.fetch_channel(800171310940291103)
-        i = 1
-        async for msg in channel.history(limit=None, after=datetime.datetime(2025, 5, 14), before= datetime.datetime(2025, 6, 28), oldest_first=False):
-            i += 1
-            
-            if i % 100 == 0: print(i, msg.created_at, msg.author.id)
-            if msg.author.id == 876846893412528139:
-                print("yay")
-                await msg.delete("Purge asked by the user")
-                print(msg.content)
     
     @bot.command(name="report_slur")
     async def report_slur(ctx, author: discord.Member, slur: str):
+        print("oheosrjfizejf")
         if (await isMod(ctx.guild, ctx.author.id)):
+            print("ohe")
             await count_banned_words(ctx.guild, author, slur)
 
     return bot, constantes.TOKENVOLT
