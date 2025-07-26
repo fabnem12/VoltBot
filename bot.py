@@ -868,9 +868,7 @@ def main():
     
     @bot.command(name="report_slur")
     async def report_slur(ctx, author: discord.Member, slur: str):
-        print("oheosrjfizejf")
         if (await isMod(ctx.guild, ctx.author.id)):
-            print("ohe")
             await count_banned_words(ctx.guild, author, slur)
 
     return bot, constantes.TOKENVOLT
