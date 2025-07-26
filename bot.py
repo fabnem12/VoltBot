@@ -349,7 +349,10 @@ async def count_banned_words(guild: discord.Guild, author: discord.Member, msg_t
             banned_word_used = x
             break
     
-    if banned_word_used or channel is None: #channel is None means that it's a manual report by a mod
+    if channel is None:
+        banned_word_used = msg_txt
+    
+    if banned_word_used:
         authorId = str(author.id)
         #report the user, the message got deleted for having a banned word in it
         if "banned_words" not in info:
