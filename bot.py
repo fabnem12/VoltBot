@@ -358,12 +358,10 @@ async def count_banned_words(guild: discord.Guild, author: discord.Member, msg_t
         if "banned_words" not in info:
             info["banned_words"] = dict()
         
-        if authorId not in info:
+        if authorId not in info["banned_words"]:
             info["banned_words"][authorId] = []
         
         banned_words_user = info["banned_words"][authorId]
-        save()
-        
         banned_words_user.append((banned_word_used, time.time()))
         save()
         
