@@ -868,7 +868,7 @@ def main():
             await ctx.message.add_reaction("👌")
     
     @bot.command(name="report_slur")
-    async def report_slur(ctx, author: discord.Member, slur: str):
+    async def report_slur(ctx, author: discord.Member, *, slur: str):
         if (await isMod(ctx.guild, ctx.author.id)):
             await count_banned_words(ctx.guild, author, slur)
 
