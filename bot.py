@@ -583,7 +583,7 @@ def main():
 
         member_msg = ""
         if "member" in ctx.message.content:
-            member_msg = f"\n\nTo get verified as Volt Member and get a <:volt:698844154418954311> purple role, DM (private message) your **full name** and **birth date** to <@{ctx.message.author.id}> or any other mod online.\n"
+            member_msg = f"\n\nTo get verified as Volt Member and get a <:volt:698844154418954311> purple role, DM (private message) the link to your Haiilo profile to <@{ctx.message.author.id}> or any other mod online.\n"
 
             volt_membership_claimed = [role for role in ctx.guild.roles if role.id == 715763050413686814]
             assert len(volt_membership_claimed) == 1, "Volt Membership Claimed role not found"
