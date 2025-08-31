@@ -1,4 +1,5 @@
 import asyncio
+import json
 import nextcord as discord
 import os
 import pickle
@@ -20,36 +21,6 @@ if not os.path.isfile("multinationals.p"):
     pickle.dump(multinationalMembers, open("multinationals.p", "wb"))
 else:
     multinationalMembers = pickle.load(open("multinationals.p", "rb"))
-
-def eurovisionPoints(topPerChannel, keyDicoByAuthorId):
-    points = dict()
-    affi = ""
-
-    def addPoints(key, nbPoints):
-        if key not in points:
-            points[key] = nbPoints
-        else:
-            points[key] += nbPoints
-
-    for channel, (top, channelName) in topPerChannel.items():
-        rankedTop = sorted(top.items(), key=lambda x: x[1], reverse = True)
-
-        if len(rankedTop) >= 10 and (rankedTop[9][1] >= (150 if byLength else 10) or (len(sys.argv) >= 2 and sys.argv[1] == "day")): #if not, let's just ignore this channel for the eurovision points, it's not relevant
-            #recap of the channel
-            affiChannel = f"Top in #{channelName} ({sum(y for x, y in rankedTop)} {'letters' if byLength else 'messages'})\n"
-            affiChannel += "\n".join(f"#{i+1} {keyDicoByAuthorId[authorId][2]} ({nbMsgs} {'letters' if byLength else 'messages'})" for i, (authorId, nbMsgs) in zip(range(10), rankedTop))
-            affiChannel += "\n\n"
-
-            affi += affiChannel
-
-            #let's add eurovision points
-            for nbPoints, (authorId, _) in zip((12, 10, 8, 7, 6, 5, 4, 3, 2, 1), rankedTop):
-                addPoints(authorId, nbPoints)
-
-    topPoints = f"Top users eurovision style:\n"
-    topPoints += "\n".join(f"#{i+1} {keyDicoByAuthorId[authorId][2]} with {nbPoints} points" for i, (authorId, nbPoints) in enumerate(sorted(points.items(), key=lambda x: x[1], reverse=True)))
-
-    return topPoints + "\n\n" + affi
 
 def topByCountryRole(keyDicoByAuthorId, nbMsgPerPerson):
     perCountry = dict()
@@ -111,7 +82,7 @@ async def countMessages(guild, bot):
 
     async def readChannel(channel):
         showName = channel.name if channel.category and channel.category.id != 567029949538500640 else "[redacted]"
-        print(showName)
+        #print(showName)
         await bot.change_presence(activity=discord.Game(name=f"Counting messages in #{showName} - {totalNbMsgs[0]}+ messages counted so far"))
 
         topChannel = dict()
@@ -203,75 +174,59 @@ async def countMessages(guild, bot):
         f.write(f"\n\nTop 100 users of the {sys.argv[1] if len(sys.argv) >= 2 else 'month'}:\n")
         f.write("\n".join(f"#{i+1} {keyDicoByAuthorId[authId][2]} with {nbMsgs} {'letters' if byLength else 'messages'}" for i, (authId, nbMsgs) in zip(range(100), sorted(nbMsgPerPerson.items(), key=lambda x: x[1], reverse = True))))
         f.write("\n\n")
-        f.write(eurovisionPoints(topPerChannel, keyDicoByAuthorId))
-        f.write("\n\n")
         f.write(topByCountryRole(keyDicoByAuthorId, nbMsgPerPerson))
 
     await bot.change_presence()
     quit()
 
+def previousMonthYear(month, year):
+    return (month - 1) if month != 1 else 12, year if month != 1 else year - 1
+
 async def countStats(guild, bot):
     infosUser = dict()
+    
+    now = datetime.now()
+    currentMonth, currentYear = now.month, now.year
+    prevMonth, prevMonthYear = previousMonthYear(currentMonth, currentYear)
+
+    timeLimitEarly = datetime(prevMonthYear, prevMonth, 1)
+    timeLimitLate = datetime(currentYear, currentMonth, 1)
+    
+    os.makedirs("outputs", exist_ok=True)
 
     totalNbMsgs = [0]
     async def readChannel(channel):
         def saveStatus():
             with open("status.txt", "w") as f:
                 f.write(f"Counting messages in #{channel.name} - {totalNbMsgs[0]}+ messages counted so far")
-            pickle.dump(infosUser, open("infosUser.p", "wb"))
+                print(f"Counting messages in #{channel.name} - {totalNbMsgs[0]}+ messages counted so far")
+            with open("outputs/infoUserActivity.json", "w") as f:
+                json.dump(infosUser, f)
 
         saveStatus()
 
-        async for msg in channel.history(limit = None): #let's read the messages sent last month in the current channel
+        #let's read the messages sent last month in the current channel
+        async for msg in channel.history(limit = None, after = timeLimitEarly, before = timeLimitLate):
             totalNbMsgs[0] += 1
 
             if totalNbMsgs[0] % 2000 == 0:
                 saveStatus()
 
-            authorId = msg.author.id
-            date = (msg.created_at.year, msg.created_at.month, msg.created_at.day)
+            authorId = str(msg.author.id)
+            date = f"{msg.created_at.year}-{msg.created_at.month}-{msg.created_at.day}"
+            channelId = str(channel.id)
 
             if authorId not in infosUser:
                 infosUser[authorId] = dict()
 
             if channel.id not in infosUser[authorId]:
-                infosUser[authorId][channel.id] = dict()
+                infosUser[authorId][channelId] = dict()
 
-            if date not in infosUser[authorId][channel.id]:
-                infosUser[authorId][channel.id][date] = 0
+            if date not in infosUser[authorId][channelId]:
+                infosUser[authorId][channelId][date] = 0
 
-            infosUser[authorId][channel.id][date] += 1
+            infosUser[authorId][channelId][date] += 1
 
-
-    for channel in filter((lambda x: "logs" not in x.name), guild.text_channels): #let's read all the channels
-        try: #discord raises Forbidden error if the bot is not allowed to read messages in "channel"
-            await readChannel(channel)
-
-            for thread in channel.threads:
-                await readChannel(thread)
-        except Exception as e:
-            print(e)
-
-    quit()
-
-async def countEmotes(guild, bot):
-    totalEmotes = dict()
-    async def readChannel(channel):
-        def saveStatus():
-            with open("status.txt", "w") as f:
-                f.write(f"Counting messages in #{channel.name} - {sum(totalEmotes.values())}+ emotes counted so far")
-            pickle.dump(totalEmotes, open("infosEmotes.p", "wb"))
-
-        saveStatus()
-
-        async for msg in channel.history(limit = None): #let's read the messages sent last month in the current channel
-            for reac in msg.reactions:
-                if str(reac.emoji) not in totalEmotes:
-                    totalEmotes[str(reac.emoji)] = 0
-                totalEmotes[str(reac.emoji)] += reac.count
-
-            if sum(totalEmotes.values()) % 2000 == 0:
-                saveStatus()
 
     for channel in filter((lambda x: "logs" not in x.name), guild.text_channels): #let's read all the channels
         try: #discord raises Forbidden error if the bot is not allowed to read messages in "channel"
@@ -280,9 +235,7 @@ async def countEmotes(guild, bot):
             for thread in channel.threads:
                 await readChannel(thread)
         except Exception as e:
-            print(e)
-
-    quit()
+            print(channel.name, e)
 
 def main() -> None:
     intentsBot = discord.Intents.default()
@@ -295,8 +248,6 @@ def main() -> None:
     async def on_ready():
         if "statsUser" in sys.argv:
             await countStats(bot.get_guild(567021913210355745), bot)
-        elif "statsEmotes" in sys.argv:
-            await countEmotes(bot.get_guild(567021913210355745), bot)
         else:
             await countMessages(bot.get_guild(567021913210355745), bot)
 
