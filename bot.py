@@ -866,7 +866,43 @@ def main():
 
             banFrom[0] = 0
             await ctx.message.add_reaction("👌")
-    
+
+    @bot.command(name="show_top")
+    async def show_top(ctx):
+        if ctx.author.id != botAdmin:
+            return
+
+        if not os.path.exists("outputs/infoUserActivity.json"):
+            await ctx.send("No information available")
+        else:
+            now = datetime.datetime.now()
+            startswith = f"{now.year}-{now.month}"
+
+            data = json.load(open("outputs/infoUserActivity.json"))
+
+            data_month: dict[str, dict[str, dict[str, int]]] = dict()
+            for user, data_user in data.items():
+                data_user_month = {k: v for k, v in data_user.items() if k.startswith(startswith)}
+                if data_user_month:
+                    data_month[user] = data_user_month
+
+            # top 20 most active of the month
+            msg_per_user = {user: sum(msg_date for channel_user in v.values() for msg_date in channel_user.values()) for user, v in data_month.items()}
+            top_users = sorted(msg_per_user.items(), key=lambda x: x[1], reverse=True)[:20]
+
+            # top 10 most active channels
+            msg_per_channel = dict()
+            for user, per_channel in data_month.items():
+                for channelId, channel_user in per_channel.items():
+                    if channelId not in msg_per_channel:
+                        msg_per_channel[channelId] = 0
+
+                    msg_per_channel[channelId] += sum(channel_user.values())
+            top_channel = sorted(msg_per_channel.items(), key=lambda x: x[1], reverse=True)[:10]
+
+            ctx.send("**Top 20 most active users**\n" + "\n".join(f"{i+1} <@{user}>: {nb} messages" for i, (user, nb) in enumerate(top_users)))
+            ctx.send("**Top 10 most active channels/threads\n" + "\n".join(f"{i+1} <#{channel}>: {nb} messages" for i, (channel, nb) in enumerate(top_channel)))
+
     @bot.command(name="report_slur")
     async def report_slur(ctx, author: discord.Member, *, slur: str):
         if (await isMod(ctx.guild, ctx.author.id)):
