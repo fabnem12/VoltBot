@@ -219,7 +219,7 @@ async def countStats(guild, bot):
             if authorId not in infosUser:
                 infosUser[authorId] = dict()
 
-            if channel.id not in infosUser[authorId]:
+            if channelId not in infosUser[authorId]:
                 infosUser[authorId][channelId] = dict()
 
             if date not in infosUser[authorId][channelId]:

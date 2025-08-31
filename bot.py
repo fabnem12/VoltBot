@@ -876,14 +876,14 @@ def main():
             await ctx.send("No information available")
         else:
             now = datetime.datetime.now()
-            startswith = f"{now.year}-{now.month}"
+            startswith = f"{now.year}-{now.month-1}"
 
-            data = json.load(open("outputs/infoUserActivity.json"))
+            data: dict[str, dict[str, dict[str, int]]] = json.load(open("outputs/infoUserActivity.json"))
 
             data_month: dict[str, dict[str, dict[str, int]]] = dict()
             for user, data_user in data.items():
-                data_user_month = {k: v for k, v in data_user.items() if k.startswith(startswith)}
-                if data_user_month:
+                data_user_month = {channel: {date: nb for date, nb in channel_user.items() if date.startswith(startswith)} for channel, channel_user in data_user.items()}
+                if all(data_user_month.values()):
                     data_month[user] = data_user_month
 
             # top 20 most active of the month
