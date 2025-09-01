@@ -890,6 +890,15 @@ def main():
             msg_per_user = {user: sum(msg_date for channel_user in v.values() for msg_date in channel_user.values()) for user, v in data_month.items()}
             top_users = sorted(msg_per_user.items(), key=lambda x: x[1], reverse=True)[:20]
 
+            # find the usernames
+            id_to_name = dict()
+            for userId, _ in top_users:
+                try:
+                    user = await bot.fetch_user(int(userId))
+                    id_to_name[userId] = user.name
+                except discord.errors.NotFound:
+                    id_to_name[userId] = "_former member_"
+
             # top 10 most active channels
             msg_per_channel = dict()
             for user, per_channel in data_month.items():
@@ -900,8 +909,17 @@ def main():
                     msg_per_channel[channelId] += sum(channel_user.values())
             top_channel = sorted(msg_per_channel.items(), key=lambda x: x[1], reverse=True)[:10]
 
-            await ctx.send("**Top 20 most active users**\n" + "\n".join(f"{i+1} <@{user}>: {nb} messages" for i, (user, nb) in enumerate(top_users)))
-            await ctx.send("**Top 10 most active channels/threads\n" + "\n".join(f"{i+1} <#{channel}>: {nb} messages" for i, (channel, nb) in enumerate(top_channel)))
+            # find the channel names
+            id_to_name_channel = dict()
+            for channelId, _ in top_channel:
+                try:
+                    channel = await bot.fetch_channel(int(channelId))
+                    id_to_name_channel[channelId] = channel.name
+                except discord.errors.NotFound:
+                    id_to_name_channel[channelId] = "_unknown channel_"
+
+            await ctx.send("**Top 20 most active users**\n" + "\n".join(f"{i+1} **{id_to_name[user]}**: {nb} messages" for i, (user, nb) in enumerate(top_users)))
+            await ctx.send("**Top 10 most active channels/threads**\n" + "\n".join(f"{i+1} **#{id_to_name_channel[channel]}**: {nb} messages" for i, (channel, nb) in enumerate(top_channel)))
     @bot.command(name="report_slur")
     async def report_slur(ctx, author: discord.Member, *, slur: str):
         if (await isMod(ctx.guild, ctx.author.id)):
