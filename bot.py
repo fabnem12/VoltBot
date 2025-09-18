@@ -668,6 +668,8 @@ def main():
         Purge #deleted-edited-messages. Records can be kept only up to 24 hours, so we have to delete them
         once that delay is passed.
         """
+        
+        return #temporarily disabled
 
         if guild is None: 
             guild = ctx.guild
