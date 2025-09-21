@@ -7,6 +7,7 @@ from typing import Optional, Union
 from unidecode import unidecode
 import datetime
 import os
+import random
 import requests
 import time
 import emojis
@@ -741,6 +742,42 @@ def main():
     async def reportcommand(ctx, *, param = ""):
         await report(ctx.message.id, ctx.guild, ctx.channel, ctx.author, param)
         #await report(ctx, param)
+    
+    @bot.slash_command(name = "roll")
+    async def roll_dice(interaction: discord.Interaction, option: Optional[str] = "d6"):
+        accepted = {"d4": 4, "d6": 6, "d8": 8, "d10": 10, "d20": 20, "d100": 100}
+
+        if "+" in option or "-" in option: # there is an addition or a subtraction
+            if option.count("+") + option.count("-") > 1:
+                await interaction.response.send_message("Invalid option", ephemeral=True)
+                return
+
+            if "+" in option:
+                base, add = option.split("+")
+                sign = 1
+            else:
+                base, add = option.split("-")
+                sign = -1
+
+            if not add.isdigit():
+                await interaction.response.send_message("Invalid option", ephemeral=True)
+                return
+
+            add = int(add) * sign
+        else:
+            base = option
+            add = 0
+
+        nb_dice = 1 if not base[0].isdigit() else int(base[0])
+        if base[0].isdigit():
+            base = base[1:]
+
+        if base not in accepted:
+            await interaction.response.send_message("Invalid option", ephemeral=True)
+            return
+
+        vals = [random.randint(1, accepted[base])+add for _ in range(nb_dice)]
+        await interaction.response.send_message(f"🎲 You rolled {', '.join(map(str, vals))} ({option})")
     
     @bot.slash_command(name = "skibidi")
     async def resend_slash(interaction: discord.Interaction, taratata: Optional[str] = None, glbtskf: str = "", apzoeiruty: Optional[discord.Attachment] = None):
