@@ -354,6 +354,17 @@ async def smart_tweet(msg: discord.Message, delete: bool = False):
         msgRep = await msg.channel.fetch_message(infoSmartTweet[msgId])
         await msgRep.edit(content = ".")
 
+async def anonymize_instagram_links(msg: discord.Message):
+    if msg.author.bot: return
+    
+    links = regex.findall(r"https:\/\/([\w_-]+(?:(?:\.[\w_-]+)+))([\w.,@?^=%&:\/~+#-]*[\w@?^=%&\/~+#-])", msg.content)
+    links = [(x.lower(), y.lower()) for x, y in links]
+    instagramLinks = ["https://instagram.com" + y.split("?")[0] for x, y in links if any(x.startswith(link) for link in ("instagram.com", "instagr.am", "ddinstagram.com"))]
+
+    if len(instagramLinks):
+        ref = discord.MessageReference(channel_id = msg.channel.id, message_id = msg.id)
+        await msg.channel.send("\n".join(instagramLinks), reference = ref)
+
 async def reminder_meme(message: discord.Message, bot: discord.BotIntegration):
     #check the message got sent in #european-memes and is not a bot message
     if message.channel.id != 731895134639095909 or message.author.bot:
