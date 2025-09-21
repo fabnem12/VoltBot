@@ -41,6 +41,8 @@ reportChannelId = 806219815760166972
 modMessageLog = 1037071502656405584
 courtChannel = 912092404570554388
 introChannel = 567024817128210433
+european_memes = 731895134639095909
+memes = 656609693912793100
 
 #-roles
 voltDiscordTeam = 674583505446895616
@@ -367,7 +369,7 @@ async def anonymize_instagram_links(msg: discord.Message):
 
 async def reminder_meme(message: discord.Message, bot: discord.BotIntegration):
     #check the message got sent in #european-memes and is not a bot message
-    if message.channel.id != 731895134639095909 or message.author.bot:
+    if message.channel.id not in (european_memes, memes) or message.author.bot:
         return 
 
     me = bot.user.id
@@ -444,6 +446,7 @@ def main():
         await report_automatic_warn(message)
         # await smart_tweet(message)
         await reminder_meme(message, bot)
+        await anonymize_instagram_links(message)
 
         if message.content.startswith(".ban"):
             await ban(message, banAppealOk = False)
