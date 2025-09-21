@@ -247,6 +247,10 @@ async def verif_news_source(message):
         "ntd.com": "NTD News",
         "ntd.tv": "NTD News",
         "x.com/nzz": "NZZ",
+        "x.com/telegraph": "Daily Telegraph",
+        "telegraph.co.uk": "Daily Telegraph",
+        "x.com/foxnews": "Fox News",
+        "foxnews.com": "Fox News",
         }
 
     ref = discord.MessageReference(channel_id = message.channel.id, message_id = message.id)
