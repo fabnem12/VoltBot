@@ -444,7 +444,7 @@ def main():
         await verif_word_train(message)
         await verif_news_source(message)
         await report_automatic_warn(message)
-        # await smart_tweet(message)
+        await smart_tweet(message)
         await reminder_meme(message, bot)
         await anonymize_instagram_links(message)
 
@@ -454,7 +454,7 @@ def main():
     @bot.event
     async def on_message_edit(before, after):
         await verif_word_train(after)
-        # await smart_tweet(after)
+        await smart_tweet(after)
         
     @bot.event
     async def on_message_delete(msg):
@@ -475,7 +475,7 @@ def main():
             
             break
     
-        # await smart_tweet(msg, delete=True)
+        await smart_tweet(msg, delete=True)
         await count_banned_words(msg.guild, msg.author, msg.content, msg.channel)
     
     @bot.event
