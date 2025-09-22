@@ -428,7 +428,36 @@ async def count_banned_words(guild: discord.Guild, author: discord.Member, msg_t
             e.add_field(name = "Channel", value=channel.name, inline=False)
         
         await reportChannel.send(embed = e)
+
+async def kekw_board(message: discord.Message, bot: discord.BotIntegration):
+    if any(reaction.count == 8 for reaction in message.reactions if int(reaction.emoji.id if reaction.is_custom_emoji() else reaction.emoji.name) == 732674441577889994): #kekw emoji
+        guild = bot.get_guild(voltServer)
+        channelKewk = guild.get_channel(1419775038806163666) #kekw-board channel
         
+        await message.forward(channelKewk)
+        
+        """
+        # to see later whether this is really needed
+        await channelKewk.send(f"Message by {message.author.mention} in {message.channel.mention} got 10 or more <:kekw:732674441577889994> reactions.")
+        
+        e = discord.Embed(description = message.content, timestamp = message.created_at)
+        if message.author.avatar:
+            e.set_author(name = message.author.name, icon_url = message.author.avatar.url)
+        e.add_field(name = "Author", value=message.author.mention, inline=False)
+        e.add_field(name = "Channel", value=message.channel.mention, inline=False)
+        e.add_field(name = "Link to message", value=message.jump_url)
+        
+        msgKewk = await channelKewk.send(embed = e)
+        
+        for att in message.attachments:
+            r = requests.get(att.url)
+            with open(att.filename, "wb") as outfile:
+                outfile.write(r.content)
+
+            await channelKewk.send(file = discord.File(att.filename), reference = discord.MessageReference(channel_id = msgKewk.channel.id, message_id = msgKewk.id))
+            os.remove(att.filename)
+        """
+
 
 def main():
     intents = discord.Intents.all()
@@ -520,6 +549,9 @@ def main():
             channel = traitement["channel"]
 
             await reportreact(messageId, guild, emojiHash, channel, user)
+            if emojiHash == 732674441577889994: #kekw emoji
+                await kekw_board(await channel.fetch_message(messageId), bot)
+            
             if await isWelcome(guild, user.id) or await isMod(guild, user.id):
                 await introreact(messageId, guild, emojiHash, channel, user)
 
