@@ -377,7 +377,7 @@ async def reminder_meme(message: discord.Message, bot: discord.BotIntegration):
     i = 0
     channel = message.channel
     prevMsg = None
-    async for msg in channel.history(limit=5):
+    async for msg in channel.history(limit=10):
         if i > 2 and msg.author.id == me and msg.content.startswith(":warning:"):
             prevMsg = msg
             break
@@ -826,7 +826,7 @@ def main():
     
     @bot.slash_command(name = "roll")
     async def roll_dice(interaction: discord.Interaction, option: Optional[str] = "d6"):
-        accepted = {"d4": 4, "d6": 6, "d8": 8, "d10": 10, "d20": 20, "d100": 100}
+        accepted = {"d4": 4, "d6": 6, "d8": 8, "d10": 10, "d12": 12, "d20": 20, "d100": 100}
 
         if "+" in option or "-" in option: # there is an addition or a subtraction
             if option.count("+") + option.count("-") > 1:
