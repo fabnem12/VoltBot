@@ -1040,6 +1040,28 @@ def main():
 
             await ctx.send("**Top 20 most active users**\n" + "\n".join(f"{i+1} **{id_to_name[user]}**: {nb} messages" for i, (user, nb) in enumerate(top_users)))
             await ctx.send("**Top 10 most active channels/threads**\n" + "\n".join(f"{i+1} **#{id_to_name_channel[channel]}**: {nb} messages" for i, (channel, nb) in enumerate(top_channel)))
+
+    @bot.command(name="del_msg_usr")
+    async def del_neur(ctx, user_id: int, channel_id: int, before: str, after: str):
+        if ctx.author.id != botAdmin:
+            return
+
+        await ctx.send("Starting the deletion…")
+
+        channel = await ctx.guild.fetch_channel(channel_id)
+        before = datetime.datetime.fromisoformat(before)
+        after = datetime.datetime.fromisoformat(after)
+        i = 0
+        async for msg in channel.history(limit=None, after=after, before=before, oldest_first=False):
+            if msg.author.id == user_id:
+                i += 1
+                await msg.delete()
+                
+                if i % 100 == 0:
+                    await ctx.send(f"{i} messages deleted")
+        
+        await ctx.send(f"Deletion completed, {i} messages deleted")
+    
     @bot.command(name="report_slur")
     async def report_slur(ctx, author: discord.Member, *, slur: str):
         if (await isMod(ctx.guild, ctx.author.id)):
