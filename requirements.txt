@@ -10,3 +10,4 @@ pillow==11.0.0
 langdetect==1.0.9
 emoji-country-flag==2.0.1
 cairosvg==2.7.1
+pyyaml

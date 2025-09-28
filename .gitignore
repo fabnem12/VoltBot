@@ -164,3 +164,4 @@ fichierPID.p
 *.json
 data_contest/*
 resource/*
+*.yaml
