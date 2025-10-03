@@ -43,6 +43,7 @@ courtChannel = 912092404570554388
 introChannel = 567024817128210433
 european_memes = 731895134639095909
 memes = 656609693912793100
+channelKewkId = 1419775038806163666
 
 #-roles
 voltDiscordTeam = 674583505446895616
@@ -430,13 +431,22 @@ async def count_banned_words(guild: discord.Guild, author: discord.Member, msg_t
         await reportChannel.send(embed = e)
 
 async def kekw_board(message: discord.Message, bot: discord.BotIntegration):
-    if message.channel.id == channelKewk: return
+    if message.channel.id == channelKewkId: return
     
     if any(reaction.count == 8 for reaction in message.reactions if int(reaction.emoji.id if reaction.is_custom_emoji() else reaction.emoji.name) == 732674441577889994): #kekw emoji
         guild = bot.get_guild(voltServer)
-        channelKewk = guild.get_channel(1419775038806163666) #kekw-board channel
+        channelKewk = guild.get_channel(channelKewkId) #kekw-board channel
+        
+        if "kekw_board" not in info:
+            info["kekw_board"] = set()
+        
+        if message.id in info["kekw_board"]:
+            # already forwarded
+            return
         
         await message.forward(channelKewk)
+        info["kekw_board"].add(message.id)
+        save()
         
         """
         # to see later whether this is really needed
