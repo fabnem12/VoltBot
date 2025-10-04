@@ -370,7 +370,7 @@ async def anonymize_instagram_links(msg: discord.Message):
 
 async def reminder_meme(message: discord.Message, bot: discord.BotIntegration):
     #check the message got sent in #european-memes and is not a bot message
-    if message.channel.id not in (european_memes, memes) or message.author.bot:
+    if message.channel.id not in (european_memes, ) or message.author.bot:
         return 
 
     me = bot.user.id
