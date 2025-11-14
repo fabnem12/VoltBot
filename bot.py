@@ -261,9 +261,11 @@ async def verif_news_source(message):
     #if (len(regex_x.findall(msg_low)) or "twitter.com/" in msg_low) and not message.author.bot:
         #await message.channel.send(f":warning: {message.author.mention} This server recommends no longer sharing content from x.com (formerly known as Twitter). For news, please send the direct link for them rather than a tweet referring to them.", reference = ref)
 
-    for link, source in untrusted.items():    
-        if link in msg_low:
-            await message.channel.send(f":warning: This message contains a link to an untrusted news source ({source})", reference = ref)
+    for link, source in untrusted.items():        
+        pattern = regex.compile(r"(?:^|\s|https?://(?:www\.)?)" + regex.escape(link) + r"(?:/|\s|$)")
+        
+        if pattern.search(msg_low):
+            await message.channel.send(f":warning: This message contains a link to an untrusted news source ({source}) - local bot", reference = ref)
             return
 
 async def verif_word_train(message):
