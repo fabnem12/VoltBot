@@ -381,7 +381,7 @@ async def reminder_meme(message: discord.Message, bot: discord.BotIntegration):
     channel = message.channel
     prevMsg = None
     async for msg in channel.history(limit=10):
-        if i > 2 and msg.author.id == me and msg.content.startswith(":warning:"):
+        if i > 0 and msg.author.id == me and msg.content.startswith(":warning:"):
             prevMsg = msg
             break
         
