@@ -265,7 +265,7 @@ async def verif_news_source(message):
         pattern = regex.compile(r"(?:^|\s|https?://(?:www\.)?)" + regex.escape(link) + r"(?:/|\s|$)")
         
         if pattern.search(msg_low):
-            await message.channel.send(f":warning: This message contains a link to an untrusted news source ({source})", reference = ref)
+            await message.channel.send(f":warning: This message contains a link to an untrusted news source ({source}) - local bot", reference = ref)
             return
 
 async def verif_word_train(message):
@@ -449,29 +449,14 @@ async def kekw_board(message: discord.Message, bot: discord.BotIntegration):
         await message.forward(channelKewk)
         info["kekw_board"].add(message.id)
         save()
-        
-        """
-        # to see later whether this is really needed
-        await channelKewk.send(f"Message by {message.author.mention} in {message.channel.mention} got 10 or more <:kekw:732674441577889994> reactions.")
-        
-        e = discord.Embed(description = message.content, timestamp = message.created_at)
-        if message.author.avatar:
-            e.set_author(name = message.author.name, icon_url = message.author.avatar.url)
-        e.add_field(name = "Author", value=message.author.mention, inline=False)
-        e.add_field(name = "Channel", value=message.channel.mention, inline=False)
-        e.add_field(name = "Link to message", value=message.jump_url)
-        
-        msgKewk = await channelKewk.send(embed = e)
-        
-        for att in message.attachments:
-            r = requests.get(att.url)
-            with open(att.filename, "wb") as outfile:
-                outfile.write(r.content)
 
-            await channelKewk.send(file = discord.File(att.filename), reference = discord.MessageReference(channel_id = msgKewk.channel.id, message_id = msgKewk.id))
-            os.remove(att.filename)
-        """
-
+async def remove_recycle(message: discord.Message):
+    if message.channel.id != memes:
+        return
+    
+    for reaction in message.reactions:
+        if "♻️" == reaction.emoji and reaction.count >= 10:
+            await message.delete()
 
 def main():
     intents = discord.Intents.all()
@@ -565,6 +550,8 @@ def main():
             await reportreact(messageId, guild, emojiHash, channel, user)
             if emojiHash == 732674441577889994: #kekw emoji
                 await kekw_board(await channel.fetch_message(messageId), bot)
+            if emojiHash == "♻️": #recycle emoji
+                await remove_recycle(await channel.fetch_message(messageId))
             
             if await isWelcome(guild, user.id) or await isMod(guild, user.id):
                 await introreact(messageId, guild, emojiHash, channel, user)
@@ -1080,6 +1067,38 @@ def main():
     async def report_slur(ctx, author: discord.Member, *, slur: str):
         if (await isMod(ctx.guild, ctx.author.id)):
             await count_banned_words(ctx.guild, author, slur)
+    
+    @bot.command(name="redirect_reports")
+    async def redirect_reports(ctx):
+        report_channel = await bot.fetch_channel(reportChannelId)
+        
+        users = {
+            "<@1363525904692805693>": 1426967321083248750,
+            "<@237564181656764417>": 1426967356743090189,
+            "<@251760037444321280>": 1426967450658017301,
+            "<@600709583333490739>": 1426967483264532630
+        }
+        threads = {k: await ctx.guild.fetch_channel(thread_id) for k, thread_id in users.items()}
+        
+        i = 0
+        msgs = []
+        async for msg in report_channel.history(after=datetime.datetime(2025, 6, 1), before=datetime.datetime(2025, 8, 1), limit=None):
+            i += 1
+            if i % 20 == 0: print(i)
+            
+            if msg.embeds:
+                if msg.embeds[0].fields:
+                    author = [x.value for x in msg.embeds[0].fields if x.name == "Author"][0]
+                    print(author, msg.created_at)
+                    if author in users:
+                        if msg.embeds[0].description not in [x.embeds[0].description for x, _ in msgs]:
+                            msgs.append((msg, threads[author]))
+        
+        msgs.sort(key=lambda x: x[0].id)
+        print(len(msgs))
+        for msg, thread in msgs:
+            print(msg)
+            await msg.forward(thread)
 
     return bot, constantes.TOKENVOLT
 
