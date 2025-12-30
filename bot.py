@@ -389,7 +389,8 @@ async def reminder_meme(message: discord.Message, bot: discord.BotIntegration):
     
     if prevMsg:
         await prevMsg.delete()
-        await channel.send(":warning: **This channel is only for memes, not for regular messages.**\nIf you want to react to a meme with text, please make a thread.")
+
+    await channel.send(":warning: **This channel is only for memes, not for regular messages.**\nIf you want to react to a meme with text, please make a thread.")
     
 async def count_banned_words(guild: discord.Guild, author: discord.Member, msg_txt: str, channel: Optional[discord.TextChannel] = None):
     banned_words = constantes.banned_words
