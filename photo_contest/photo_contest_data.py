@@ -13,7 +13,7 @@ class Submission:
     author_id: int
     submission_time: int  # timestamp
     local_save_path: str
-    discord_save_path: str
+    discord_save_path: str  # URL to the message of the discord saved image
 
 
 @dataclass
@@ -65,6 +65,10 @@ class JuryCommentary:
 class Period:
     start: int  # timestamp
     end: int  # timestamp
+    
+    def __init__(self, start: float | int, end: float | int):
+        self.start = int(start)
+        self.end = int(end)
 
 
 @dataclass
@@ -202,6 +206,37 @@ class Contest:
             filter(lambda x: x.start_time <= ts and ts < x.end_time, self.competitions)
         )
 
+    @property
+    def submission_competitions(self) -> list[CompetitionInfo]:
+        return [comp for comp in self.competitions if comp.type == "submission"]
+
+    @property
+    def qualif_competitions(self) -> list[CompetitionInfo]:
+        return [comp for comp in self.competitions if comp.type == "qualif"]
+
+    @property
+    def semis_competitions(self) -> list[CompetitionInfo]:
+        return [comp for comp in self.competitions if comp.type == "semis"]
+
+    @property
+    def final_competitions(self) -> list[CompetitionInfo]:
+        return [comp for comp in self.competitions if comp.type == "final"]
+
+    @property
+    def channel_threads_open_for_submissions(self) -> list[tuple[int, Optional[int]]]:
+        ts = time()
+        if not (
+            self.schedule.submission_period.start
+            <= ts
+            < self.schedule.submission_period.end
+        ):
+            return []
+        
+        return [
+            (comp.channel_id, comp.thread_id)
+            for comp in self.current_competitions
+        ]
+
     @staticmethod
     def from_file(path: str) -> "Contest":
         with open(path, "r") as f:
@@ -231,6 +266,17 @@ class Contest:
     def add_submission(
         self, submission: Submission, channel_id: int, thread_id: Optional[int] = None
     ) -> "Contest":
+        # Check that we are in a submission period
+        ts = time()
+        if not (
+            self.schedule.submission_period.start
+            <= ts
+            < self.schedule.submission_period.end
+        ):
+            raise ValueError("Not in a submission period.")
+        
+        # Find the right competition and add the submission
+        
         res = self.competition_from_channel_thread(channel_id, thread_id)
 
         if res:
@@ -293,10 +339,8 @@ class Contest:
 
         return ret
 
-    def make_qualifs(self, list_thread_ids) -> "Contest":
-        submission_competitions = list(
-            filter(lambda x: x.type == "submission", self.competitions)
-        )
+    def make_qualifs(self, list_thread_ids: list[list[int]]) -> "Contest":
+        submission_competitions = self.submission_competitions
 
         qualifs: list[CompetitionInfo] = []
         for comp, threads in zip(submission_competitions, list_thread_ids):
@@ -355,9 +399,7 @@ class Contest:
             )
 
     def solve_qualifs(self) -> "Contest":
-        qualif_competitions = list(
-            filter(lambda x: x.type == "qualif", self.competitions)
-        )
+        qualif_competitions = self.qualif_competitions
         qualifs_per_categ: dict[int, list[Submission]] = (
             dict()
         )  # channel_id -> [submissions]
@@ -405,9 +447,7 @@ class Contest:
         return copy
 
     def solve_semis(self) -> "Contest":
-        semis_competitions = list(
-            filter(lambda x: x.type == "semis", self.competitions)
-        )
+        semis_competitions = self.semis_competitions
         qualifs_per_semi: dict[int, list[Submission]] = (
             dict()
         )  # channel_id -> [submissions]
