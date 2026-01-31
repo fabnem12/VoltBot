@@ -217,6 +217,7 @@ async def verif_news_source(message):
         "x.com/visegrad24": "Visegrád 24", 
         "trtworld.com/": "TRT", "x.com/trtworld": "TRT",
         "x.com/afpost": "AF Post",
+        "www.scmp.com": "South China Morning Post",
         "x.com/cerfia": "Cerfia",
         "x.com/mediavenir": "Mediavenir",
         "x.com/dailymail": "Daily Mail",
