@@ -35,7 +35,7 @@ voltServer = 567021913210355745
 
 #-channels
 wordTrainChannel = 1141992409165733988
-deletedEditedMessages = 982242792422146098
+deletedEditedMessages = 1467557771598758234
 modLogId = 929466478678405211
 reportChannelId = 806219815760166972
 modMessageLog = 1037071502656405584
@@ -122,20 +122,21 @@ async def ban(msg, banAppealOk = True):
 async def exclusion(before, after):
     if before.guild.id == voltServer and before.communication_disabled_until is None and after.communication_disabled_until:
         #let's find the reason
+        logFound = False
         async for entry in before.guild.audit_logs(action=discord.AuditLogAction.member_update):
             reason = entry.reason
             mod = entry.user
             time = entry.created_at
-            break
-        
-        modlog = await before.guild.fetch_channel(modLogId)
-        e = discord.Embed(title = "time out", timestamp = time, color = 0x502379)
-        e.add_field(name = "User:", value = f"{after}", inline=False)
-        e.add_field(name = "Reason:", value = reason, inline=False)
-        e.add_field(name = "Responsible moderator:", value = f"{mod}", inline=False)
-        e.set_footer(text = f"ID: {after.id}")
+            
+            modlog = await before.guild.fetch_channel(modLogId)
+            e = discord.Embed(title = "time out", timestamp = time, color = 0x502379)
+            e.add_field(name = "User:", value = f"{after}", inline=False)
+            e.add_field(name = "Reason:", value = reason, inline=False)
+            e.add_field(name = "Responsible moderator:", value = f"{mod}", inline=False)
+            e.set_footer(text = f"ID: {after.id}")
 
-        await modlog.send(embed = e)
+            await modlog.send(embed = e)
+            break
 
 async def report(messageId, guild, channel, user, param = ""):
     channelId = reportChannelId
@@ -304,11 +305,12 @@ async def verif_word_train(message):
         if msg != message and not msg.author.bot:
             previousMsg = msg
             previousMsgLetters = "".join(filter(isLetter, unidecode(previousMsg.content.lower())))
-            break
 
-    if len(words) > 1 or previousMsgLetters.strip().lower()[-1] != msgTxt[0] or previousMsg.author.id == message.author.id:
-        await message.delete()
-        await message.channel.send(f"<:bonk:843489770918903819> {message.author.mention}")
+            if len(words) > 1 or previousMsgLetters.strip().lower()[-1] != msgTxt[0] or previousMsg.author.id == message.author.id:
+                await message.delete()
+                await message.channel.send(f"<:bonk:843489770918903819> {message.author.mention}")
+            
+            break
 
     return True
 
@@ -345,7 +347,7 @@ async def smart_tweet(msg: discord.Message, delete: bool = False):
     links = [(x.lower(), y.lower()) for x, y in links]
     twitterLinks = ["https://fixupx.com" + y.split("?")[0] + "/en" for x, y in links if any(x.startswith(link) for link in ("x.com", "twitter.com", "fxtwitter.com", "vxtwitter.com", "fixupx.com", "girlcockx.com"))]
     anyVideoTweet = msg.embeds and any(e.image.proxy_url and "amplify_video_thumb" in e.image.proxy_url for e in msg.embeds)
-    nonEnglish = msg.embeds and any(len(e.description.split()) > 4 and detect(e.description) != "en" and "/en" not in msg.content for e in msg.embeds)
+    nonEnglish = msg.embeds and any(e.description and len(e.description.split()) > 4 and detect(e.description) != "en" and "/en" not in msg.content for e in msg.embeds)
 
     if len(twitterLinks) and (anyVideoTweet or nonEnglish):
         ref = discord.MessageReference(channel_id = msg.channel.id, message_id = msgId)
@@ -376,6 +378,7 @@ async def reminder_meme(message: discord.Message, bot: discord.BotIntegration):
     if message.channel.id not in (european_memes, ) or message.author.bot:
         return 
 
+    assert bot.user is not None
     me = bot.user.id
     
     i = 0
@@ -422,6 +425,7 @@ async def count_banned_words(guild: discord.Guild, author: discord.Member, msg_t
         punishment = {1: "nothing", 2: "nothing", 3: "3h of mute", 4: "6h of mute", 5: "24h of mute", 6: "48h of mute"}.get(len(banned_words_user), "1 week")
         
         reportChannel = await guild.fetch_channel(reportChannelId)
+        assert isinstance(reportChannel, discord.TextChannel)
         
         await reportChannel.send(f"**User <@{authorId}> used the banned word {banned_word_used}**\nIt's the #{len(banned_words_user)} use of a banned word by the user since the 14th of July 2025.\n\nPrevious uses:\n" + "\n".join(f'{i+1}. {word} <t:{int(timestamp)}>' for i, (word, timestamp) in enumerate(banned_words_user)) + f"\n\n**Recommended punishment based on the number of offenses: __{punishment}__**")
         
@@ -437,9 +441,10 @@ async def count_banned_words(guild: discord.Guild, author: discord.Member, msg_t
 async def kekw_board(message: discord.Message, bot: discord.BotIntegration):
     if message.channel.id == channelKewkId: return
     
-    if any(reaction.count == 8 for reaction in message.reactions if int(reaction.emoji.id if reaction.is_custom_emoji() else reaction.emoji.name) == 732674441577889994): #kekw emoji
+    if any(reaction.count == 8 for reaction in message.reactions if reaction.is_custom_emoji() and int(reaction.emoji.id) == 732674441577889994): #kekw emoji
         guild = bot.get_guild(voltServer)
         channelKewk = guild.get_channel(channelKewkId) #kekw-board channel
+        assert isinstance(channelKewk, discord.TextChannel)
         
         if "kekw_board" not in info:
             info["kekw_board"] = set()
@@ -750,11 +755,9 @@ def main():
     @bot.command(name = "purge_log")
     async def purge_log(ctx, guild = None):
         """
-        Purge #deleted-edited-messages. Records can be kept only up to 24 hours, so we have to delete them
+        Purge #deleted-edited-messages. Records can be kept only up to 72 hours, so we have to delete them
         once that delay is passed.
         """
-        
-        return #temporarily disabled
 
         if guild is None: 
             guild = ctx.guild
@@ -766,9 +769,9 @@ def main():
 
             import datetime
             now = datetime.datetime.now()
-            oneDay = datetime.timedelta(hours=24)
+            seventyTwoHours = datetime.timedelta(hours=72)
             
-            async for msg in channel.history(limit = None, before = now - oneDay):
+            async for msg in channel.history(limit = None, before = now - seventyTwoHours):
                 try:
                     await msg.delete()
                 except discord.errors.NotFound:
