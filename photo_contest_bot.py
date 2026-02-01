@@ -12,8 +12,7 @@ from nextcord.ext import commands, tasks
 import constantes
 
 from photo_contest import genVoteInfo
-from photo_contest.photo_contest_data import Contest, JuryVote, Period, PublicVote, Schedule, Submission, make_contest
-
+from photo_contest.photo_contest_data import CompetitionInfo, Contest, Period, Schedule, Submission, make_contest
 
 class ContestPeriod(Enum):
     IDLE = "idle"
@@ -353,13 +352,10 @@ class JuryConfirmView(discord.ui.View):
             await interaction.response.send_message("This vote is not yours!", ephemeral=True)
             return
         
-        # Create the jury vote
-        vote = JuryVote(voter_id=self.user_id, ranking=self.ranking)
-        
         # Save the vote
         global contest
         try:
-            contest = contest.save_jury_vote(self.channel_id, self.thread_id, vote)
+            contest = contest.save_jury_vote(self.channel_id, self.thread_id, self.user_id, self.ranking)
             contest.save("photo_contest/contest2026.yaml")
             
             await interaction.response.edit_message(
@@ -554,16 +550,9 @@ async def handle_public_vote(contest: Contest, message: discord.Message, user: d
     submission_idx = competition.msg_to_sub[message.id]
     submission = competition.competing_entries[submission_idx]
     
-    # Create the public vote
-    vote = PublicVote(
-        voter_id=user.id,
-        nb_points=points,
-        submission=submission
-    )
-    
     try:
         # Save the vote
-        contest = contest.save_public_vote(channel_id, thread_id, vote)
+        contest = contest.save_public_vote(channel_id, thread_id, user.id, points, submission)
         contest.save("photo_contest/contest2026.yaml")
         
         # Remove all number reactions from this user on this message to keep votes invisible
@@ -580,6 +569,175 @@ async def handle_public_vote(contest: Contest, message: discord.Message, user: d
             pass
     
     return contest
+
+
+async def handle_commentary_request(contest: Contest, message: discord.Message, user: discord.Member | discord.User):
+    """Handle a commentary request (💬 reaction) by opening a modal for text input.
+    
+    Args:
+        contest: The current contest
+        message: The photo message that was reacted to
+        user: The user who wants to comment
+    """
+    # Get channel and thread
+    channel_id, thread_id = get_channel_and_thread(message)
+    
+    # Find the competition
+    res = contest.competition_from_channel_thread(channel_id, thread_id)
+    if not res:
+        return
+    
+    _, competition = res
+    
+    # Check if this message is a photo submission
+    if message.id not in competition.msg_to_sub:
+        return
+    
+    submission_index = competition.msg_to_sub[message.id]
+    submission = competition.competing_entries[submission_index]
+    
+    # Check if user is trying to comment on their own photo
+    if user.id == submission.author_id:
+        try:
+            await user.send("❌ You cannot comment on your own photo.")
+        except discord.Forbidden:
+            pass
+        return
+    
+    # Create and send a modal for commentary input
+    class CommentaryModal(discord.ui.Modal):
+        def __init__(self):
+            super().__init__(
+                title=f"Add Commentary for Photo #{submission_index + 1}",
+                timeout=300
+            )
+            
+            self.commentary_input = discord.ui.TextInput(
+                label="Your Commentary",
+                style=discord.TextInputStyle.paragraph,
+                placeholder="Share your thoughts on composition, lighting, technical quality, artistic merit...",
+                required=True,
+                min_length=10,
+                max_length=1000
+            )
+            self.add_item(self.commentary_input)
+        
+        async def callback(self, interaction: discord.Interaction):
+            global contest
+            
+            commentary_text = self.commentary_input.value
+            if not commentary_text:
+                await interaction.response.send_message(
+                    "❌ Commentary cannot be empty.",
+                    ephemeral=True
+                )
+                return
+            
+            assert interaction.user is not None, "Interaction user is None"
+            
+            # Try to add the commentary (includes Mistral validation)
+            try:
+                contest, updated_comp = contest.add_commentary(
+                    channel_id=channel_id,
+                    thread_id=thread_id,
+                    submission=submission,
+                    author_id=interaction.user.id,
+                    text=commentary_text
+                )
+                contest.save("photo_contest/contest2026.yaml")
+                
+                # Update the summary for this specific submission
+                assert message.guild is not None, "Message guild is None"
+                await update_commentary_summary(updated_comp, submission, message.guild)
+                
+                await interaction.response.send_message(
+                    "✅ Your commentary has been recorded! Thank you for your feedback.",
+                    ephemeral=True
+                )
+                
+            except ValueError as e:
+                # Validation failed
+                await interaction.response.send_message(
+                    f"❌ {str(e)}",
+                    ephemeral=True
+                )
+    
+    # Since we can't directly trigger a modal from a reaction, we need to use an interaction
+    # Create a view with a button that opens the modal
+    class CommentaryButton(discord.ui.View):
+        def __init__(self):
+            super().__init__(timeout=60)
+        
+        @discord.ui.button(label="Add Commentary", style=discord.ButtonStyle.primary, emoji="💬")
+        async def commentary_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+            await interaction.response.send_modal(CommentaryModal())
+    
+    # Send an ephemeral message with the button to open the modal
+    try:
+        # We need to create an interaction to send ephemeral messages
+        # Since we're coming from a reaction, send a DM instead
+        view = CommentaryButton()
+        await user.send(
+            f"💬 **Add a commentary for Photo #{submission_index + 1}**\n"
+            f"Click the button below to open the commentary form.",
+            view=view
+        )
+    except discord.Forbidden:
+        # User has DMs disabled, try to send in channel
+        try:
+            view = CommentaryButton()
+            msg = await message.channel.send(
+                f"{user.mention}, click the button below to add your commentary:",
+                view=view,
+                delete_after=60
+            )
+        except:
+            pass
+
+
+async def update_commentary_summary(competition: CompetitionInfo, submission: Submission, guild: discord.Guild):
+    """Update the commentary summary message for a specific submission.
+    
+    Args:
+        competition: The competition containing the submission
+        submission: The submission whose summary to update
+        guild: The Discord guild
+    """
+    # Get the summary for this submission
+    summaries = competition.get_all_commentaries_summaries()
+    summaries_dict = {sub: summary for sub, summary in summaries}
+    summary_text = summaries_dict.get(submission, "")
+    
+    # Get the channel
+    channel = guild.get_channel(competition.channel_id)
+    if not channel or not isinstance(channel, discord.TextChannel):
+        return
+    
+    # Get the summary message ID for this submission
+    summary_msg_id = competition.submission_to_summary_msg.get(submission)
+    if summary_msg_id is None:
+        return
+    
+    # Update the summary message
+    try:
+        summary_msg = await channel.fetch_message(summary_msg_id)
+        
+        if summary_text:
+            content = (
+                f"📝 **Commentary Summary**\n"
+                f"{summary_text}\n\n"
+                f"💬 React above to add your commentary"
+            )
+        else:
+            content = (
+                f"📝 **Commentary Summary**\n"
+                f"_No commentaries yet_\n\n"
+                f"💬 React above to add your commentary"
+            )
+        
+        await summary_msg.edit(content=content)
+    except (discord.NotFound, discord.Forbidden):
+        pass
 
 
 async def setup_qualif_period(bot):
@@ -673,9 +831,21 @@ async def setup_semis_period(bot):
             await msg.add_reaction("1️⃣")
             await msg.add_reaction("2️⃣")
             await msg.add_reaction("3️⃣")
+            # Add commentary reaction
+            await msg.add_reaction("💬")
+            
+            # Post commentary summary message below the photo
+            summary_msg = await channel.send(
+                "📝 **Commentary Summary**\n"
+                "_No commentaries yet_\n\n"
+                "💬 React above to add your commentary"
+            )
             
             # Update the contest with the message_id mapping
             contest = contest.set_message_id(comp.channel_id, comp.thread_id, i, msg.id)
+            
+            # Update the contest with the summary message ID
+            contest = contest.set_summary_message_id(comp.channel_id, comp.thread_id, submission, summary_msg.id)
         
         # Send voting instruction message
         vote_msg = await channel.send(
@@ -818,6 +988,9 @@ def main():
             # Handle jury vote requests
             elif payload.emoji.name == "🗳️":
                 await handle_jury_vote_request(contest, message, user, bot)
+            # Handle commentary requests (semis only)
+            elif payload.emoji.name == "💬" and current_period == ContestPeriod.SEMIS:
+                await handle_commentary_request(contest, message, user)
         
         elif current_period == ContestPeriod.FINAL:
             # TODO: Implement final vote handler
