@@ -86,10 +86,35 @@ class CompetitionInfo:
     votes_public: dict[tuple[int, Submission], PublicVote] = field(default_factory=dict)  # (voter_id, submission) -> public_vote
     jury_commentaries: list[JuryCommentary] = field(default_factory=list)
 
-    def add_sub(self, submission: Submission) -> "CompetitionInfo":
+    def add_sub(self, submission: Submission, message_id: int) -> "CompetitionInfo":
         copy = deepcopy(self)
         copy.competing_entries.append(submission)
+        copy.msg_to_sub[message_id] = len(copy.competing_entries) - 1
 
+        return copy
+
+    def get_submission_count(self) -> int:
+        """Return the current number of submissions in this competition."""
+        return len(self.competing_entries)
+
+    def set_message_id(self, submission_index: int, message_id: int) -> "CompetitionInfo":
+        """Set the message_id for a submission at the given index.
+        
+        Args:
+            submission_index: The index of the submission in competing_entries
+            message_id: The Discord message ID to associate with this submission
+        
+        Returns:
+            Updated CompetitionInfo with the message_id mapping added
+        """
+        if submission_index < 0 or submission_index >= len(self.competing_entries):
+            raise ValueError(
+                f"Invalid submission index {submission_index}. "
+                f"Valid range is 0-{len(self.competing_entries) - 1}"
+            )
+        
+        copy = deepcopy(self)
+        copy.msg_to_sub[message_id] = submission_index
         return copy
 
     def add_jury_vote(self, vote: JuryVote) -> "CompetitionInfo":
@@ -99,10 +124,10 @@ class CompetitionInfo:
         return copy
 
     def add_public_vote(self, vote: PublicVote) -> "CompetitionInfo":
-        copy = deepcopy(self)
         if vote.voter_id == vote.submission.author_id:
             raise ValueError("Not allowed to vote for yourself")
 
+        copy = deepcopy(self)
         copy.votes_public[vote.voter_id, vote.submission] = vote
 
         return copy
@@ -124,6 +149,26 @@ class CompetitionInfo:
             points[sub] = points.get(sub, 0) + vote.nb_points
 
         return points
+
+    def withdraw_sub(self, message_id: int) -> tuple["CompetitionInfo", Submission]:
+        """Withdraw a submission by message_id and return the updated competition and the withdrawn submission."""
+        if message_id not in self.msg_to_sub:
+            raise ValueError(
+                f"Unable to find a submission from the message_id provided: {message_id}"
+            )
+
+        index = self.msg_to_sub[message_id]
+        submission = self.competing_entries[index]
+
+        copy = deepcopy(self)
+        copy.competing_entries.pop(index)
+        copy.msg_to_sub = {
+            mid: (idx if idx < index else idx - 1)
+            for mid, idx in copy.msg_to_sub.items()
+            if mid != message_id
+        }
+
+        return copy, submission
 
 
 @dataclass
@@ -263,8 +308,48 @@ class Contest:
             ):
                 return i, competition
 
+    def get_submission_count(
+        self, channel_id: int, thread_id: Optional[int] = None
+    ) -> int:
+        """Get the current number of submissions for a specific competition."""
+        res = self.competition_from_channel_thread(channel_id, thread_id)
+        if res:
+            _, competition = res
+            return competition.get_submission_count()
+        else:
+            raise ValueError(
+                f"Unable to find a valid competition from the (channel_id, thread_id) provided: ({channel_id}, {thread_id})"
+            )
+
+    def set_message_id(
+        self, channel_id: int, thread_id: Optional[int], submission_index: int, message_id: int
+    ) -> "Contest":
+        """Set the message_id for a submission in a specific competition.
+        
+        Args:
+            channel_id: The channel ID of the competition
+            thread_id: The thread ID of the competition (None for main channels)
+            submission_index: The index of the submission in the competition
+            message_id: The Discord message ID to associate with this submission
+        
+        Returns:
+            Updated Contest with the message_id mapping added
+        """
+        res = self.competition_from_channel_thread(channel_id, thread_id)
+        if res:
+            i, competition = res
+            competition_new = competition.set_message_id(submission_index, message_id)
+            
+            copy = deepcopy(self)
+            copy.competitions[i] = competition_new
+            return copy
+        else:
+            raise ValueError(
+                f"Unable to find a valid competition from the (channel_id, thread_id) provided: ({channel_id}, {thread_id})"
+            )
+
     def add_submission(
-        self, submission: Submission, channel_id: int, thread_id: Optional[int] = None
+        self, submission: Submission, channel_id: int, message_id: int, thread_id: Optional[int] = None
     ) -> "Contest":
         # Check that we are in a submission period
         ts = time()
@@ -281,7 +366,7 @@ class Contest:
 
         if res:
             i, competition = res
-            competition_new = competition.add_sub(submission)
+            competition_new = competition.add_sub(submission, message_id)
 
             copy = deepcopy(self)
             copy.competitions[i] = competition_new
@@ -300,22 +385,7 @@ class Contest:
 
         if res:
             i, competition = res
-
-            if message_id not in competition.msg_to_sub:
-                raise ValueError(
-                    f"Unable to find a submission from the message_id provided: {message_id}"
-                )
-
-            index = competition.msg_to_sub[message_id]
-            submission = competition.competing_entries[index]
-
-            competition_new = deepcopy(competition)
-            competition_new.competing_entries.pop(index)
-            competition_new.msg_to_sub = {
-                mid: (idx if idx < index else idx - 1)
-                for mid, idx in competition_new.msg_to_sub.items()
-                if mid != message_id
-            }
+            competition_new, submission = competition.withdraw_sub(message_id)
 
             copy = deepcopy(self)
             copy.competitions[i] = competition_new
