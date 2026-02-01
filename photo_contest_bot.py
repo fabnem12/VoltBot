@@ -12,7 +12,7 @@ from nextcord.ext import commands, tasks
 import constantes
 
 from photo_contest import genVoteInfo
-from photo_contest.photo_contest_data import Contest, Period, PublicVote, Schedule, Submission, make_contest
+from photo_contest.photo_contest_data import Contest, JuryVote, Period, PublicVote, Schedule, Submission, make_contest
 
 
 class ContestPeriod(Enum):
@@ -106,6 +106,26 @@ def get_channel_and_thread(message: discord.Message) -> tuple[int, Optional[int]
         channel_id = message.channel.id
         thread_id = None
     return channel_id, thread_id
+
+
+async def notify_organizer_dm_failed(user: discord.Member | discord.User, message: discord.Message, reason: str = "jury voting"):
+    """Notify the organizer when DMs fail to be sent to a user.
+    
+    Args:
+        user: The user who couldn't receive DMs
+        message: The original message context
+        reason: Description of what the DM was for
+    """
+    try:
+        guild = message.guild
+        if guild:
+            save_channel = guild.get_channel(save_channel_id)
+            if save_channel and isinstance(save_channel, discord.TextChannel):
+                await save_channel.send(
+                    f"<@{organizer_id}> User {user.mention} ({user.id}) could not receive {reason} DMs. They have DMs disabled."
+                )
+    except:
+        pass
 
 
 async def submit(contest: Contest, message: discord.Message) -> Contest:
@@ -314,6 +334,183 @@ async def withdraw(contest: Contest, message: discord.Message, user: discord.Mem
     return contest
 
 
+class JuryConfirmView(discord.ui.View):
+    """Confirmation view for jury voting."""
+    
+    def __init__(self, ranking: list[Submission], user_id: int, channel_id: int, thread_id: Optional[int], contest: Contest):
+        super().__init__(timeout=600)  # 10 minutes timeout
+        self.ranking = ranking
+        self.user_id = user_id
+        self.channel_id = channel_id
+        self.thread_id = thread_id
+        self.contest = contest
+    
+    @discord.ui.button(label="Confirm Vote", style=discord.ButtonStyle.success)
+    async def confirm_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+        if not interaction.user:
+            return
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("This vote is not yours!", ephemeral=True)
+            return
+        
+        # Create the jury vote
+        vote = JuryVote(voter_id=self.user_id, ranking=self.ranking)
+        
+        # Save the vote
+        global contest
+        try:
+            contest = contest.save_jury_vote(self.channel_id, self.thread_id, vote)
+            contest.save("photo_contest/contest2026.yaml")
+            
+            await interaction.response.edit_message(
+                content="✅ Your vote has been saved successfully!",
+                view=None
+            )
+        except ValueError as e:
+            await interaction.response.edit_message(
+                content=f"❌ Error saving vote: {e}",
+                view=None
+            )
+    
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.danger)
+    async def cancel_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+        if not interaction.user:
+            return
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("This vote is not yours!", ephemeral=True)
+            return
+        
+        await interaction.response.edit_message(
+            content="❌ Vote cancelled.",
+            view=None
+        )
+
+
+class JuryVotingView(discord.ui.View):
+    """Interactive view for jury voting with buttons for each submission."""
+    
+    def __init__(self, submissions: list[Submission], user_id: int, channel_id: int, thread_id: Optional[int], contest: Contest):
+        super().__init__(timeout=3600)  # 1 hour timeout
+        self.submissions = submissions
+        self.user_id = user_id
+        self.channel_id = channel_id
+        self.thread_id = thread_id
+        self.contest = contest
+        self.ranking: list[Submission] = []
+        
+        # Create buttons for each submission
+        for i in range(len(submissions)):
+            button = discord.ui.Button(
+                label=f"Submission #{i+1}",
+                custom_id=f"vote_{i}",
+                style=discord.ButtonStyle.primary
+            )
+            button.callback = self.make_callback(i, button)
+            self.add_item(button)
+    
+    def make_callback(self, submission_index: int, button: discord.ui.Button):
+        """Create a callback function for a specific submission button."""
+        async def callback(interaction: discord.Interaction):
+            if not interaction.user:
+                return
+            if interaction.user.id != self.user_id:
+                await interaction.response.send_message("This vote is not yours!", ephemeral=True)
+                return
+            
+            submission = self.submissions[submission_index]
+            self.ranking.append(submission)
+            
+            # Disable the button that was just clicked
+            button.disabled = True
+            
+            # Update the message to show current ranking
+            ranking_text = "\n".join(
+                f"#{i+1} Submission #{self.submissions.index(sub)+1}"
+                for i, sub in enumerate(self.ranking)
+            )
+            
+            if len(self.ranking) < 10:
+                await interaction.response.edit_message(
+                    content=f"**Your current ranking ({len(self.ranking)}/10):**\n{ranking_text}\n\nClick buttons to continue building your top 10.",
+                    view=self
+                )
+            else:
+                # Ranking is complete, show confirmation
+                confirm_view = JuryConfirmView(self.ranking, self.user_id, self.channel_id, self.thread_id, self.contest)
+                await interaction.response.edit_message(
+                    content=f"**Your final ranking:**\n{ranking_text}\n\nPlease confirm your vote.",
+                    view=confirm_view
+                )
+        
+        return callback
+
+
+async def handle_jury_vote_request(contest: Contest, message: discord.Message, user: discord.Member | discord.User, bot: discord.Client):
+    """Handle a jury vote request (🗳️ reaction) by sending voting UI in DM.
+    
+    Args:
+        contest: The current contest
+        message: The voting message that was reacted to
+        user: The user who wants to vote
+        bot: The bot client
+    """
+    # Get channel and thread
+    channel_id, thread_id = get_channel_and_thread(message)
+    
+    # Find the competition
+    res = contest.competition_from_channel_thread(channel_id, thread_id)
+    if not res:
+        return
+    
+    _, competition = res
+    
+    # Filter out submissions by the same user and build mapping in a single pass
+    votable_submissions = []
+    submission_numbers = {}
+    for i, sub in enumerate(competition.competing_entries):
+        if sub.author_id != user.id:
+            votable_submissions.append(sub)
+            submission_numbers[sub] = i + 1
+    
+    if len(votable_submissions) < 10:
+        try:
+            await user.send(
+                f"❌ Not enough submissions to vote on. You need at least 10 submissions (excluding your own) to cast a jury vote."
+            )
+        except discord.Forbidden:
+            await notify_organizer_dm_failed(user, message, "jury voting notification")
+        return
+    
+    try:
+        # Send all submission images in DM
+        await user.send("📸 **Here are all the submissions for your review:**")
+        
+        for submission in votable_submissions:
+            await user.send(
+                content=f"Submission #{submission_numbers[submission]}",
+                embed=discord.Embed().set_image(url=submission.discord_save_path)
+            )
+        
+        # Send the voting interface
+        view = JuryVotingView(votable_submissions, user.id, channel_id, thread_id, contest)
+        await user.send(
+            content="**Click the buttons below to build your top 10 ranking.**\nSelect submissions in order from your most preferred to your 10th preferred.",
+            view=view
+        )
+        
+    except discord.Forbidden:
+        # User has DMs disabled
+        try:
+            await message.channel.send(
+                f"{user.mention}, I couldn't send you a DM. Please enable DMs from server members to vote.",
+                delete_after=30
+            )
+        except:
+            pass
+        
+        await notify_organizer_dm_failed(user, message, "jury voting")
+
+
 async def handle_public_vote(contest: Contest, message: discord.Message, user: discord.Member | discord.User, emoji: str) -> Contest:
     """Handle a public vote (0-3 points) during qualif or semis periods.
     
@@ -437,6 +634,13 @@ async def setup_qualif_period(bot):
             
             # Update the contest with the message_id mapping
             contest = contest.set_message_id(comp.channel_id, comp.thread_id, i, msg.id)
+        
+        # Send voting instruction message
+        vote_msg = await thread.send(
+            "🗳️ **Jury Voting is now open!**\n"
+            "React with 🗳️ to this message to cast your jury vote (top 10 ranking)."
+        )
+        await vote_msg.add_reaction("🗳️")
     
     # Save the updated contest with message mappings
     contest.save("photo_contest/contest2026.yaml")
@@ -472,6 +676,13 @@ async def setup_semis_period(bot):
             
             # Update the contest with the message_id mapping
             contest = contest.set_message_id(comp.channel_id, comp.thread_id, i, msg.id)
+        
+        # Send voting instruction message
+        vote_msg = await channel.send(
+            "🗳️ **Jury Voting is now open!**\n"
+            "React with 🗳️ to this message to cast your jury vote (top 10 ranking)."
+        )
+        await vote_msg.add_reaction("🗳️")
     
     # Save the updated contest with message mappings
     contest.save("photo_contest/contest2026.yaml")
@@ -604,9 +815,9 @@ def main():
             # Handle public votes (0-3 points)
             if payload.emoji.name in ["0️⃣", "1️⃣", "2️⃣", "3️⃣"]:
                 contest = await handle_public_vote(contest, message, user, payload.emoji.name)
-            # TODO: Implement jury vote handler
-            # elif current_period == ContestPeriod.QUALIF:
-            #     await cast_vote_jury(message, user, payload.emoji)
+            # Handle jury vote requests
+            elif payload.emoji.name == "🗳️":
+                await handle_jury_vote_request(contest, message, user, bot)
         
         elif current_period == ContestPeriod.FINAL:
             # TODO: Implement final vote handler
