@@ -1,8 +1,10 @@
 import asyncio
 import os
+import random
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Literal, Optional
+from itertools import groupby
+from typing import Dict, Literal, Optional
 
 import nextcord as discord
 import requests
@@ -13,6 +15,7 @@ import constantes
 
 from photo_contest import genVoteInfo
 from photo_contest.photo_contest_data import CompetitionInfo, Contest, Period, Schedule, Submission, make_contest
+from photo_contest.board_gen import gen_competition_board, gen_semifinals_boards, gen_final_results_board
 
 class ContestPeriod(Enum):
     IDLE = "idle"
@@ -44,6 +47,8 @@ voltServer = 567021913210355745
 organizer_id = 619574125622722560
 discord_team_role_id = 674583505446895616
 save_channel_id = 1421893549573537842
+announcement_channel_id = 1234567890123456789  # TODO: Replace with actual announcement channel ID
+final_channel_id = 1234567890123456789  # TODO: Replace with actual final channel ID
 
 # Global state for contest period
 current_period = None  # Will be set to ContestPeriod enum value
@@ -127,6 +132,61 @@ async def notify_organizer_dm_failed(user: discord.Member | discord.User, messag
         pass
 
 
+class SubmissionConfirmView(discord.ui.View):
+    """View with buttons to confirm or cancel a submission."""
+    
+    def __init__(self, message: discord.Message):
+        super().__init__(timeout=60)  # 1 minute timeout
+        self.message = message
+        self.confirmed = False
+    
+    @discord.ui.button(label="I confirm my submission complies with the rules", style=discord.ButtonStyle.success, emoji="✅")
+    async def confirm_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+        """Handle confirmation of submission."""
+        if interaction.user is None:
+            return
+
+        if interaction.user.id != self.message.author.id:
+            await interaction.response.send_message(
+                "Only the submission author can confirm.",
+                ephemeral=True
+            )
+            return
+        
+        self.confirmed = True
+        self.stop()
+        
+        # Disable buttons
+        for item in self.children:
+            if isinstance(item, discord.ui.Button):
+                item.disabled = True
+        
+        await interaction.response.edit_message(view=self)
+    
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.danger, emoji="❌")
+    async def cancel_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+        """Handle cancellation of submission."""
+        if interaction.user is None:
+            return
+
+        if interaction.user.id != self.message.author.id:
+            await interaction.response.send_message(
+                "Only the submission author can cancel.",
+                ephemeral=True
+            )
+            return
+        
+        self.confirmed = False
+        self.stop()
+        
+        # Disable buttons
+        for item in self.children:
+            if isinstance(item, discord.ui.Button):
+                item.disabled = True
+        
+        await interaction.response.edit_message(content="Submission cancelled.", view=self)
+
+
 async def submit(contest: Contest, message: discord.Message) -> Contest:
     """Handles a submission from a user.
     
@@ -137,10 +197,41 @@ async def submit(contest: Contest, message: discord.Message) -> Contest:
     Returns the new contest object.
     """
     
+    # Enforce deadline: only accept submissions during submission period
+    current_timestamp = utcnow().timestamp()
+    if not (contest.schedule.submission_period.start <= current_timestamp < contest.schedule.submission_period.end):
+        ref = discord.MessageReference(
+            message_id=message.id, channel_id=message.channel.id
+        )
+        await message.channel.send(
+            f"⏰ Submissions are not currently open. Please wait for the submission period to begin.",
+            delete_after=60,
+            reference=ref,
+        )
+        return contest
+    
     # Check the channel and thread to see if they are valid for submissions
     channel_id, thread_id = get_channel_and_thread(message)
     
     if (channel_id, thread_id) not in contest.channel_threads_open_for_submissions:
+        return contest
+    
+    # Enforce photo limit: maximum 5 photos per author per category
+    if not contest.can_user_submit(channel_id, thread_id, message.author.id):
+        ref = discord.MessageReference(
+            message_id=message.id, channel_id=message.channel.id
+        )
+        await message.channel.send(
+            f"❌ You have reached the maximum limit of **{contest.MAX_SUBMISSIONS_PER_CATEGORY} photos per category**.\n\n"
+            f"💡 **Tip:** You can withdraw a previous submission by reacting with ❌ to it, then submit a new photo.",
+            delete_after=60,
+            reference=ref,
+        )
+        # Delete the attempted submission message
+        try:
+            await message.delete()
+        except (discord.errors.NotFound, discord.errors.Forbidden):
+            pass
         return contest
     
     # Define allowed static image formats
@@ -193,6 +284,39 @@ async def submit(contest: Contest, message: discord.Message) -> Contest:
                 reference=ref,
             )
             return contest
+    
+    # Ask for confirmation that the submission complies with the rules
+    rules_text = (
+        "Are you sure that:\n- you took this photo **__yourself__**?\n"
+        "- the photo somewhat **fits the category of this channel**?\n"
+        "- the photo doesn't have human **faces clearly visible**?\n"
+        "- the photo **did NOT compete in previous editions of the contest**?\n"
+        "\n"
+        "By clicking 'I confirm', you acknowledge that your submission follows all contest rules."
+    )
+    
+    confirmation_view = SubmissionConfirmView(message)
+    
+    ref = discord.MessageReference(
+        message_id=message.id, channel_id=message.channel.id
+    )
+    await message.channel.send(
+        content=rules_text,
+        view=confirmation_view,
+        reference=ref,
+        delete_after=600  # Delete after 10 minutes
+    )
+    
+    # Wait for user to confirm or cancel
+    await confirmation_view.wait()
+    
+    if not confirmation_view.confirmed:
+        # User cancelled or timed out - delete the original message
+        try:
+            await message.delete()
+        except (discord.errors.NotFound, discord.errors.Forbidden):
+            pass  # Message already deleted or no permission to delete
+        return contest
     
     # Download the image locally
     response = requests.get(submission_url)
@@ -250,6 +374,12 @@ async def submit(contest: Contest, message: discord.Message) -> Contest:
     
     # Save the submission in the contest
     submission = Submission(author_id=message.author.id, submission_time=round(utcnow().timestamp()), local_save_path=local_filename, discord_save_path=uploaded_message.jump_url)
+    
+    # Delete the original message to maintain anonymity
+    try:
+        await message.delete()
+    except (discord.errors.NotFound, discord.errors.Forbidden):
+        pass  # Message already deleted or no permission to delete
     
     return contest.add_submission(submission, channel_id, message_resend.id, thread_id)
 
@@ -441,7 +571,7 @@ class JuryVotingView(discord.ui.View):
         return callback
 
 
-async def handle_jury_vote_request(contest: Contest, message: discord.Message, user: discord.Member | discord.User, bot: discord.Client):
+async def handle_jury_vote_request(contest: Contest, message: discord.Message, user: discord.Member | discord.User, bot: discord.Client, current_period: ContestPeriod):
     """Handle a jury vote request (🗳️ reaction) by sending voting UI in DM.
     
     Args:
@@ -449,7 +579,20 @@ async def handle_jury_vote_request(contest: Contest, message: discord.Message, u
         message: The voting message that was reacted to
         user: The user who wants to vote
         bot: The bot client
+        current_period: The current contest period
     """
+    # Enforce deadline: only allow jury votes during qualif, semis, or final periods
+    if current_period not in [ContestPeriod.QUALIF, ContestPeriod.SEMIS, ContestPeriod.FINAL]:
+        try:
+            await user.send("⏰ Jury voting is not currently open.")
+        except discord.Forbidden:
+            pass
+        try:
+            await message.remove_reaction("🗳️", user)
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            pass
+        return
+    
     # Get channel and thread
     channel_id, thread_id = get_channel_and_thread(message)
     
@@ -507,7 +650,7 @@ async def handle_jury_vote_request(contest: Contest, message: discord.Message, u
         await notify_organizer_dm_failed(user, message, "jury voting")
 
 
-async def handle_public_vote(contest: Contest, message: discord.Message, user: discord.Member | discord.User, emoji: str) -> Contest:
+async def handle_public_vote(contest: Contest, message: discord.Message, user: discord.Member | discord.User, emoji: str, current_period: ContestPeriod) -> Contest:
     """Handle a public vote (0-3 points) during qualif or semis periods.
     
     Args:
@@ -515,10 +658,19 @@ async def handle_public_vote(contest: Contest, message: discord.Message, user: d
         message: The submission message that was reacted to
         user: The user who reacted
         emoji: The emoji name (should be 0️⃣, 1️⃣, 2️⃣, or 3️⃣)
+        current_period: The current contest period
     
     Returns:
         Updated contest object
     """
+    # Enforce deadline: only allow votes during qualif or semis periods
+    if current_period not in [ContestPeriod.QUALIF, ContestPeriod.SEMIS]:
+        try:
+            await message.remove_reaction(emoji, user)
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            pass
+        return contest
+    
     # Map emoji to points
     emoji_to_points: dict[str, Literal[0] | Literal[1] | Literal[2] | Literal[3]] = {
         "0️⃣": 0,
@@ -531,6 +683,17 @@ async def handle_public_vote(contest: Contest, message: discord.Message, user: d
         return contest
     
     points = emoji_to_points[emoji]
+    
+    # During qualif period, only contestants can vote
+    if current_period == ContestPeriod.QUALIF:
+        contestant_ids = contest.contestants
+        if user.id not in contestant_ids:
+            # Not a contestant, remove their reaction
+            try:
+                await message.remove_reaction(emoji, user)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                pass
+            return contest
     
     # Get channel and thread
     channel_id, thread_id = get_channel_and_thread(message)
@@ -571,14 +734,27 @@ async def handle_public_vote(contest: Contest, message: discord.Message, user: d
     return contest
 
 
-async def handle_commentary_request(contest: Contest, message: discord.Message, user: discord.Member | discord.User):
+async def handle_commentary_request(contest: Contest, message: discord.Message, user: discord.Member | discord.User, current_period: ContestPeriod):
     """Handle a commentary request (💬 reaction) by opening a modal for text input.
     
     Args:
         contest: The current contest
         message: The photo message that was reacted to
         user: The user who wants to comment
+        current_period: The current contest period
     """
+    # Enforce deadline: only allow commentary during semis period
+    if current_period != ContestPeriod.SEMIS:
+        try:
+            await user.send("⏰ Commentary is only available during the semi-finals period.")
+        except discord.Forbidden:
+            pass
+        try:
+            await message.remove_reaction("💬", user)
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            pass
+        return
+    
     # Get channel and thread
     channel_id, thread_id = get_channel_and_thread(message)
     
@@ -740,9 +916,424 @@ async def update_commentary_summary(competition: CompetitionInfo, submission: Su
         pass
 
 
-async def setup_qualif_period(bot):
+async def announce_stage_results(bot: discord.Client, competitions: list[CompetitionInfo], stage_name: str, next_stage_name: str):
+    """Helper function to announce results by posting qualifying photos in random order (no authors).
+    
+    Args:
+        bot: The Discord bot client
+        competitions: List of competitions whose entries should be announced
+        stage_name: Name of the current stage (e.g., "Qualifiers", "Finalists")
+        next_stage_name: Name of the next stage (e.g., "Semi-Finals", "Grand Final")
+    """
+    # Get the announcement channel
+    announcement_channel = bot.get_channel(announcement_channel_id)
+    if not announcement_channel or not isinstance(announcement_channel, discord.TextChannel):
+        print(f"Warning: Could not find announcement channel {announcement_channel_id}")
+        return
+    
+    # For each category, post qualifiers in random order
+    for comp in competitions:
+        # Get category name
+        category_channel = bot.get_channel(comp.channel_id)
+        category_name = getattr(category_channel, "name", f"Category <#{comp.channel_id}>")
+        
+        # All competing_entries in this comp are the qualifiers
+        qualifiers = list(comp.competing_entries)
+        
+        # Shuffle to randomize order
+        random.shuffle(qualifiers)
+        
+        # Post announcement
+        await announcement_channel.send(f"🎊 **{stage_name} for {category_name}**")
+        
+        # Post each qualifier without author info
+        for i, submission in enumerate(qualifiers):
+            e = discord.Embed()
+            e.set_image(url=submission.discord_save_path)
+            await announcement_channel.send(
+                content=f"{stage_name.rstrip('s')} #{i+1}",
+                embed=e
+            )
+
+
+async def announce_qualif_results(bot: discord.Client):
+    """Announce qualification results by posting qualifying photos in random order (no authors)."""
+    global contest
+    
+    # Solve qualifs to determine who qualified (without modifying global contest)
+    solved_contest = contest.solve_qualifs()
+    semis_competitions = solved_contest.semis_competitions
+    
+    # Announce results using helper
+    await announce_stage_results(bot, semis_competitions, "Qualifiers", "Semi-Finals")
+
+
+async def announce_semis_results(bot: discord.Client):
+    """Announce semi-final results by posting finalists in random order (no authors)."""
+    global contest
+    
+    # Solve semis to determine who qualified (without modifying global contest)
+    solved_contest = contest.solve_semis()
+    final_competitions = solved_contest.final_competitions
+    
+    # Announce results using helper
+    await announce_stage_results(bot, final_competitions, "Finalists", "Grand Final")
+
+
+async def announce_final_results(bot: discord.Client):
+    """Announce final results with Eurovision-style voting reveal (voter by voter)."""
+    global contest
+    
+    # Get the announcement channel
+    announcement_channel = bot.get_channel(announcement_channel_id)
+    if not announcement_channel or not isinstance(announcement_channel, discord.TextChannel):
+        print(f"Warning: Could not find announcement channel {announcement_channel_id}")
+        return
+    
+    # Build id2name mapping
+    guild = bot.get_guild(voltServer)
+    if not guild:
+        print(f"Warning: Could not find guild {voltServer}")
+        return
+    
+    id2name: Dict[int, str] = {}
+    for submission in contest.submissions:
+        member = await guild.fetch_member(submission.author_id)
+        if member:
+            id2name[submission.author_id] = member.display_name
+        else:
+            id2name[submission.author_id] = f"User {submission.author_id}"
+    
+    final_competitions = contest.final_competitions
+    
+    # Eurovision-style voting for each category
+    for comp in final_competitions:
+        # Get category name
+        category_channel = bot.get_channel(comp.channel_id)
+        category_name = getattr(category_channel, "name", f"Category {comp.channel_id}")
+        
+        await announcement_channel.send(f"\n\n🎤 **VOTING REVEAL for {category_name}** 🎤\n")
+        
+        # Initialize running totals
+        running_totals: Dict[Submission, int] = {sub: 0 for sub in comp.competing_entries}
+        
+        # First, reveal public votes
+        public_votes = comp.count_votes_public()
+        if public_votes:
+            await announcement_channel.send("📊 **PUBLIC VOTES:**\n")
+            for submission in comp.competing_entries:
+                pts = public_votes.get(submission, 0)
+                running_totals[submission] += pts
+                if pts > 0:
+                    author_name = id2name.get(submission.author_id, f"User {submission.author_id}")
+                    await announcement_channel.send(f"**{author_name}**: {pts} points")
+                    await asyncio.sleep(10)  # Delay for suspense
+        
+        # Now reveal jury votes one by one (Eurovision style)
+        await announcement_channel.send("\n🗳️ **JURY VOTES - Calling each juror:**\n")
+        
+        # Get all jury voters
+        jury_voters = list(comp.votes_jury.keys())
+        random.shuffle(jury_voters)  # Randomize order for suspense
+        
+        for voter_id in jury_voters:
+            voter_member = guild.get_member(voter_id)
+            voter_name = voter_member.display_name if voter_member else f"Juror {voter_id}"
+            
+            await announcement_channel.send(f"\n📞 **Now voting: {voter_name}**")
+            await asyncio.sleep(2)  # Build suspense
+            
+            # Get this voter's points
+            jury_vote = comp.votes_jury[voter_id]
+            points_map = jury_vote.points_to_submissions()
+            
+            # Show points in ascending order (like Eurovision)
+            sorted_votes = sorted(points_map.items(), key=lambda x: x[1])
+            
+            for submission, points in sorted_votes:
+                if points > 0:
+                    author_name = id2name.get(submission.author_id, f"User {submission.author_id}")
+                    running_totals[submission] += points
+                    await announcement_channel.send(f"   {points} points → **{author_name}** (Total: {running_totals[submission]})")
+                    await asyncio.sleep(10)
+        
+        # Final ranking after all votes
+        await announcement_channel.send(f"\n\n🏆 **FINAL RANKING for {category_name}** 🏆\n")
+        
+        ranked_submissions = sorted(
+            comp.competing_entries,
+            key=lambda x: (running_totals[x], -x.submission_time),
+            reverse=True,
+        )
+        
+        medal_emojis = ["🥇", "🥈", "🥉"]
+        for i, submission in enumerate(ranked_submissions):
+            author_name = id2name.get(submission.author_id, f"User {submission.author_id}")
+            total_pts = running_totals[submission]
+            
+            medal = medal_emojis[i] if i < 3 else f"**{i+1}.**"
+            
+            await announcement_channel.send(
+                content=f"{medal} **{author_name}** - {total_pts} points",
+                embed=discord.Embed().set_image(url=submission.discord_save_path)
+            )
+    
+    await announcement_channel.send("\n🎉 **Thank you to all participants!** 🎉\n\n_Detailed results boards will be posted in 30 minutes..._")
+    
+    # Send DM notifications to all finalists
+    await notify_final_results(bot, final_competitions)
+    
+    # Schedule board posting for 30 minutes later
+    await asyncio.sleep(1800)  # 30 minutes = 1800 seconds
+    await announce_final_boards(bot)
+
+
+async def announce_final_boards(bot: discord.Client):
+    """Post detailed results boards for all stages."""
+    global contest
+    
+    # Get the announcement channel
+    announcement_channel = bot.get_channel(announcement_channel_id)
+    if not announcement_channel or not isinstance(announcement_channel, discord.TextChannel):
+        print(f"Warning: Could not find announcement channel {announcement_channel_id}")
+        return
+    
+    # Build id2name mapping
+    guild = bot.get_guild(voltServer)
+    if not guild:
+        print(f"Warning: Could not find guild {voltServer}")
+        return
+    
+    id2name: Dict[int, str] = {}
+    for submission in contest.submissions:
+        member = await guild.fetch_member(submission.author_id)
+        if member:
+            id2name[submission.author_id] = member.display_name
+        else:
+            id2name[submission.author_id] = f"User {submission.author_id}"
+    
+    # Generate and post all boards
+    await announcement_channel.send("\n\n📊 **DETAILED RESULTS BOARDS** 📊\n")
+    
+    # Build channel_names dict for semifinals
+    channel_names: Dict[int, str] = {}
+    for comp in contest.semis_competitions:
+        category_channel = bot.get_channel(comp.channel_id)
+        channel_names[comp.channel_id] = getattr(category_channel, "name", f"Category {comp.channel_id}")
+    
+    # Generate and post qualif boards
+    for comp in contest.qualif_competitions:
+        category_channel = bot.get_channel(comp.channel_id)
+        category_name = getattr(category_channel, "name", f"Category {comp.channel_id}")
+        
+        # Get thread name
+        if comp.thread_id:
+            thread = await bot.fetch_channel(comp.thread_id)
+            assert isinstance(thread, discord.Thread), "Thread ID does not correspond to a thread channel"
+            thread_name = thread.name
+        else:
+            thread_name = None
+        
+        board_path = gen_competition_board(comp, category_name, id2name, thread_name)
+        
+        with open(board_path, "rb") as f:
+            await announcement_channel.send(
+                content=f"Qualification Results: {category_name}" + (f" - Thread {thread_name}" if thread_name else ""),
+                file=discord.File(f, filename=os.path.basename(board_path))
+            )
+    
+    # Generate and post semi-final boards
+    semifinal_boards = gen_semifinals_boards(contest, channel_names, id2name)
+    for board_path in semifinal_boards:
+        with open(board_path, "rb") as f:
+            await announcement_channel.send(
+                content="Semi-Final Results",
+                file=discord.File(f, filename=os.path.basename(board_path))
+            )
+    
+    # Generate and post final boards
+    final_competitions = contest.final_competitions
+    for comp in final_competitions:
+        category_channel = bot.get_channel(comp.channel_id)
+        category_name = getattr(category_channel, "name", f"Category {comp.channel_id}")
+        
+        board_path = gen_final_results_board(contest, category_name, id2name)
+        
+        with open(board_path, "rb") as f:
+            await announcement_channel.send(
+                content=f"Final Results: {category_name}",
+                file=discord.File(f, filename=os.path.basename(board_path))
+            )
+    
+    await announcement_channel.send("\n✨ **Contest complete! See you next year!** ✨")
+
+
+async def notify_period_start(bot: discord.Client, period: ContestPeriod):
+    """Send announcement when a new period begins."""
+    announcement_channel = bot.get_channel(announcement_channel_id)
+    if not announcement_channel or not isinstance(announcement_channel, discord.TextChannel):
+        return
+    
+    if period == ContestPeriod.SUBMISSION:
+        await announcement_channel.send(
+            "📸 **SUBMISSION PERIOD HAS BEGUN!** 📸\n\n"
+            "Submit your photos in the designated category channels!\n"
+            f"Deadline: <t:{int(contest.schedule.submission_period.end)}:F>"
+        )
+    elif period == ContestPeriod.QUALIF:
+        await announcement_channel.send(
+            "🗳️ **QUALIFICATION VOTING HAS BEGUN!** 🗳️\n\n"
+            "Check the qualification threads and vote for your favorites!\n"
+            f"Deadline: <t:{int(contest.schedule.qualif_period.end)}:F>"
+        )
+    elif period == ContestPeriod.SEMIS:
+        await announcement_channel.send(
+            "🌟 **SEMI-FINALS HAVE BEGUN!** 🌟\n\n"
+            "Vote for the qualifiers in each category!\n"
+            f"Deadline: <t:{int(contest.schedule.semis_period.end)}:F>"
+        )
+    elif period == ContestPeriod.FINAL:
+        await announcement_channel.send(
+            "🏆 **GRAND FINAL HAS BEGUN!** 🏆\n\n"
+            "All categories compete together! Cast your votes!\n"
+            f"Deadline: <t:{int(contest.schedule.final_period.end)}:F>"
+        )
+
+
+async def notify_qualifiers(bot: discord.Client, competitions: list[CompetitionInfo], stage_name: str):
+    """Send DM notifications to users for each photo that qualified.
+    
+    Args:
+        bot: The Discord bot client
+        competitions: List of competitions containing the qualifiers
+        stage_name: Name of the stage they qualified for (e.g., "Semi-Finals", "Grand Final")
+    """
+    guild = bot.get_guild(voltServer)
+    if not guild:
+        return
+    
+    # Send DM for each qualified photo
+    for comp in competitions:
+        # Get category name
+        category_channel = bot.get_channel(comp.channel_id)
+        category_name = getattr(category_channel, "name", f"Category {comp.channel_id}")
+        
+        for submission in comp.competing_entries:
+            try:
+                user = await guild.fetch_member(submission.author_id)
+                if user:
+                    # Adapt message based on whether this is the final or not
+                    if stage_name == "Grand Final":
+                        description = f"Your photo from **{category_name}** has qualified for the **{stage_name}**!\n\nThis is the final round - good luck! 🍀"
+                    else:
+                        description = f"Your photo from **{category_name}** has qualified for the **{stage_name}**!\n\nGood luck in the next round! 🍀"
+                    
+                    embed = discord.Embed(
+                        title=f"🎉 Photo Qualified!",
+                        description=description,
+                        color=0x00ff00
+                    )
+                    embed.set_image(url=submission.discord_save_path)
+                    await user.send(embed=embed)
+            except discord.Forbidden:
+                # User has DMs disabled, skip
+                pass
+            except discord.NotFound:
+                # User not found, skip
+                pass
+
+
+async def recover_state(bot: discord.Client):
+    """Recover bot state after restart or crash. Catches up on any missed period transitions."""
+    global contest, current_period
+    
+    current_timestamp = utcnow().timestamp()
+    
+    # Determine where we should be
+    if contest.schedule.submission_period.start <= current_timestamp < contest.schedule.submission_period.end:
+        target_period = ContestPeriod.SUBMISSION
+    elif contest.schedule.qualif_period.start <= current_timestamp < contest.schedule.qualif_period.end:
+        target_period = ContestPeriod.QUALIF
+    elif contest.schedule.semis_period.start <= current_timestamp < contest.schedule.semis_period.end:
+        target_period = ContestPeriod.SEMIS
+    elif contest.schedule.final_period.start <= current_timestamp < contest.schedule.final_period.end:
+        target_period = ContestPeriod.FINAL
+    else:
+        target_period = ContestPeriod.IDLE
+    
+    print(f"Recovering state... Current period should be: {target_period.value}")
+    
+    # Check if we need to set up periods that we missed
+    if target_period == ContestPeriod.QUALIF and len(contest.qualif_competitions) == 0:
+        print("Missed qualif setup, setting up now...")
+        await setup_qualif_period(bot)
+    elif target_period == ContestPeriod.SEMIS and len(contest.semis_competitions) == 0:
+        print("Missed semis setup, setting up now...")
+        await setup_semis_period(bot)
+    elif target_period == ContestPeriod.FINAL and len(contest.final_competitions) == 0:
+        print("Missed final setup, setting up now...")
+        await setup_final_period(bot)
+    elif target_period == ContestPeriod.IDLE and current_timestamp > contest.schedule.final_period.end:
+        # Check if we missed the final results announcement
+        print("Contest has ended. Results may have been announced.")
+    
+    current_period = target_period
+    print(f"Recovery complete. Current period: {current_period.value}")
+
+
+async def close_qualif_period(bot: discord.Client):
+    """Close qualification period by removing voting reactions and locking threads."""
+    global contest
+    
+    print("Closing qualification period...")
+    
+    for comp in contest.qualif_competitions:
+        if comp.thread_id:
+            thread = await bot.fetch_channel(comp.thread_id)
+            if thread and isinstance(thread, discord.Thread):
+                try:
+                    # Archive the thread
+                    await thread.edit(archived=True, locked=True)
+                except (discord.Forbidden, discord.HTTPException):
+                    pass
+
+
+async def close_semis_period(bot: discord.Client):
+    """Close semi-finals period by removing voting reactions."""
+    global contest
+    
+    print("Closing semi-finals period...")
+    
+    for comp in contest.semis_competitions:
+        channel = await bot.fetch_channel(comp.channel_id)
+        if channel and isinstance(channel, discord.TextChannel):
+            try:
+                # Send closing message
+                await channel.send("🔒 **Semi-Finals voting has ended!** Results will be announced soon.")
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+
+
+async def close_final_period(bot: discord.Client):
+    """Close final period by removing voting reactions."""
+    global contest
+    
+    print("Closing final period...")
+    
+    final_channel = await bot.fetch_channel(final_channel_id)
+    if final_channel and isinstance(final_channel, discord.TextChannel):
+        try:
+            await final_channel.send("🔒 **Final voting has ended!** Results will be revealed shortly.")
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+
+
+async def setup_qualif_period(bot: discord.Client):
     """Set up qualification threads and post submissions."""
     global contest
+    
+    # Send period start announcement
+    await notify_period_start(bot, ContestPeriod.QUALIF)
     
     # Get the number of threads needed per category
     thread_counts = contest.count_qualifs()
@@ -753,7 +1344,7 @@ async def setup_qualif_period(bot):
     # Create threads for each category
     all_thread_ids = []
     for comp, thread_count in zip(submission_competitions, thread_counts):
-        channel = bot.get_channel(comp.channel_id)
+        channel = await bot.fetch_channel(comp.channel_id)
         if not channel or not isinstance(channel, discord.TextChannel):
             print(f"Warning: Could not find channel {comp.channel_id}")
             continue
@@ -774,6 +1365,7 @@ async def setup_qualif_period(bot):
     # Post submissions in their respective threads with voting reactions
     qualif_competitions = contest.qualif_competitions
     for comp in qualif_competitions:
+        assert comp.thread_id is not None, "Qualification competition missing thread_id"
         thread = bot.get_channel(comp.thread_id)
         if not thread or not isinstance(thread, discord.Thread):
             print(f"Warning: Could not find thread {comp.thread_id}")
@@ -804,13 +1396,22 @@ async def setup_qualif_period(bot):
     contest.save("photo_contest/contest2026.yaml")
 
 
-async def setup_semis_period(bot):
+async def setup_semis_period(bot: discord.Client):
     """Set up semi-final competitions and post qualified submissions."""
     global contest
+    
+    # Announce qualification results (random order, no authors)
+    await announce_qualif_results(bot)
     
     # Solve qualifications to determine semi-finalists
     contest = contest.solve_qualifs()
     contest.save("photo_contest/contest2026.yaml")
+    
+    # Send DM notifications to qualifiers
+    await notify_qualifiers(bot, contest.semis_competitions, "Semi-Finals")
+    
+    # Send period start announcement
+    await notify_period_start(bot, ContestPeriod.SEMIS)
     
     # Post submissions in semi-final channels
     semis_competitions = contest.semis_competitions
@@ -862,24 +1463,63 @@ async def setup_final_period(bot):
     """Set up final competitions and post finalists."""
     global contest
     
+    # Announce semi-final results (random order, no authors)
+    await announce_semis_results(bot)
+    
     # Solve semi-finals to determine finalists
     contest = contest.solve_semis()
     contest.save("photo_contest/contest2026.yaml")
     
-    # Post submissions in final channels
+    # Send DM notifications to finalists
+    await notify_qualifiers(bot, contest.final_competitions, "Grand Final")
+    
+    # Send period start announcement
+    await notify_period_start(bot, ContestPeriod.FINAL)
+    
+    # Post submissions in the final channel (single channel for all categories)
+    final_channel = bot.get_channel(final_channel_id)
+    if not final_channel or not isinstance(final_channel, discord.TextChannel):
+        print(f"Warning: Could not find final channel {final_channel_id}")
+        return
+    
     final_competitions = contest.final_competitions
+    
+    # Post all finalists from all categories in the final channel
+    await final_channel.send("🏆 **GRAND FINAL!** 🏆\nAll categories compete together!")
+    
+    submission_counter = 1
     for comp in final_competitions:
-        channel = bot.get_channel(comp.channel_id)
-        if not channel or not isinstance(channel, discord.TextChannel):
-            print(f"Warning: Could not find channel {comp.channel_id}")
-            continue
+        # Get category name for context
+        category_channel = bot.get_channel(comp.channel_id)
+        category_name = category_channel.name if category_channel else f"Category {comp.channel_id}"
         
-        await channel.send("🏆 **GRAND FINAL!** 🏆")
+        await final_channel.send(f"\n**{category_name} Finalists:**")
+        
         for i, submission in enumerate(comp.competing_entries):
-            await channel.send(
-                content=f"Submission #{i+1}",
+            msg = await final_channel.send(
+                content=f"Submission #{submission_counter}",
                 embed=discord.Embed().set_image(url=submission.discord_save_path)
             )
+            # Add voting reactions: 0, 1, 2, 3 points
+            await msg.add_reaction("0️⃣")
+            await msg.add_reaction("1️⃣")
+            await msg.add_reaction("2️⃣")
+            await msg.add_reaction("3️⃣")
+            
+            # Update the contest with the message_id mapping
+            contest = contest.set_message_id(comp.channel_id, comp.thread_id, i, msg.id)
+            
+            submission_counter += 1
+    
+    # Send voting instruction message
+    vote_msg = await final_channel.send(
+        "🗳️ **Jury Voting is now open!**\n"
+        "React with 🗳️ to this message to cast your jury vote (top 10 ranking)."
+    )
+    await vote_msg.add_reaction("🗳️")
+    
+    # Save the updated contest
+    contest.save("photo_contest/contest2026.yaml")
 
 
 def main():
@@ -910,13 +1550,24 @@ def main():
             old_period = current_period
             current_period = period
             
-            # Trigger period-specific setup on transition
+            # Close the previous period
+            if old_period == ContestPeriod.QUALIF:
+                await close_qualif_period(bot)
+            elif old_period == ContestPeriod.SEMIS:
+                await close_semis_period(bot)
+            elif old_period == ContestPeriod.FINAL:
+                await close_final_period(bot)
+            
+            # Trigger period-specific setup on transition INTO a period
             if period == ContestPeriod.QUALIF and old_period == ContestPeriod.SUBMISSION:
                 await setup_qualif_period(bot)
             elif period == ContestPeriod.SEMIS and old_period == ContestPeriod.QUALIF:
                 await setup_semis_period(bot)
             elif period == ContestPeriod.FINAL and old_period == ContestPeriod.SEMIS:
                 await setup_final_period(bot)
+            # Trigger announcement when transitioning OUT of final period
+            elif period == ContestPeriod.IDLE and old_period == ContestPeriod.FINAL:
+                await announce_final_results(bot)
         
         return period
 
@@ -927,6 +1578,8 @@ def main():
 
     @bot.event
     async def on_ready():
+        print(f"Bot is ready. Logged in as {bot.user}")
+        await recover_state(bot)
         autoplanner.start()
 
     @bot.event
@@ -984,13 +1637,13 @@ def main():
         elif current_period == ContestPeriod.QUALIF or current_period == ContestPeriod.SEMIS:
             # Handle public votes (0-3 points)
             if payload.emoji.name in ["0️⃣", "1️⃣", "2️⃣", "3️⃣"]:
-                contest = await handle_public_vote(contest, message, user, payload.emoji.name)
+                contest = await handle_public_vote(contest, message, user, payload.emoji.name, current_period)
             # Handle jury vote requests
             elif payload.emoji.name == "🗳️":
-                await handle_jury_vote_request(contest, message, user, bot)
+                await handle_jury_vote_request(contest, message, user, bot, current_period)
             # Handle commentary requests (semis only)
             elif payload.emoji.name == "💬" and current_period == ContestPeriod.SEMIS:
-                await handle_commentary_request(contest, message, user)
+                await handle_commentary_request(contest, message, user, current_period)
         
         elif current_period == ContestPeriod.FINAL:
             # TODO: Implement final vote handler

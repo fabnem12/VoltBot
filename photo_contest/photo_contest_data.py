@@ -7,7 +7,8 @@ from typing import Literal, Optional, Union
 
 import os
 import yaml
-from openai import OpenAI
+
+from mistralai import Mistral
 
 
 def _call_mistral_api(
@@ -27,30 +28,30 @@ def _call_mistral_api(
     Returns:
         The model's response text, or None if API key is missing or request fails
     """
-    api_key = os.environ.get("OPENROUTER_API_KEY")
+    api_key = os.environ.get("MISTRAL_API_KEY")
     if not api_key:
         return None
     
     try:
-        client = OpenAI(
-            api_key=api_key,
-            base_url="https://openrouter.ai/api/v1"
-        )
+        client = Mistral(api_key=api_key)
         
-        response = client.chat.completions.create(
-            model="mistralai/mistral-7b-instruct:free",
+        response = client.chat.complete(
+            model="mistral-medium-latest",
             messages=[{"role": "user", "content": prompt}],
             temperature=temperature,
             max_tokens=max_tokens,
-            timeout=timeout,
         )
-        return response.choices[0].message.content.strip()
+        res = response.choices[0].message.content
+        if res is None:
+            return None
+        else:
+            return res.strip()
     except Exception as e:
         print(f"Warning: Mistral API call failed: {e}")
         return None
 
 
-@dataclass
+@dataclass(frozen=True)
 class Submission:
     author_id: int
     submission_time: int  # timestamp
@@ -130,8 +131,8 @@ class CompetitionInfo:
     jury_commentaries: list[JuryCommentary] = field(default_factory=list)
     commentary_summaries: dict[Submission, str] = field(default_factory=dict)  # submission -> AI-generated summary (cached and persisted)
     # Cached vote breakdowns for efficient querying (not serialized)
-    _jury_breakdown: dict[Submission, dict[int, int]] = field(default_factory=dict, repr=False, compare=False)  # submission -> (voter_id -> points)
-    _public_breakdown: dict[Submission, dict[int, int]] = field(default_factory=dict, repr=False, compare=False)  # submission -> (voter_id -> points)
+    _jury_breakdown: dict[Submission, dict[int, int]] = field(default_factory=dict, init=False, repr=False, compare=False)  # submission -> (voter_id -> points)
+    _public_breakdown: dict[Submission, dict[int, int]] = field(default_factory=dict, init=False, repr=False, compare=False)  # submission -> (voter_id -> points)
 
     def _rebuild_vote_breakdowns(self):
         """Rebuild cached vote breakdowns from raw votes. Called after deserialization."""
@@ -337,7 +338,9 @@ class CompetitionInfo:
         if answer is None:
             return True
         
-        return "VALID" in answer.upper()
+        # Check for VALID but not INVALID (since "INVALID" contains "VALID")
+        answer_upper = answer.upper().strip()
+        return "VALID" in answer_upper and "INVALID" not in answer_upper
 
     def add_jury_commentary(
         self, author_id: int, submission: Submission, text: str
@@ -483,6 +486,8 @@ def split_entries_categ(categ_info: CompetitionInfo) -> list[list[Submission]]:
 
 @dataclass
 class Contest:
+    MAX_SUBMISSIONS_PER_CATEGORY = 5  # Maximum photos per user per category
+    
     competitions: list[CompetitionInfo]
     schedule: Schedule
     submissions: list[Submission] = field(default_factory=list)
@@ -571,6 +576,32 @@ class Contest:
             raise ValueError(
                 f"Unable to find a valid competition from the (channel_id, thread_id) provided: ({channel_id}, {thread_id})"
             )
+    
+    def can_user_submit(
+        self, channel_id: int, thread_id: Optional[int], user_id: int, max_submissions: Optional[int] = None
+    ) -> bool:
+        """Check if a user can submit more photos to a specific competition.
+        
+        Args:
+            channel_id: The channel ID of the competition
+            thread_id: The thread ID of the competition (None for main channels)
+            user_id: The Discord user ID to check
+            max_submissions: Maximum allowed submissions per user (default: MAX_SUBMISSIONS_PER_CATEGORY)
+        
+        Returns:
+            True if the user can submit more, False if they've reached the limit
+        """
+        if max_submissions is None:
+            max_submissions = self.MAX_SUBMISSIONS_PER_CATEGORY
+        
+        res = self.competition_from_channel_thread(channel_id, thread_id)
+        if res:
+            _, competition = res
+            user_submission_count = sum(int(sub.author_id == user_id) for sub in competition.competing_entries)
+            return user_submission_count < max_submissions
+        else:
+            # If competition not found, allow submission (will be handled elsewhere)
+            return True
 
     def set_message_id(
         self, channel_id: int, thread_id: Optional[int], submission_index: int, message_id: int
@@ -904,7 +935,11 @@ class Contest:
         """Save contest to YAML file, excluding cached vote breakdowns."""
         def dict_factory(data):
             # Filter out fields starting with underscore (cached data)
-            return {k: v for k, v in data if not k.startswith('_')}
+            result = {}
+            for k, v in data:
+                if not k.startswith('_'):
+                    result[k] = v
+            return result
         
         with open(path, "w") as f:
             yaml.dump(asdict(self, dict_factory=dict_factory), f)
