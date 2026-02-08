@@ -602,6 +602,44 @@ class Contest:
         else:
             # If competition not found, allow submission (will be handled elsewhere)
             return True
+    
+    def is_submission_message(
+        self, channel_id: int, thread_id: Optional[int], message_id: int
+    ) -> bool:
+        """Check if a message_id corresponds to a submission.
+        
+        Args:
+            channel_id: The channel ID
+            thread_id: The thread ID (None for main channels)
+            message_id: The Discord message ID to check
+        
+        Returns:
+            True if the message is a submission, False otherwise
+        """
+        res = self.competition_from_channel_thread(channel_id, thread_id)
+        if res:
+            _, competition = res
+            return message_id in competition.msg_to_sub
+        return False
+    
+    def get_submission_from_message(
+        self, channel_id: int, thread_id: Optional[int], message_id: int
+    ) -> Optional[Submission]:
+        """Get a submission by its Discord message ID.
+        
+        Args:
+            channel_id: The channel ID
+            thread_id: The thread ID (None for main channels)
+            message_id: The Discord message ID to look up
+        
+        Returns:
+            The Submission if found, None otherwise
+        """
+        res = self.competition_from_channel_thread(channel_id, thread_id)
+        if res:
+            _, competition = res
+            return competition.get_submission_from_message(message_id)
+        return None
 
     def set_message_id(
         self, channel_id: int, thread_id: Optional[int], submission_index: int, message_id: int

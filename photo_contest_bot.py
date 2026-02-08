@@ -384,50 +384,24 @@ async def submit(contest: Contest, message: discord.Message) -> Contest:
     return contest.add_submission(submission, channel_id, message_resend.id, thread_id)
 
 
-async def withdraw(contest: Contest, message: discord.Message, user: discord.Member | discord.User) -> Contest:
-    """Handles withdrawal of a submission.
+async def _perform_withdrawal(contest: Contest, message: discord.Message, channel_id: int, thread_id: Optional[int]) -> Contest:
+    """Core withdrawal logic - withdraws submission, renumbers messages, and saves contest.
     
-    Withdraws a submission when the message_resend gets a ❌ reaction from either
-    the author or a user with discord_team_role.
+    Args:
+        contest: The contest object
+        message: The Discord message of the submission
+        channel_id: The channel ID
+        thread_id: The thread ID (None for main channels)
     
-    Returns the updated contest object.
+    Returns:
+        Updated contest object
     """
-    
-    # Check the channel and thread
-    channel_id, thread_id = get_channel_and_thread(message)
-    
-    # Check if this channel/thread is valid for submissions
-    if (channel_id, thread_id) not in contest.channel_threads_open_for_submissions:
-        return contest
-    
-    # Find the competition
+    # Get submission index for message renumbering
     res = contest.competition_from_channel_thread(channel_id, thread_id)
     if not res:
         return contest
-    
     _, competition = res
-    
-    # Check if this message is a submission message
-    if message.id not in competition.msg_to_sub:
-        return contest
-    
-    # Get the submission index
     submission_index = competition.msg_to_sub[message.id]
-    submission = competition.competing_entries[submission_index]
-    
-    # Check if user is authorized to withdraw (author or discord team member)
-    is_author = user.id == submission.author_id
-    has_team_role = False
-    if isinstance(user, discord.Member):
-        has_team_role = any(role.id == discord_team_role_id for role in user.roles)
-    
-    if not (is_author or has_team_role):
-        # User is not authorized to withdraw, remove their reaction
-        try:
-            await message.remove_reaction("❌", user)
-        except (discord.NotFound, discord.Forbidden):
-            pass
-        return contest
     
     # Withdraw the submission
     contest = contest.withdraw_submission(channel_id, message.id, thread_id)
@@ -451,14 +425,66 @@ async def withdraw(contest: Contest, message: discord.Message, user: discord.Mem
                     # No permission to edit, skip
                     pass
     
+    # Save the updated contest
+    contest.save("photo_contest/contest2026.yaml")
+    
+    return contest
+
+
+async def withdraw(contest: Contest, message: discord.Message, user: discord.Member | discord.User) -> Contest:
+    """Handles withdrawal of a submission.
+    
+    Withdraws a submission when the message_resend gets a ❌ reaction from either
+    the author or a user with discord_team_role.
+    
+    Returns the updated contest object.
+    """
+    
+    # Check the channel and thread
+    channel_id, thread_id = get_channel_and_thread(message)
+    
+    # Check if this channel/thread is valid for submissions
+    if (channel_id, thread_id) not in contest.channel_threads_open_for_submissions:
+        return contest
+    
+    # Check if this message is a submission
+    if not contest.is_submission_message(channel_id, thread_id, message.id):
+        return contest
+    
+    # Get the submission
+    submission = contest.get_submission_from_message(channel_id, thread_id, message.id)
+    if not submission:
+        return contest
+    
+    # Get submission index for later message renumbering
+    res = contest.competition_from_channel_thread(channel_id, thread_id)
+    if not res:
+        return contest
+    _, competition = res
+    submission_index = competition.msg_to_sub[message.id]
+    
+    # Check if user is authorized to withdraw (author or discord team member)
+    is_author = user.id == submission.author_id
+    has_team_role = False
+    if isinstance(user, discord.Member):
+        has_team_role = any(role.id == discord_team_role_id for role in user.roles)
+    
+    if not (is_author or has_team_role):
+        # User is not authorized to withdraw, remove their reaction
+        try:
+            await message.remove_reaction("❌", user)
+        except (discord.NotFound, discord.Forbidden):
+            pass
+        return contest
+    
+    # Perform the withdrawal
+    contest = await _perform_withdrawal(contest, message, channel_id, thread_id)
+    
     # Delete the original submission message
     try:
         await message.delete()
     except (discord.NotFound, discord.Forbidden):
         pass
-    
-    # Save the updated contest
-    contest.save("photo_contest/contest2026.yaml")
     
     return contest
 
@@ -1650,6 +1676,33 @@ def main():
             pass
         # elif current_period == ContestPeriod.FINAL:
         #     await cast_vote_gf(message, user, payload.emoji)
+
+    @bot.event
+    async def on_message_delete(message: discord.Message):
+        """Handle message deletions - withdraw submission if a submission message is deleted."""
+        global contest
+        
+        # Only process during submission period
+        if current_period != ContestPeriod.SUBMISSION:
+            return
+        
+        # Ignore DMs
+        if not message.guild:
+            return
+        
+        # Check the channel and thread
+        channel_id, thread_id = get_channel_and_thread(message)
+        
+        # Check if this channel/thread is valid for submissions
+        if (channel_id, thread_id) not in contest.channel_threads_open_for_submissions:
+            return
+        
+        # Check if this message is a submission
+        if not contest.is_submission_message(channel_id, thread_id, message.id):
+            return
+        
+        # Perform the withdrawal (message is already deleted, so no need to delete it again)
+        contest = await _perform_withdrawal(contest, message, channel_id, thread_id)
 
     @bot.command(name="setup")
     async def command_setup(ctx, *channels: discord.TextChannel):
