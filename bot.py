@@ -176,6 +176,13 @@ async def report(messageId, guild, channel, user, param = ""):
         if param != "":
             e.add_field(name = "Details", value=param)
     msgReport = await reportChannel.send(embed = e)
+    
+    # reactions to see what has been done with the report
+    # either do nothing, informal warn, formal punishment
+    
+    await msgReport.add_reaction("❌")
+    await msgReport.add_reaction("⚠️")
+    await msgReport.add_reaction("🔨")
 
     ref = discord.MessageReference(channel_id = msgReport.channel.id, message_id = msgReport.id)
 
