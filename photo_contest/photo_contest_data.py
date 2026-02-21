@@ -11,6 +11,14 @@ import yaml
 from mistralai import Mistral
 
 
+# Points awarded based on ranking position for different competition sizes
+POINTS_SETS: dict[int, list[int]] = {
+    10: [12, 10, 8, 7, 6, 5, 4, 3, 2, 1],
+    5: [7, 5, 3, 2, 1],
+    3: [4, 2, 1],
+}
+
+
 def _call_mistral_api(
     prompt: str, 
     temperature: float = 0.3, 
@@ -65,7 +73,7 @@ class JuryVote:
     ranking: list[Submission]
 
     def __post_init__(self):
-        valid_ranking_lengths = {10, 6, 4}
+        valid_ranking_lengths = POINTS_SETS.keys()
 
         ranking = self.ranking
         if len(ranking) not in valid_ranking_lengths:
@@ -78,15 +86,10 @@ class JuryVote:
 
     def points_to_submissions(self):
         ranking = self.ranking
-        points_sets: dict[int, list[int]] = {
-            10: [12, 10, 8, 7, 6, 5, 4, 3, 2, 1],
-            6: [7, 5, 3, 2, 1, 0],
-            4: [4, 2, 1, 0],
-        }
 
         return {
             submission: points
-            for submission, points in zip(ranking, points_sets[len(ranking)])
+            for submission, points in zip(ranking, POINTS_SETS[len(ranking)])
         }
 
 
@@ -151,6 +154,11 @@ class CompetitionInfo:
                 self._public_breakdown[submission] = {}
             current = self._public_breakdown[submission].get(voter_id, 0)
             self._public_breakdown[submission][voter_id] = current + public_vote.nb_points
+
+    @property
+    def needs_qualification(self) -> bool:
+        """Check if this category needs qualification rounds (has >= 12 submissions)."""
+        return len(self.competing_entries) >= 12
 
     def add_sub(self, submission: Submission, message_id: int) -> "CompetitionInfo":
         copy = deepcopy(self)
@@ -277,6 +285,28 @@ class CompetitionInfo:
             Dict mapping voter_id -> total points awarded to this submission
         """
         return self._public_breakdown.get(submission, {})
+
+    def get_ranked_submissions_final(self) -> list[Submission]:
+        """Get submissions ranked by final votes with proper tie-breaking.
+        
+        Tie-breaking rules (in order):
+        1. Total final points (higher is better)
+        2. Number of jurors who gave points (more voters is better)
+        3. Submission time (earlier submission wins)
+        
+        Returns:
+            List of submissions in ranked order
+        """
+        final_votes = self.count_votes_jury()
+        
+        def ranking_key(submission: Submission):
+            points = final_votes.get(submission, 0)
+            # Count number of jurors who gave points to this submission
+            num_voters = len(self._jury_breakdown.get(submission, {}))
+            # Use negative submission_time so earlier submissions rank higher
+            return (points, num_voters, -submission.submission_time)
+        
+        return sorted(self.competing_entries, key=ranking_key, reverse=True)
 
     def _generate_summary_for_submission(self, submission: Submission) -> str:
         """Generate an AI summary for a specific submission's commentaries.
@@ -486,7 +516,7 @@ def split_entries_categ(categ_info: CompetitionInfo) -> list[list[Submission]]:
 
 @dataclass
 class Contest:
-    MAX_SUBMISSIONS_PER_CATEGORY = 5  # Maximum photos per user per category
+    MAX_SUBMISSIONS_PER_CATEGORY = 6  # Maximum photos per user per category
     
     competitions: list[CompetitionInfo]
     schedule: Schedule
@@ -495,6 +525,10 @@ class Contest:
     @property
     def contestants(self):
         return set(x.author_id for x in self.submissions)
+
+    def _competitions_by_type(self, comp_type: str) -> list[CompetitionInfo]:
+        """Helper to filter competitions by type."""
+        return [comp for comp in self.competitions if comp.type == comp_type]
 
     @property
     def current_competitions(self) -> list[CompetitionInfo]:
@@ -505,19 +539,19 @@ class Contest:
 
     @property
     def submission_competitions(self) -> list[CompetitionInfo]:
-        return [comp for comp in self.competitions if comp.type == "submission"]
+        return self._competitions_by_type("submission")
 
     @property
     def qualif_competitions(self) -> list[CompetitionInfo]:
-        return [comp for comp in self.competitions if comp.type == "qualif"]
+        return self._competitions_by_type("qualif")
 
     @property
     def semis_competitions(self) -> list[CompetitionInfo]:
-        return [comp for comp in self.competitions if comp.type == "semis"]
+        return self._competitions_by_type("semis")
 
     @property
     def final_competitions(self) -> list[CompetitionInfo]:
-        return [comp for comp in self.competitions if comp.type == "final"]
+        return self._competitions_by_type("final")
 
     @property
     def channel_threads_open_for_submissions(self) -> list[tuple[int, Optional[int]]]:
@@ -726,7 +760,7 @@ class Contest:
 
     def add_commentary(
         self, channel_id: int, thread_id: Optional[int], submission: Submission, author_id: int, text: str
-    ) -> tuple["Contest", "CompetitionInfo"]:
+    ) -> "Contest":
         """Add a jury commentary to a submission in a specific competition.
         
         Args:
@@ -737,7 +771,7 @@ class Contest:
             text: The commentary text
         
         Returns:
-            Tuple of (updated Contest, updated CompetitionInfo)
+            Updated Contest object
         
         Raises:
             ValueError: If competition not found or commentary validation fails
@@ -754,7 +788,7 @@ class Contest:
         copy = deepcopy(self)
         copy.competitions[i] = competition_new
         
-        return copy, competition_new
+        return copy
 
     def withdraw_submission(
         self, channel_id: int, message_id: int, thread_id: Optional[int] = None
@@ -777,15 +811,14 @@ class Contest:
             )
 
     def count_qualifs(self) -> list[int]:
-        submission_competitions = list(
-            filter(lambda x: x.type == "submission", self.competitions)
-        )
         ret = []
-
-        for comp in submission_competitions:
-            list_subs_qualif = split_entries_categ(comp)
-            ret.append(len(list_subs_qualif))
-
+        for comp in self.submission_competitions:
+            # Categories with < 12 submissions skip qualification (auto-qualify to semis)
+            if not comp.needs_qualification:
+                ret.append(0)  # No threads needed
+            else:
+                list_subs_qualif = split_entries_categ(comp)
+                ret.append(len(list_subs_qualif))
         return ret
 
     def make_qualifs(self, list_thread_ids: list[list[int]]) -> "Contest":
@@ -793,18 +826,21 @@ class Contest:
 
         qualifs: list[CompetitionInfo] = []
         for comp, threads in zip(submission_competitions, list_thread_ids):
-            list_subs_qualif = split_entries_categ(comp)
-            qualifs += [
-                CompetitionInfo(
-                    "qualif",
-                    comp.channel_id,
-                    self.schedule.qualif_period.start,
-                    self.schedule.qualif_period.end,
-                    thread_id=thread_id,
-                    competing_entries=subs,
-                )
-                for subs, thread_id in zip(list_subs_qualif, threads)
-            ]
+            # Skip qualification for categories with too few submissions (< 12)
+            # Those will automatically qualify to semis
+            if comp.needs_qualification:
+                list_subs_qualif = split_entries_categ(comp)
+                qualifs += [
+                    CompetitionInfo(
+                        "qualif",
+                        comp.channel_id,
+                        self.schedule.qualif_period.start,
+                        self.schedule.qualif_period.end,
+                        thread_id=thread_id,
+                        competing_entries=subs,
+                    )
+                    for subs, thread_id in zip(list_subs_qualif, threads)
+                ]
 
         copy = deepcopy(self)
         copy.competitions += qualifs
@@ -875,10 +911,13 @@ class Contest:
 
     def solve_qualifs(self) -> "Contest":
         qualif_competitions = self.qualif_competitions
+        submission_competitions = self.submission_competitions
+        
         qualifs_per_categ: dict[int, list[Submission]] = (
             dict()
         )  # channel_id -> [submissions]
 
+        # Process qualification competitions (categories with >= 12 submissions)
         for qualif in qualif_competitions:
             channel_id = qualif.channel_id
             # determine the top 4 of the jury and the top 1 of the public
@@ -890,12 +929,12 @@ class Contest:
 
             top_jury = sorted(
                 qualif.competing_entries,
-                key=lambda x: (res_jury[x], res_public[x], -x.submission_time),
+                key=lambda x: (res_jury.get(x, 0), res_public.get(x, 0), -x.submission_time),
                 reverse=True,
             )[:4]
             top_public = sorted(
                 [x for x in qualif.competing_entries if x not in top_jury],
-                key=lambda x: (res_public[x], res_jury[x], -x.submission_time),
+                key=lambda x: (res_public.get(x, 0), res_jury.get(x, 0), -x.submission_time),
                 reverse=True,
             )[:1]
 
@@ -904,6 +943,15 @@ class Contest:
 
             # save the qualifiers of the thread
             qualifs_per_categ[channel_id] = qualifs_per_categ.get(channel_id, []) + top
+
+        # Auto-qualify categories with < 12 submissions (no qualification threads were created)
+        channels_with_qualifs = set(q.channel_id for q in qualif_competitions)
+        for submission_comp in submission_competitions:
+            if submission_comp.channel_id not in channels_with_qualifs:
+                # This category had < 12 submissions, auto-qualify all to semis
+                all_subs = list(submission_comp.competing_entries)
+                shuffle(all_subs)
+                qualifs_per_categ[submission_comp.channel_id] = all_subs
 
         semis = []
         for categ, subs in qualifs_per_categ.items():
@@ -929,7 +977,7 @@ class Contest:
 
         for semi in semis_competitions:
             channel_id = semi.channel_id
-            # determine the top 4 of the jury and the top 2 of the public
+            # determine the top 3 of the jury and the top 2 of the public
             # with the vote of the other voter category being used in case of a tie
             # in a case of a new tie, the submission submitted earlier wins
 
@@ -940,7 +988,7 @@ class Contest:
                 semi.competing_entries,
                 key=lambda x: (res_jury[x], res_public[x], -x.submission_time),
                 reverse=True,
-            )[:4]
+            )[:3]
             top_public = sorted(
                 [x for x in semi.competing_entries if x not in top_jury],
                 key=lambda x: (res_public[x], res_jury[x], -x.submission_time),
@@ -968,6 +1016,67 @@ class Contest:
         copy.competitions += finals
 
         return copy
+
+    def get_votable_submissions(
+        self, channel_id: int, thread_id: Optional[int], user_id: int
+    ) -> tuple[list[Submission], dict[Submission, int]]:
+        """Get submissions that a user can vote on (excludes their own submissions).
+        
+        Args:
+            channel_id: The channel ID
+            thread_id: The thread ID (None for main channels)
+            user_id: The user ID
+            
+        Returns:
+            Tuple of (votable_submissions, submission_numbers_dict)
+        """
+        res = self.competition_from_channel_thread(channel_id, thread_id)
+        if res:
+            _, comp = res
+            votable_submissions = []
+            submission_numbers = {}
+            for i, sub in enumerate(comp.competing_entries):
+                if sub.author_id != user_id:
+                    votable_submissions.append(sub)
+                    submission_numbers[sub] = i + 1
+            return votable_submissions, submission_numbers
+        return [], {}
+
+    def get_competition_commentaries_summaries(
+        self, channel_id: int, thread_id: Optional[int]
+    ) -> list[tuple[Submission, str]]:
+        """Get all commentary summaries for a competition.
+        
+        Args:
+            channel_id: The channel ID
+            thread_id: The thread ID (None for main channels)
+            
+        Returns:
+            List of tuples (submission, summary_text)
+        """
+        res = self.competition_from_channel_thread(channel_id, thread_id)
+        if res:
+            _, comp = res
+            return comp.get_all_commentaries_summaries()
+        return []
+
+    def get_submission_to_summary_msg(
+        self, channel_id: int, thread_id: Optional[int]
+    ) -> dict:
+        """Get the submission to summary message mapping for a competition.
+        
+        Args:
+            channel_id: The channel ID
+            thread_id: The thread ID (None for main channels)
+            
+        Returns:
+            Dictionary mapping submissions to summary message IDs
+        """
+        res = self.competition_from_channel_thread(channel_id, thread_id)
+        if res:
+            _, comp = res
+            return comp.submission_to_summary_msg
+        return {}
 
     def save(self, path: str):
         """Save contest to YAML file, excluding cached vote breakdowns."""
