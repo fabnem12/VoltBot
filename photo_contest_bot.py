@@ -187,7 +187,10 @@ async def upload_to_save_channel(guild: discord.Guild, file_path: str, descripti
     if not uploaded_message.attachments:
         raise RuntimeError("Upload failed - no attachments in message")
     
-    return uploaded_message.attachments[0].url
+    cdn_url = uploaded_message.attachments[0].url
+    logger.info(f"Uploaded file to save channel, CDN URL: {cdn_url}")
+    
+    return cdn_url
 
 
 def get_channel_and_thread(message: discord.Message) -> tuple[int, Optional[int]]:
@@ -264,6 +267,65 @@ async def send_dm_safe(user: discord.User | discord.Member, content: str = "", e
         return True
     except (discord.Forbidden, discord.NotFound):
         return False
+
+
+async def download_missing_pictures():
+    """Download pictures from Discord CDN for submissions that don't have local copies.
+    
+    This function is called on startup to ensure all submissions have local copies
+    of their images, which may be missing due to:
+    - Bot restart on a different machine
+    - Local files being lost/deleted
+    - Contest data restored from backup
+    """
+    global contest
+    
+    print("Checking for missing local pictures...")
+    downloaded_count = 0
+    error_count = 0
+    
+    for submission in contest.submissions:
+        # Check if local file is missing or path is empty
+        should_download = (
+            not submission.local_save_path or 
+            not os.path.exists(submission.local_save_path)
+        )
+        
+        if should_download and submission.discord_save_path:
+            try:
+                # Use existing local_save_path if available, otherwise generate one
+                local_filename = submission.local_save_path
+                
+                # Download from Discord CDN
+                print(f"Downloading missing picture: {local_filename}")
+                response = requests.get(submission.discord_save_path, timeout=10)
+                
+                if response.status_code == 200:
+                    # Save locally
+                    with open(local_filename, "wb") as f:
+                        f.write(response.content)
+                    
+                    # Update submission's local_save_path
+                    downloaded_count += 1
+                    print(f"✓ Successfully downloaded: {local_filename}")
+                else:
+                    print(f"✗ Failed to download (HTTP {response.status_code}): {submission.discord_save_path}")
+                    error_count += 1
+                    
+            except Exception as e:
+                print(f"✗ Error downloading picture from {submission.discord_save_path}: {e}")
+                error_count += 1
+    
+    if downloaded_count > 0:
+        # Save contest with updated local paths
+        contest.save("photo_contest/contest2026.yaml")
+        print(f"Downloaded {downloaded_count} missing picture(s)")
+    
+    if error_count > 0:
+        print(f"Failed to download {error_count} picture(s)")
+    
+    if downloaded_count == 0 and error_count == 0:
+        print("All pictures already present locally")
 
 
 async def close_period(period: ContestPeriod, bot: discord.Client):
@@ -360,7 +422,7 @@ class SubmissionConfirmView(discord.ui.View):
                 item.disabled = True
 
 
-async def submit(contest: Contest, message: discord.Message, bot: discord.Client) -> Contest:
+async def submit(message: discord.Message, bot: discord.Client) -> Contest:
     """Handles a submission from a user.
     
     Takes a message with an image attachment or a link, processes it, and recorded the submission.
@@ -368,13 +430,19 @@ async def submit(contest: Contest, message: discord.Message, bot: discord.Client
     The process consists of downloading the image locally, uploading it to a designated channel for submissions, recovering the link to the uploaded image, and storing the submission in the contest data.
     
     Args:
-        contest: The contest object
         message: The message containing the submission
         bot: The Discord bot client
     
     Returns:
         Updated contest object
     """
+    global contest
+    
+    # TEST_MODE: Allow organizer to submit on behalf of other users by mentioning them
+    actual_author_id = message.author.id
+    if TEST_MODE and message.author.id == organizer_id and message.mentions:
+        actual_author_id = message.mentions[0].id
+        logger.info(f"TEST_MODE: Submission from {message.author.id} on behalf of {actual_author_id}")
     
     # Enforce deadline: only accept submissions during submission period
     current_timestamp = utcnow().timestamp()
@@ -396,12 +464,12 @@ async def submit(contest: Contest, message: discord.Message, bot: discord.Client
         return contest
     
     # Enforce photo limit: maximum 6 photos per author per category
-    if not contest.can_user_submit(channel_id, thread_id, message.author.id):
+    if not contest.can_user_submit(channel_id, thread_id, actual_author_id):
         ref = discord.MessageReference(
             message_id=message.id, channel_id=message.channel.id
         )
         await message.channel.send(
-            f"❌ You have reached the maximum limit of **{contest.MAX_SUBMISSIONS_PER_CATEGORY} photos per category**.\n\n"
+            f"❌ {'That user has' if TEST_MODE and message.author.id != actual_author_id else 'You have'} reached the maximum limit of **{contest.MAX_SUBMISSIONS_PER_CATEGORY} photos per category**.\n\n"
             f"💡 **Tip:** You can withdraw a previous submission by reacting with ❌ to it, then submit a new photo.",
             delete_after=30,
             reference=ref,
@@ -493,9 +561,9 @@ async def submit(contest: Contest, message: discord.Message, bot: discord.Client
         # User cancelled or timed out - delete the original message
         try:
             await message.delete()
-            await confirmation_msg.delete()
         except (discord.errors.NotFound, discord.errors.Forbidden):
             pass  # Message already deleted or no permission to delete
+        # Note: confirmation_msg has delete_after=60, so it will auto-delete. Don't try to delete it manually.
         return contest
     
     # User confirmed - delete the confirmation message immediately
@@ -538,11 +606,28 @@ async def submit(contest: Contest, message: discord.Message, bot: discord.Client
             ),
         )
         # Notify organizer
-        await notify_organizer_error(bot, f"Failed to upload submission from user <@{message.author.id}> in <#{channel_id}>. Error: {e}")
+        await notify_organizer_error(bot, f"Failed to upload submission from user <@{actual_author_id}> in <#{channel_id}>. Error: {e}")
         return contest
     
-    # Get the current submission count to determine the index for this new submission
-    current_count = contest.get_submission_count(channel_id, thread_id)
+    # Create the submission object
+    submission = Submission(author_id=actual_author_id, submission_time=round(utcnow().timestamp()), local_save_path=local_filename, discord_save_path=uploaded_url)
+    
+    # Add submission with placeholder message_id to reserve its index
+    # Using global contest variable - asyncio event loop ensures atomic execution
+    contest = contest.add_submission(submission, channel_id, 0, thread_id)
+    
+    # Save immediately to persist the submission
+    contest.save("photo_contest/contest2026.yaml")
+    
+    # Get the submission index that was just assigned
+    res = contest.competition_from_channel_thread(channel_id, thread_id)
+    if not res:
+        logger.error(f"Could not find competition after adding submission")
+        return contest
+    
+    _, competition = res
+    submission_number = len(competition.competing_entries)  # 1-indexed for display
+    submission_index = submission_number - 1  # 0-indexed for data structure
     
     # Resend the message in the submission channel/thread
     if thread_id is not None:
@@ -552,13 +637,20 @@ async def submit(contest: Contest, message: discord.Message, bot: discord.Client
     assert submission_channel is not None, "Submission channel not found"
     assert isinstance(submission_channel, (discord.TextChannel, discord.Thread)), "Submission channel is not a TextChannel or Thread"
 
+    # Create embed with the uploaded image
+    embed = discord.Embed()
+    embed.set_image(url=uploaded_url)
+    
+    logger.info(f"Creating submission #{submission_number} with URL: {uploaded_url}")
+    
     message_resend = await submission_channel.send(
-        content=f"Submission #{current_count + 1}",
-        embed=discord.Embed().set_image(url=uploaded_url)
+        content=f"Submission #{submission_number}",
+        embed=embed
     )
     
-    # Save the submission in the contest
-    submission = Submission(author_id=message.author.id, submission_time=round(utcnow().timestamp()), local_save_path=local_filename, discord_save_path=uploaded_url)
+    # Update the contest with the real message_id
+    contest = contest.set_message_id(channel_id, thread_id, submission_index, message_resend.id)
+    contest.save("photo_contest/contest2026.yaml")
     
     # Delete the original message to maintain anonymity
     try:
@@ -566,7 +658,7 @@ async def submit(contest: Contest, message: discord.Message, bot: discord.Client
     except (discord.errors.NotFound, discord.errors.Forbidden):
         pass  # Message already deleted or no permission to delete
     
-    return contest.add_submission(submission, channel_id, message_resend.id, thread_id)
+    return contest
 
 
 async def _perform_withdrawal(contest: Contest, message: discord.Message, channel_id: int, thread_id: Optional[int]) -> Contest:
@@ -1512,10 +1604,15 @@ async def notify_period_start(bot: discord.Client, period: ContestPeriod):
             f"Deadline: <t:{int(contest.schedule.submission_period.end)}:F>"
         )
     elif period == ContestPeriod.QUALIF:
+        # Get all contestants to ping
+        contestant_mentions = " ".join(f"<@{user_id}>" for user_id in contest.contestants)
+        
         await announcement_channel.send(
             "🗳️ **QUALIFICATION VOTING HAS BEGUN!** 🗳️\n\n"
             "Check the qualification threads and vote for your favorites!\n"
-            f"Deadline: <t:{int(contest.schedule.qualif_period.end)}:F>"
+            f"Deadline: <t:{int(contest.schedule.qualif_period.end)}:F>\n\n"
+            f"📢 **Note:** Only contestants can vote in the qualification phase.\n"
+            f"{contestant_mentions}"
         )
     elif period == ContestPeriod.SEMIS:
         await announcement_channel.send(
@@ -1855,8 +1952,9 @@ async def setup_qualif_period(bot: discord.Client):
     # Get the number of threads needed per category
     thread_counts = contest.count_qualifs()
     
-    # Create threads for each category (skip categories with < 12 submissions)
+    # Create threads for each category (skip categories with < 25 submissions)
     all_thread_ids = []
+    category_threads: dict[int, list[discord.Thread]] = {}  # Store thread objects for later use
     
     for comp, thread_count in zip(contest.submission_competitions, thread_counts):
         channel = await bot.fetch_channel(comp.channel_id)
@@ -1867,7 +1965,7 @@ async def setup_qualif_period(bot: discord.Client):
         
         # Check if this category needs qualification threads
         if thread_count == 0:
-            # Category has < 12 submissions, auto-qualify all to semis
+            # Category has < 25 submissions, auto-qualify all to semis
             all_thread_ids.append([])
             
             # Announce auto-qualification in the category channel
@@ -1880,22 +1978,42 @@ async def setup_qualif_period(bot: discord.Client):
             continue
         
         thread_ids = []
+        threads = []
         for i in range(thread_count):
             thread = await channel.create_thread(
                 name=f"Qualification Thread {i+1}",
                 auto_archive_duration=10080  # 7 days
             )
             thread_ids.append(thread.id)
+            threads.append(thread)
         all_thread_ids.append(thread_ids)
+        category_threads[comp.channel_id] = threads
+        
+        # Post message in category channel with links to threads
+        category_name = getattr(channel, "name", f"Category {comp.channel_id}")
+        thread_links = "\n".join(f"• <#{thread.id}>" for thread in threads)
+        await channel.send(
+            f"🗳️ **Qualification voting is now open for {category_name}!**\n\n"
+            f"Check out the qualification threads below:\n"
+            f"{thread_links}\n\n"
+            f"Vote for your favorite photos to help them advance to the semi-finals!"
+        )
     
     # Update contest with qualifications
+    print(f"DEBUG: About to call make_qualifs with all_thread_ids: {all_thread_ids}")
+    print(f"DEBUG: Number of submission competitions: {len(contest.submission_competitions)}")
+    for i, comp in enumerate(contest.submission_competitions):
+        print(f"DEBUG:   Submission competition {i}: channel={comp.channel_id}, entries={len(comp.competing_entries)}, needs_qual={comp.needs_qualification}")
+    
     contest = contest.make_qualifs(all_thread_ids)
     contest.save("photo_contest/contest2026.yaml")
     
     # Post submissions in their respective threads with voting reactions
     for comp in contest.qualif_competitions:
         assert comp.thread_id is not None, "Qualification competition missing thread_id"
-        thread = bot.get_channel(comp.thread_id)
+        
+        # Fetch the thread using bot.fetch_channel to ensure we have the latest version
+        thread = await bot.fetch_channel(comp.thread_id)
         if not thread or not isinstance(thread, discord.Thread):
             print(f"Warning: Could not find thread {comp.thread_id}")
             continue
@@ -2139,6 +2257,7 @@ def main():
     async def on_ready():
         print(f"Bot is ready. Logged in as {bot.user}")
         await recover_state(bot)
+        await download_missing_pictures()
         autoplanner.start()
 
     @bot.event
@@ -2151,7 +2270,7 @@ def main():
         
         # Handle submissions only during submission period
         if current_period == ContestPeriod.SUBMISSION:
-            contest = await submit(contest, message, bot)
+            contest = await submit(message, bot)
             contest.save("photo_contest/contest2026.yaml")
 
     @bot.event
@@ -2466,6 +2585,108 @@ def main():
         
         await ctx.send(f"✅ All votes have been cleared! ({votes_cleared} votes removed)")
     
+    # TEST MODE COMMANDS ######################################################
+    
+    @bot.command(name="jury_vote_as")
+    async def command_jury_vote_as(ctx: commands.Context, user: discord.Member):
+        f"""[TEST MODE ONLY] Trigger jury voting on behalf of another user.
+        
+        Usage: {constantes.prefixVolt}jury_vote_as @user
+        This will send the jury voting interface to YOUR DMs, where you'll vote as the mentioned user.
+        """
+        if not TEST_MODE:
+            await ctx.send("❌ This command is only available in TEST_MODE.", delete_after=5)
+            return
+        
+        if not is_admin(ctx.author.id):
+            await ctx.send("❌ This command is only available to admins.", delete_after=5)
+            return
+        
+        if not current_period:
+            await ctx.send("❌ No active period.", delete_after=5)
+            return
+        
+        # Try to find a voting message in recent messages
+        voting_message = None
+        async for msg in ctx.channel.history(limit=50):
+            if "Jury Voting is now open" in msg.content and msg.author == bot.user:
+                voting_message = msg
+                break
+        
+        if not voting_message:
+            await ctx.send("❌ Couldn't find a jury voting message in recent messages. Please run this command in the channel/thread where voting is active.", delete_after=10)
+            return
+        
+        await ctx.send(f"✅ Triggering jury vote for {user.mention}. Check your DMs!", delete_after=5)
+        
+        # Trigger the jury vote handler with the mentioned user
+        await handle_jury_vote_request(contest, voting_message, user, bot, current_period)
+    
+    @bot.command(name="public_vote_as")
+    async def command_public_vote_as(ctx: commands.Context, user: discord.Member, submission_number: int, points: int):
+        f"""[TEST MODE ONLY] Cast a public vote on behalf of another user.
+        
+        Usage: {constantes.prefixVolt}public_vote_as @user <submission_number> <points>
+        Example: {constantes.prefixVolt}public_vote_as @TestUser 3 2
+        
+        This will cast a vote giving <points> (0-3) to submission #<submission_number> as if <user> voted.
+        """
+        global contest
+        
+        if not TEST_MODE:
+            await ctx.send("❌ This command is only available in TEST_MODE.", delete_after=5)
+            return
+        
+        if not is_admin(ctx.author.id):
+            await ctx.send("❌ This command is only available to admins.", delete_after=5)
+            return
+        
+        if current_period not in [ContestPeriod.QUALIF, ContestPeriod.SEMIS]:
+            await ctx.send("❌ Public voting is only available during qualification and semi-finals periods.", delete_after=5)
+            return
+        
+        if points not in [0, 1, 2, 3]:
+            await ctx.send("❌ Points must be between 0 and 3.", delete_after=5)
+            return
+        
+        # Get the channel and thread
+        channel_id, thread_id = get_channel_and_thread(ctx.message)
+        
+        # Find the competition
+        res = contest.competition_from_channel_thread(channel_id, thread_id)
+        if not res:
+            await ctx.send("❌ No active competition found in this channel/thread.", delete_after=5)
+            return
+        
+        _, competition = res
+        
+        # Check if submission exists
+        if submission_number < 1 or submission_number > len(competition.competing_entries):
+            await ctx.send(f"❌ Invalid submission number. Must be between 1 and {len(competition.competing_entries)}.", delete_after=5)
+            return
+        
+        submission = competition.competing_entries[submission_number - 1]
+        
+        # Cast points to the correct literal type
+        points_literal: Literal[0, 1, 2, 3]
+        if points == 0:
+            points_literal = 0
+        elif points == 1:
+            points_literal = 1
+        elif points == 2:
+            points_literal = 2
+        else:
+            points_literal = 3
+        
+        # Save the vote
+        try:
+            contest = contest.save_public_vote(channel_id, thread_id, user.id, points_literal, submission)
+            contest.save("photo_contest/contest2026.yaml")
+            logger.info(f"TEST_MODE: Public vote saved by admin for user={user.id}, points={points}, submission={submission_number}")
+            await ctx.send(f"✅ Vote cast! {user.mention} gave **{points} point{'s' if points != 1 else ''}** to Submission #{submission_number}", delete_after=10)
+        except ValueError as e:
+            await ctx.send(f"❌ Error: {e}", delete_after=10)
+    
     @bot.command(name="contest_help")
     async def command_contest_help(ctx: commands.Context):
         """Show all available admin contest commands."""
@@ -2481,12 +2702,32 @@ def main():
             f"**`{constantes.prefixVolt}contest_goto <period>`** - Jump to a specific period (submission/qualif/semis/final/idle)\n"
             f"**`{constantes.prefixVolt}contest_clear_votes CONFIRM`** - Clear all votes (keeps submissions)\n"
             f"**`{constantes.prefixVolt}contest_reset CONFIRM`** - Reset all contest data (requires CONFIRM)\n\n"
+        )
+        
+        if TEST_MODE:
+            help_text += (
+                "**🧪 Test Mode Commands**\n\n"
+                f"**`{constantes.prefixVolt}jury_vote_as @user`** - Vote in jury as another user (sends you the voting UI)\n"
+                f"**`{constantes.prefixVolt}public_vote_as @user <num> <pts>`** - Cast public vote as another user\n\n"
+                "**Test Mode Tips:**\n"
+                "• Submit photos by mentioning a user: post image + mention @user\n"
+                "• The mentioned user will be recorded as the author\n"
+                "• Use jury_vote_as to test different voting patterns\n\n"
+            )
+        
+        help_text += (
             "**Examples:**\n"
             f"`{constantes.prefixVolt}contest_next` - Move from submission to qualif\n"
             f"`{constantes.prefixVolt}contest_goto qualif` - Jump directly to qualification period\n"
             f"`{constantes.prefixVolt}contest_clear_votes CONFIRM` - Clear all votes for re-testing\n"
             f"`{constantes.prefixVolt}contest_goto idle` - Return to idle state"
         )
+        
+        if TEST_MODE:
+            help_text += (
+                f"\n`{constantes.prefixVolt}jury_vote_as @Alice` - Vote in jury as Alice\n"
+                f"`{constantes.prefixVolt}public_vote_as @Bob 5 3` - Bob gives 3 points to submission #5"
+            )
         
         await ctx.send(help_text)
 

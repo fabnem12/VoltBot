@@ -158,8 +158,8 @@ class CompetitionInfo:
 
     @property
     def needs_qualification(self) -> bool:
-        """Check if this category needs qualification rounds (has >= 12 submissions)."""
-        return len(self.competing_entries) >= 12
+        """Check if this category needs qualification rounds (has >= 25 submissions)."""
+        return len(self.competing_entries) >= 25
 
     def add_sub(self, submission: Submission, message_id: int) -> "CompetitionInfo":
         copy = deepcopy(self)
@@ -464,15 +464,27 @@ def split_entries_categ(categ_info: CompetitionInfo) -> list[list[Submission]]:
     # shuffle the list of entries, and group by contestant
     # so that each contestant's entries are evenly split among threads
     entries = categ_info.competing_entries
+    print(f"DEBUG split_entries: Initial entries count: {len(entries)}")
     shuffle(entries)
 
-    entries_per_contestant = dict(groupby(entries, key=lambda x: x.author_id))
+    # Group entries by contestant - use defaultdict instead of groupby
+    # because groupby returns iterators that can only be consumed once
+    from collections import defaultdict
+    entries_per_contestant: dict[int, list[Submission]] = defaultdict(list)
+    for entry in entries:
+        entries_per_contestant[entry.author_id].append(entry)
+    
+    print(f"DEBUG split_entries: Grouped by {len(entries_per_contestant)} contestants")
+    for author_id, author_entries in entries_per_contestant.items():
+        print(f"DEBUG split_entries:   Author {author_id}: {len(author_entries)} entries")
+    
     contestants = list(entries_per_contestant.keys())
     shuffle(contestants)
 
     entries_randomized = [
         e for contestant in contestants for e in entries_per_contestant[contestant]
     ]
+    print(f"DEBUG split_entries: entries_randomized count: {len(entries_randomized)}")
 
     def split_into_threads(
         n_photos: int, min_thread_size: int = 12, max_thread_size: int = 24
@@ -507,10 +519,13 @@ def split_entries_categ(categ_info: CompetitionInfo) -> list[list[Submission]]:
         return best_distribution
 
     thread_lenghts = split_into_threads(len(entries))
+    print(f"DEBUG split_entries: thread_lengths: {thread_lenghts}")
     threads: list[list[Submission]] = [[] for _ in range(len(thread_lenghts))]
 
     for i, e in enumerate(entries_randomized):
         threads[i % len(threads)].append(e)
+    
+    print(f"DEBUG split_entries: Final thread counts: {[len(t) for t in threads]}")
 
     return threads
 
@@ -592,14 +607,27 @@ class Contest:
         return contest
 
     def competition_from_channel_thread(
-        self, channel_id: int, thread_id: Optional[int] = None
+        self, channel_id: int, thread_id: Optional[int] = None, ignore_time: bool = False
     ) -> Optional[tuple[int, CompetitionInfo]]:
-        for i, competition in enumerate(self.current_competitions):
+        """Find a competition by channel_id and thread_id.
+        
+        Args:
+            channel_id: The channel ID to search for
+            thread_id: The thread ID to search for (None for main channels)
+            ignore_time: If True, search all competitions regardless of current time.
+                        If False, only search competitions active at current time.
+        
+        Returns:
+            Tuple of (index, competition) if found, None otherwise
+        """
+        competitions = self.competitions if ignore_time else self.current_competitions
+        for i, competition in enumerate(competitions):
             if (competition.channel_id, competition.thread_id) == (
                 channel_id,
                 thread_id,
             ):
                 return i, competition
+        return None
 
     def get_submission_count(
         self, channel_id: int, thread_id: Optional[int] = None
@@ -692,7 +720,8 @@ class Contest:
         Returns:
             Updated Contest with the message_id mapping added
         """
-        res = self.competition_from_channel_thread(channel_id, thread_id)
+        # Use ignore_time=True to find competitions during setup (before their start time)
+        res = self.competition_from_channel_thread(channel_id, thread_id, ignore_time=True)
         if res:
             i, competition = res
             competition_new = competition.set_message_id(submission_index, message_id)
@@ -719,7 +748,8 @@ class Contest:
         Returns:
             Updated Contest with the summary message mapping added
         """
-        res = self.competition_from_channel_thread(channel_id, thread_id)
+        # Use ignore_time=True to find competitions during setup (before their start time)
+        res = self.competition_from_channel_thread(channel_id, thread_id, ignore_time=True)
         if res:
             i, competition = res
             competition_new = competition.set_summary_message_id(submission, summary_message_id)
@@ -816,7 +846,7 @@ class Contest:
     def count_qualifs(self) -> list[int]:
         ret = []
         for comp in self.submission_competitions:
-            # Categories with < 12 submissions skip qualification (auto-qualify to semis)
+            # Categories with < 25 submissions skip qualification (auto-qualify to semis)
             if not comp.needs_qualification:
                 ret.append(0)  # No threads needed
             else:
@@ -829,10 +859,16 @@ class Contest:
 
         qualifs: list[CompetitionInfo] = []
         for comp, threads in zip(submission_competitions, list_thread_ids):
-            # Skip qualification for categories with too few submissions (< 12)
+            # Skip qualification for categories with too few submissions (< 25)
             # Those will automatically qualify to semis
             if comp.needs_qualification:
+                print(f"DEBUG: Category {comp.channel_id} needs qualification with {len(comp.competing_entries)} submissions")
+                print(f"DEBUG: Thread IDs provided: {threads}")
                 list_subs_qualif = split_entries_categ(comp)
+                print(f"DEBUG: split_entries_categ returned {len(list_subs_qualif)} thread groups")
+                for i, subs in enumerate(list_subs_qualif):
+                    print(f"DEBUG:   Thread group {i} has {len(subs)} submissions")
+                
                 qualifs += [
                     CompetitionInfo(
                         "qualif",
@@ -844,6 +880,7 @@ class Contest:
                     )
                     for subs, thread_id in zip(list_subs_qualif, threads)
                 ]
+                print(f"DEBUG: Created {len([x for x in qualifs if x.channel_id == comp.channel_id])} qualif competitions for channel {comp.channel_id}")
 
         copy = deepcopy(self)
         copy.competitions += qualifs
@@ -947,11 +984,11 @@ class Contest:
             # save the qualifiers of the thread
             qualifs_per_categ[channel_id] = qualifs_per_categ.get(channel_id, []) + top
 
-        # Auto-qualify categories with < 12 submissions (no qualification threads were created)
+        # Auto-qualify categories with < 25 submissions (no qualification threads were created)
         channels_with_qualifs = set(q.channel_id for q in qualif_competitions)
         for submission_comp in submission_competitions:
             if submission_comp.channel_id not in channels_with_qualifs:
-                # This category had < 12 submissions, auto-qualify all to semis
+                # This category had < 25 submissions, auto-qualify all to semis
                 all_subs = list(submission_comp.competing_entries)
                 shuffle(all_subs)
                 qualifs_per_categ[submission_comp.channel_id] = all_subs
