@@ -2520,8 +2520,8 @@ def main():
             return
         
         # Close the previous period
-        if old_period:
-            await close_period(old_period, bot)
+        #if old_period:
+        #    await close_period(old_period, bot)
         
         current_period = next_period
         
