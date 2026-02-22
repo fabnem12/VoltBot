@@ -78,7 +78,7 @@ if os.path.exists("photo_contest/contest2026.yaml"):
     print(contest)
 else:
     # Regular contest schedule - 7 days per period
-    start_time = datetime(2026, 3, 1, 19, 0)  # Start March 1st, 2026 at 7pm
+    start_time = datetime(2026, 2, 22, 8, 45)  # Start March 1st, 2026 at 8am CET
 
     submission_period = Period(
         start=start_time.timestamp(),
@@ -106,10 +106,9 @@ else:
 
     contest = make_contest(
         [
-            1290060315878363156,
-            1290060376461017160,
-            1290060435944378388,
-            1290061801974661251,
+            1474888640214859927,
+            1474889002044752182,
+            1474889133972389999,
         ],
         schedule,
     )
@@ -359,8 +358,6 @@ class SubmissionConfirmView(discord.ui.View):
         for item in self.children:
             if isinstance(item, discord.ui.Button):
                 item.disabled = True
-        
-        await interaction.response.edit_message(content="Submission cancelled.", view=self)
 
 
 async def submit(contest: Contest, message: discord.Message, bot: discord.Client) -> Contest:
@@ -387,7 +384,7 @@ async def submit(contest: Contest, message: discord.Message, bot: discord.Client
         )
         await message.channel.send(
             f"⏰ Submissions are not currently open. Please wait for the submission period to begin.",
-            delete_after=60,
+            delete_after=30,
             reference=ref,
         )
         return contest
@@ -406,7 +403,7 @@ async def submit(contest: Contest, message: discord.Message, bot: discord.Client
         await message.channel.send(
             f"❌ You have reached the maximum limit of **{contest.MAX_SUBMISSIONS_PER_CATEGORY} photos per category**.\n\n"
             f"💡 **Tip:** You can withdraw a previous submission by reacting with ❌ to it, then submit a new photo.",
-            delete_after=60,
+            delete_after=30,
             reference=ref,
         )
         # Delete the attempted submission message
@@ -433,7 +430,7 @@ async def submit(contest: Contest, message: discord.Message, bot: discord.Client
             )
             await message.channel.send(
                 f"No attachment or valid link found in your message. Please attach an image or provide a valid URL.",
-                delete_after=3600,
+                delete_after=30,
                 reference=ref,
             )
             return contest
@@ -447,7 +444,7 @@ async def submit(contest: Contest, message: discord.Message, bot: discord.Client
                 )
                 await message.channel.send(
                     f"Invalid image format. Only static images in JPG, JPEG, PNG, or WebP formats are accepted. Animated images (GIF) are not allowed.",
-                    delete_after=3600,
+                    delete_after=30,
                     reference=ref,
                 )
                 return contest
@@ -462,7 +459,7 @@ async def submit(contest: Contest, message: discord.Message, bot: discord.Client
             )
             await message.channel.send(
                 f"Invalid image format. Only static images in JPG, JPEG, PNG, or WebP formats are accepted. Animated images (GIF) are not allowed.",
-                delete_after=3600,
+                delete_after=30,
                 reference=ref,
             )
             return contest
@@ -482,11 +479,11 @@ async def submit(contest: Contest, message: discord.Message, bot: discord.Client
     ref = discord.MessageReference(
         message_id=message.id, channel_id=message.channel.id
     )
-    await message.channel.send(
+    confirmation_msg = await message.channel.send(
         content=rules_text,
         view=confirmation_view,
         reference=ref,
-        delete_after=600  # Delete after 10 minutes
+        delete_after=60  # Delete after 1 minute if not interacted with
     )
     
     # Wait for user to confirm or cancel
@@ -496,9 +493,16 @@ async def submit(contest: Contest, message: discord.Message, bot: discord.Client
         # User cancelled or timed out - delete the original message
         try:
             await message.delete()
+            await confirmation_msg.delete()
         except (discord.errors.NotFound, discord.errors.Forbidden):
             pass  # Message already deleted or no permission to delete
         return contest
+    
+    # User confirmed - delete the confirmation message immediately
+    try:
+        await confirmation_msg.delete()
+    except (discord.errors.NotFound, discord.errors.Forbidden):
+        pass  # Message already deleted or no permission to delete
     
     # Download the image locally
     response = requests.get(submission_url)
@@ -508,7 +512,7 @@ async def submit(contest: Contest, message: discord.Message, bot: discord.Client
         )
         await message.channel.send(
             f"Failed to download the image from the provided URL. Please check the link and try again.",
-            delete_after=3600,
+            delete_after=30,
             reference=ref,
         )
         return contest
@@ -528,7 +532,7 @@ async def submit(contest: Contest, message: discord.Message, bot: discord.Client
     except RuntimeError as e:
         await message.channel.send(
             f"❌ Failed to save your submission. Please try again or contact an organizer.",
-            delete_after=300,
+            delete_after=30,
             reference=discord.MessageReference(
                 message_id=message.id, channel_id=message.channel.id
             ),
@@ -536,14 +540,6 @@ async def submit(contest: Contest, message: discord.Message, bot: discord.Client
         # Notify organizer
         await notify_organizer_error(bot, f"Failed to upload submission from user <@{message.author.id}> in <#{channel_id}>. Error: {e}")
         return contest
-    
-    await message.channel.send(
-        f"Your submission has been received successfully!",
-        delete_after=300,
-        reference=discord.MessageReference(
-            message_id=message.id, channel_id=message.channel.id
-        ),
-    )
     
     # Get the current submission count to determine the index for this new submission
     current_count = contest.get_submission_count(channel_id, thread_id)
@@ -1306,17 +1302,16 @@ async def announce_stage_results(bot: discord.Client, contest: Contest, competit
         print(f"Warning: Could not find announcement channel {announcement_channel_id}")
         return
     
-    # For each category, post qualifiers (already in random order from solve_qualifs/solve_semis)
-    competitions = contest.semis_competitions if competition_type == "semis" else contest.final_competitions
-    for comp in competitions:
-        # Get category name
-        category_channel = bot.get_channel(comp.channel_id)
-        category_name = getattr(category_channel, "name", f"Category <#{comp.channel_id}>")
+    # For finals, there's a single combined competition so don't mention category
+    if competition_type == "final":
+        comp = contest.final_competition
+        if not comp:
+            return
         
-        # Post announcement
-        await announcement_channel.send(f"🎊 **{stage_name} for {category_name}**")
+        # Post announcement for the combined Grand Final
+        await announcement_channel.send(f"🎊 **{stage_name} for the {next_stage_name}**")
         
-        # Post each qualifier without author info (order already randomized when competition was created)
+        # Post each finalist without author info (order already randomized when competition was created)
         for i, submission in enumerate(comp.competing_entries):
             e = discord.Embed()
             e.set_image(url=submission.discord_save_path)
@@ -1324,6 +1319,25 @@ async def announce_stage_results(bot: discord.Client, contest: Contest, competit
                 content=f"{stage_name.rstrip('s')} #{i+1}",
                 embed=e
             )
+    else:
+        # For semis, post qualifiers per category
+        competitions = contest.semis_competitions
+        for comp in competitions:
+            # Get category name
+            category_channel = bot.get_channel(comp.channel_id)
+            category_name = getattr(category_channel, "name", f"Category <#{comp.channel_id}>")
+            
+            # Post announcement
+            await announcement_channel.send(f"🎊 **{stage_name} for {category_name}**")
+            
+            # Post each qualifier without author info (order already randomized when competition was created)
+            for i, submission in enumerate(comp.competing_entries):
+                e = discord.Embed()
+                e.set_image(url=submission.discord_save_path)
+                await announcement_channel.send(
+                    content=f"{stage_name.rstrip('s')} #{i+1}",
+                    embed=e
+                )
 
 
 async def announce_qualif_results(bot: discord.Client):
@@ -1365,56 +1379,60 @@ async def announce_final_results(bot: discord.Client, reveal_delay: int = 15):
     # Build id2name mapping
     id2name = await build_id2name_mapping(bot, contest, include_voters=True)
     
-    # Live board reveal for each category
-    for comp in contest.final_competitions:
-        # Get category name
-        category_channel = bot.get_channel(comp.channel_id)
-        category_name = getattr(category_channel, "name", f"Category {comp.channel_id}")
-        
-        await announcement_channel.send(f"\n\n🎤 **LIVE VOTING REVEAL for {category_name}** 🎤\n")
-        await announcement_channel.send(f"**{len(comp.votes_jury)} jury votes have been cast. Let's reveal them!**\n")
-        
-        # Generate and post boards using live reveal
-        for board_path, voter_id, is_initial, is_final in gen_live_final_reveal(comp, category_name, id2name):
-            if is_initial:
-                # Initial board with all zeros
-                await announcement_channel.send(
-                    "📊 **Starting scoreboard:**",
-                    file=discord.File(board_path)
-                )
-            elif is_final:
-                # Final results board
-                await announcement_channel.send(
-                    "🏆 **Final Results:**",
-                    file=discord.File(board_path)
-                )
-            elif voter_id is not None:
-                # Individual voter's contribution
-                await announcement_channel.send(
-                    f"Thank you <@{voter_id}> 🎖️ for your votes!",
-                    file=discord.File(board_path)
-                )
-                await asyncio.sleep(reveal_delay)
-        
-        # Announce the winner
-        jury_scores = comp.count_votes_jury()
-        winner = max(comp.competing_entries, key=lambda x: (jury_scores.get(x, 0), -x.submission_time))
-        
-        winner_embed = discord.Embed(
-            description=f"**🎉 Congratulations, this photo won the {category_name} category! 🎉**"
-        )
-        winner_embed.set_image(url=winner.discord_save_path)
-        await announcement_channel.send(embed=winner_embed)
-        
-        # DM the winner
-        try:
-            winner_user = await bot.fetch_user(winner.author_id)
-            dm_channel = winner_user.dm_channel or await winner_user.create_dm()
-            await dm_channel.send(embed=winner_embed)
-        except Exception as e:
-            print(f"Could not send DM to winner {winner.author_id}: {e}")
+    # Get the single combined final competition
+    final_comp = contest.final_competition
+    if not final_comp:
+        print("Warning: No final competition found")
+        return
     
-    await announcement_channel.send("\n✨ **All categories complete! Thank you to all participants!** ✨")
+    await announcement_channel.send(f"\n\n🎤 **LIVE VOTING REVEAL - GRAND FINAL** 🎤\n")
+    await announcement_channel.send(f"**{len(final_comp.votes_jury)} jury votes have been cast. Let's reveal them!**\n")
+    
+    # Generate and post boards using live reveal
+    for board_path, voter_id, is_initial, is_final in gen_live_final_reveal(final_comp, "Grand Final", id2name):
+        if is_initial:
+            # Initial board with all zeros
+            await announcement_channel.send(
+                "📊 **Starting scoreboard:**",
+                file=discord.File(board_path)
+            )
+        elif is_final:
+            # Skip the final board from live reveal - we'll show the clean one below
+            pass
+        elif voter_id is not None:
+            # Individual voter's contribution
+            await announcement_channel.send(
+                f"Thank you <@{voter_id}> 🎖️ for your votes!",
+                file=discord.File(board_path)
+            )
+            await asyncio.sleep(reveal_delay)
+    
+    # Generate and post the final clean results board (without "+New" column)
+    final_board_path = gen_final_results_board(contest, id2name)
+    await announcement_channel.send(
+        "🏆 **Final Results:**",
+        file=discord.File(final_board_path)
+    )
+    
+    # Announce the winner
+    jury_scores = final_comp.count_votes_jury()
+    winner = max(final_comp.competing_entries, key=lambda x: (jury_scores.get(x, 0), -x.submission_time))
+    
+    winner_embed = discord.Embed(
+        description=f"**🎉 Congratulations, this photo wins the Grand Final! 🎉**"
+    )
+    winner_embed.set_image(url=winner.discord_save_path)
+    await announcement_channel.send(embed=winner_embed)
+    
+    # DM the winner
+    try:
+        winner_user = await bot.fetch_user(winner.author_id)
+        dm_channel = winner_user.dm_channel or await winner_user.create_dm()
+        await dm_channel.send(embed=winner_embed)
+    except Exception as e:
+        print(f"Could not send DM to winner {winner.author_id}: {e}")
+    
+    await announcement_channel.send("\n✨ **Contest complete! Thank you to all participants!** ✨")
 
 
 async def announce_final_boards(bot: discord.Client):
@@ -1527,32 +1545,50 @@ async def notify_qualifiers(bot: discord.Client, contest: Contest, competition_t
         return
     
     # Send DM for each qualified photo
-    competitions = contest.semis_competitions if competition_type == "semis" else contest.final_competitions
+    if competition_type == "final":
+        competitions = [contest.final_competition] if contest.final_competition else []
+    else:
+        competitions = contest.semis_competitions
     for comp in competitions:
-        # Get category name
-        category_channel = bot.get_channel(comp.channel_id)
-        category_name = getattr(category_channel, "name", f"Category {comp.channel_id}")
-        
-        for submission in comp.competing_entries:
-            try:
-                user = await guild.fetch_member(submission.author_id)
-                if user:
-                    # Adapt message based on whether this is the final or not
-                    if stage_name == "Grand Final":
-                        description = f"Your photo from **{category_name}** has qualified for the **{stage_name}**!\n\nThis is the final round - good luck! 🍀"
-                    else:
+        # For finals, there's a single combined competition so don't mention category
+        if stage_name == "Grand Final":
+            for submission in comp.competing_entries:
+                try:
+                    user = await guild.fetch_member(submission.author_id)
+                    if user:
+                        description = f"🎉 Your photo has qualified for the **{stage_name}**!\n\nThis is the final round - good luck! 🍀"
+                        
+                        embed = discord.Embed(
+                            title=f"🎉 Photo Qualified!",
+                            description=description,
+                            color=0x00ff00
+                        )
+                        embed.set_image(url=submission.discord_save_path)
+                        await send_dm_safe(user, embed=embed)
+                except Exception:
+                    # User not found, skip
+                    pass
+        else:
+            # For semis, mention the category name
+            category_channel = bot.get_channel(comp.channel_id)
+            category_name = getattr(category_channel, "name", f"Category {comp.channel_id}")
+            
+            for submission in comp.competing_entries:
+                try:
+                    user = await guild.fetch_member(submission.author_id)
+                    if user:
                         description = f"Your photo from **{category_name}** has qualified for the **{stage_name}**!\n\nGood luck in the next round! 🍀"
-                    
-                    embed = discord.Embed(
-                        title=f"🎉 Photo Qualified!",
-                        description=description,
-                        color=0x00ff00
-                    )
-                    embed.set_image(url=submission.discord_save_path)
-                    await send_dm_safe(user, embed=embed)
-            except Exception:
-                # User not found, skip
-                pass
+                        
+                        embed = discord.Embed(
+                            title=f"🎉 Photo Qualified!",
+                            description=description,
+                            color=0x00ff00
+                        )
+                        embed.set_image(url=submission.discord_save_path)
+                        await send_dm_safe(user, embed=embed)
+                except Exception:
+                    # User not found, skip
+                    pass
 
 
 async def notify_final_results(bot: discord.Client, contest: Contest):
@@ -1570,70 +1606,69 @@ async def notify_final_results(bot: discord.Client, contest: Contest):
 
     users = dict()
     
-    # Calculate placements for each category
-    for comp in contest.final_competitions:
-        # Get category name
-        category_channel = bot.get_channel(comp.channel_id)
-        category_name = getattr(category_channel, "name", f"Category {comp.channel_id}")
+    # Get the single combined final competition
+    comp = contest.final_competition
+    if not comp:
+        return
+    
+    # Calculate total points for each submission (finals only have jury votes)
+    jury_votes = comp.count_votes_jury()
+    
+    total_points: Dict[Submission, int] = {}
+    for submission in comp.competing_entries:
+        total_points[submission] = jury_votes.get(submission, 0)
+    
+    # Rank submissions
+    ranked_submissions = sorted(
+        comp.competing_entries,
+        key=lambda x: (total_points[x], -x.submission_time),
+        reverse=True,
+    )
+    
+    # Send DM to each finalist with their placement
+    for i, submission in enumerate(ranked_submissions):
+        placement = i + 1
+        points = total_points[submission]
         
-        # Calculate total points for each submission (finals only have jury votes)
-        jury_votes = comp.count_votes_jury()
-        
-        total_points: Dict[Submission, int] = {}
-        for submission in comp.competing_entries:
-            total_points[submission] = jury_votes.get(submission, 0)
-        
-        # Rank submissions
-        ranked_submissions = sorted(
-            comp.competing_entries,
-            key=lambda x: (total_points[x], -x.submission_time),
-            reverse=True,
-        )
-        
-        # Send DM to each finalist with their placement
-        for i, submission in enumerate(ranked_submissions):
-            placement = i + 1
-            points = total_points[submission]
-            
-            try:
-                if submission.author_id in users:
-                    user = users[submission.author_id]
-                else:
-                    user = await guild.fetch_member(submission.author_id)
-                    users[submission.author_id] = user
+        try:
+            if submission.author_id in users:
+                user = users[submission.author_id]
+            else:
+                user = await guild.fetch_member(submission.author_id)
+                users[submission.author_id] = user
 
-                if user:
-                    # Create placement message
-                    if placement == 1:
-                        medal = medal_emojis[0]
-                        title = f"{medal} WINNER - {category_name}!"
-                        description = f"🎊 **Congratulations!** Your photo won **1st place** in **{category_name}**!\n\n**Total Points:** {points}"
-                        color = 0xFFD700  # Gold
-                    elif placement == 2:
-                        medal = medal_emojis[1]
-                        title = f"{medal} 2nd Place - {category_name}"
-                        description = f"🎉 **Amazing!** Your photo placed **2nd** in **{category_name}**!\n\n**Total Points:** {points}"
-                        color = 0xC0C0C0  # Silver
-                    elif placement == 3:
-                        medal = medal_emojis[2]
-                        title = f"{medal} 3rd Place - {category_name}"
-                        description = f"👏 **Great work!** Your photo placed **3rd** in **{category_name}**!\n\n**Total Points:** {points}"
-                        color = 0xCD7F32  # Bronze
-                    else:
-                        title = f"Final Results - {category_name}"
-                        description = f"Thank you for participating! Your photo placed **{placement}th** in **{category_name}**.\n\n**Total Points:** {points}"
-                        color = 0x7289DA  # Discord blurple
-                    
-                    embed = discord.Embed(
-                        title=title,
-                        description=description,
-                        color=color
-                    )
-                    embed.set_image(url=submission.discord_save_path)
-                    await send_dm_safe(user, embed=embed)
-            except Exception:
-                # User not found, skip
-                pass
+            if user:
+                # Create placement message
+                if placement == 1:
+                    medal = medal_emojis[0]
+                    title = f"{medal} GRAND FINAL WINNER!"
+                    description = f"🎊 **Congratulations!** Your photo won **1st place** in the Grand Final!\n\n**Total Points:** {points}"
+                    color = 0xFFD700  # Gold
+                elif placement == 2:
+                    medal = medal_emojis[1]
+                    title = f"{medal} 2nd Place - Grand Final"
+                    description = f"🎉 **Amazing!** Your photo placed **2nd** in the Grand Final!\n\n**Total Points:** {points}"
+                    color = 0xC0C0C0  # Silver
+                elif placement == 3:
+                    medal = medal_emojis[2]
+                    title = f"{medal} 3rd Place - Grand Final"
+                    description = f"👏 **Great work!** Your photo placed **3rd** in the Grand Final!\n\n**Total Points:** {points}"
+                    color = 0xCD7F32  # Bronze
+                else:
+                    title = f"Final Results - Grand Final"
+                    description = f"Thank you for participating! Your photo placed **{placement}th** in the Grand Final.\n\n**Total Points:** {points}"
+                    color = 0x7289DA  # Discord blurple
+                
+                embed = discord.Embed(
+                    title=title,
+                    description=description,
+                    color=color
+                )
+                embed.set_image(url=submission.discord_save_path)
+                await send_dm_safe(user, embed=embed)
+        except Exception:
+            # User not found, skip
+            pass
 
 
 async def recover_state(bot: discord.Client):
@@ -1663,7 +1698,7 @@ async def recover_state(bot: discord.Client):
     elif target_period == ContestPeriod.SEMIS and not contest.semis_competitions:
         print("Missed semis setup, setting up now...")
         await setup_semis_period(bot)
-    elif target_period == ContestPeriod.FINAL and not contest.final_competitions:
+    elif target_period == ContestPeriod.FINAL and not contest.final_competition:
         print("Missed final setup, setting up now...")
         await setup_final_period(bot)
     elif target_period == ContestPeriod.IDLE and current_timestamp > contest.schedule.final_period.end:
@@ -1882,7 +1917,10 @@ async def setup_qualif_period(bot: discord.Client):
         # Send voting instruction message
         vote_msg = await thread.send(
             "🗳️ **Jury Voting is now open!**\n"
-            "React with 🗳️ to this message to cast your jury vote (top 10 ranking).\n"
+            "React with 🗳️ to this message to cast your jury vote (top 10 ranking).\n\n"
+            "**Public Voting:**\n"
+            "React with 0️⃣, 1️⃣, 2️⃣, or 3️⃣ on any photo to give it 0-3 points.\n"
+            "You can vote on as many photos as you wish! Your reactions will be automatically removed to keep votes secret.\n\n"
             "Note: The top 4 jury picks and top 1 public pick will advance to the semi-finals."
         )
         await vote_msg.add_reaction("🗳️")
@@ -1982,8 +2020,12 @@ async def setup_semis_period(bot: discord.Client):
         # Send voting instruction message
         vote_msg = await channel.send(
             "🗳️ **Jury Voting is now open!**\n"
-            "React with 🗳️ to this message to cast your jury vote (top 10 ranking).\n"
-            "React with 💬 to add commentary about a photo.\n"
+            "React with 🗳️ to this message to cast your jury vote (top 10 ranking).\n\n"
+            "**Public Voting:**\n"
+            "React with 0️⃣, 1️⃣, 2️⃣, or 3️⃣ on any photo to give it 0-3 points.\n"
+            "You can vote on multiple photos! Your reactions will be automatically removed to keep votes secret.\n\n"
+            "**Commentary:**\n"
+            "React with 💬 on any photo to add your commentary about composition, lighting, and artistic merit.\n\n"
             "Note: The top 3 jury picks and top 2 public picks will advance to the Grand Final."
         )
         await vote_msg.add_reaction("🗳️")
@@ -1996,9 +2038,14 @@ async def setup_final_period(bot):
     """Set up final competitions and post finalists."""
     global contest
     
-    # Solve semi-finals to determine finalists
-    contest = contest.solve_semis()
+    # Solve semi-finals to determine finalists with the correct channel_id
+    contest = contest.solve_semis(final_channel_id)
     contest.save("photo_contest/contest2026.yaml")
+    
+    final_comp = contest.final_competition
+    if not final_comp:
+        print("Warning: No final competition found")
+        return
     
     # Announce semi-final results (random order, no authors)
     await announce_semis_results(bot)
@@ -2016,31 +2063,29 @@ async def setup_final_period(bot):
         return
     
     # Post all finalists from all categories in the final channel
-    await final_channel.send("🏆 **GRAND FINAL!** 🏆\nAll categories compete together!")
+    await final_channel.send("🏆 **GRAND FINAL!** 🏆\nAll 15 finalists compete together!")
     
-    submission_counter = 1
-    for comp in contest.final_competitions:
-        # Get category name for context
-        category_channel = bot.get_channel(comp.channel_id)
-        category_name = category_channel.name if category_channel else f"Category {comp.channel_id}"
+    # Get the final competition
+    final_comp = contest.final_competition
+    if not final_comp:
+        print("Warning: No final competition found")
+        return
+    
+    # Post all submissions
+    for i, submission in enumerate(final_comp.competing_entries):
+        msg = await final_channel.send(
+            content=f"Submission #{i+1}",
+            embed=discord.Embed().set_image(url=submission.discord_save_path)
+        )
         
-        await final_channel.send(f"\n**{category_name} Finalists:**")
-        
-        for i, submission in enumerate(comp.competing_entries):
-            msg = await final_channel.send(
-                content=f"Submission #{submission_counter}",
-                embed=discord.Embed().set_image(url=submission.discord_save_path)
-            )
-            
-            # Update the contest with the message_id mapping
-            contest = contest.set_message_id(comp.channel_id, comp.thread_id, i, msg.id)
-            
-            submission_counter += 1
+        # Update the contest with the message_id mapping
+        contest = contest.set_message_id(final_channel_id, None, i, msg.id)
     
     # Send voting instruction message
     vote_msg = await final_channel.send(
         "🗳️ **Final Voting is now open!**\n"
-        "React with 🗳️ to this message to cast your vote (top 5 ranking)."
+        "React with 🗳️ to this message to cast your vote.\n"
+        "You will rank from ALL 15 finalists (top 5 or top 10 depending on your votable count)."
     )
     await vote_msg.add_reaction("🗳️")
     

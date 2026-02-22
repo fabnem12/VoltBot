@@ -7,6 +7,7 @@ from typing import Literal, Optional, Union
 
 import os
 import yaml
+from dacite import from_dict, Config
 
 from mistralai import Mistral
 
@@ -550,8 +551,10 @@ class Contest:
         return self._competitions_by_type("semis")
 
     @property
-    def final_competitions(self) -> list[CompetitionInfo]:
-        return self._competitions_by_type("final")
+    def final_competition(self) -> Optional[CompetitionInfo]:
+        """Return the single grand final competition, or None if not created yet."""
+        finals = self._competitions_by_type("final")
+        return finals[0] if finals else None
 
     @property
     def channel_threads_open_for_submissions(self) -> list[tuple[int, Optional[int]]]:
@@ -573,20 +576,20 @@ class Contest:
         with open(path, "r") as f:
             data = yaml.safe_load(f)
 
-        schedule = Schedule(
-            **{
-                key: Period(**value)
-                for key, value in data["schedule"].items()
-            }
+        # Use dacite to convert dicts to dataclasses automatically
+        contest = from_dict(
+            data_class=Contest,
+            data=data,
+            config=Config(
+                cast=[tuple],  # Allow casting to tuples for dict keys
+            )
         )
-        competitions = [CompetitionInfo(**comp) for comp in data["competitions"]]
-        submissions = [Submission(**sub) for sub in data.get("submissions", [])]
         
         # Rebuild cached vote breakdowns for each competition
-        for competition in competitions:
+        for competition in contest.competitions:
             competition._rebuild_vote_breakdowns()
 
-        return Contest(competitions, schedule, submissions)
+        return contest
 
     def competition_from_channel_thread(
         self, channel_id: int, thread_id: Optional[int] = None
@@ -969,7 +972,15 @@ class Contest:
 
         return copy
 
-    def solve_semis(self) -> "Contest":
+    def solve_semis(self, final_channel_id: int) -> "Contest":
+        """Solve semi-finals and create the grand final competition.
+        
+        Creates ONE combined final competition with all qualifiers from all categories
+        competing together, rather than separate finals per category.
+        
+        Args:
+            final_channel_id: The Discord channel ID where the grand final will take place
+        """
         semis_competitions = self.semis_competitions
         qualifs_per_semi: dict[int, list[Submission]] = (
             dict()
@@ -1001,19 +1012,25 @@ class Contest:
             # save the qualifiers of the semi
             qualifs_per_semi[channel_id] = qualifs_per_semi.get(channel_id, []) + top
 
-        finals = []
-        for categ, subs in qualifs_per_semi.items():
-            final = CompetitionInfo(
-                "final",
-                categ,
-                self.schedule.final_period.start,
-                self.schedule.final_period.end,
-                competing_entries=subs,
-            )
-            finals.append(final)
+        # Create ONE combined final with all qualifiers from all categories
+        all_finalists = []
+        for subs in qualifs_per_semi.values():
+            all_finalists.extend(subs)
+        
+        # Shuffle to mix categories together
+        shuffle(all_finalists)
+        
+        # Create the combined grand final with all qualifiers
+        final = CompetitionInfo(
+            "final",
+            final_channel_id,
+            self.schedule.final_period.start,
+            self.schedule.final_period.end,
+            competing_entries=all_finalists,
+        )
 
         copy = deepcopy(self)
-        copy.competitions += finals
+        copy.competitions.append(final)
 
         return copy
 

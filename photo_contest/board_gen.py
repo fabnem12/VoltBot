@@ -228,26 +228,37 @@ def gen_competition_board(
 def gen_final_results_board(
     contest: Contest,
     id2name: Dict[int, str],
+    latest_voter_points: Optional[Dict[Submission, int]] = None,
+    latest_voter_name: Optional[str] = None,
 ) -> str:
-    """Generate final results board for the final competition."""
+    """Generate final results board combining all category finals.
     
-    final_competitions = contest.final_competitions
-    if not final_competitions:
+    Shows all finalists from all categories ranked together by their jury votes.
+    
+    Args:
+        contest: Contest object with final competitions
+        id2name: Mapping of user IDs to display names
+        latest_voter_points: Optional dict mapping submissions to points from latest voter
+        latest_voter_name: Optional name of the latest voter for subtitle
+    """
+    
+    final_comp = contest.final_competition
+    if not final_comp:
         raise ValueError("No final competition found")
 
-    final = final_competitions[0]
-
-    # Get the original order of competing entries (for photo numbering)
-    original_entries = final.competing_entries
+    # Get all entries and votes from the single grand final
+    all_entries = list(final_comp.competing_entries)
+    submission_to_photo_num = {sub: i+1 for i, sub in enumerate(all_entries)}
     
-    # Create a mapping from submission to photo number (based on original order)
-    submission_to_photo_num = {sub: i + 1 for i, sub in enumerate(original_entries)}
+    # Get votes from the final competition
+    all_votes = final_comp.count_votes_jury()
     
-    # Get ranked submissions using proper tie-breaking
-    ranked_submissions = final.get_ranked_submissions_final()
-    
-    # Count votes (finals only have jury votes)
-    points = final.count_votes_jury()
+    # Rank all submissions with tie-breaking
+    ranked_submissions = sorted(
+        all_entries,
+        key=lambda x: (all_votes.get(x, 0), -x.submission_time),
+        reverse=True
+    )
     
     num_submissions = len(ranked_submissions)
     
@@ -266,7 +277,6 @@ def gen_final_results_board(
         img_height = 80 + num_rows * row_spacing + 180
     
     spacing = row_spacing
-    start_y = 85
     
     img = Image.new("RGB", (850, img_height), color=BG_COLOR)
     d = ImageDraw.Draw(img)
@@ -280,29 +290,78 @@ def gen_final_results_board(
         font=fnt_bold,
         fill="white",
     )
+    
+    # Subtitle with voter name if provided
+    if latest_voter_name:
+        d.text(
+            (425, 45),
+            f"After votes from {latest_voter_name}",
+            anchor="mt",
+            font=fnt_bold_small,
+            fill="white",
+        )
+        header_y = 75
+        start_y = 105  # More space after subtitle and headers
+    else:
+        header_y = 60
+        start_y = 90  # Standard spacing after headers
 
     # volt logo - position at bottom right
     logo = Image.open("resource/logo_volt.png")
     logo_y = img_height - 155
     img.paste(logo.resize((150, 150)), (685, logo_y))
     
-    # Add column headers for Points
-    # Left column header
-    d.text(
-        (310, 60),
-        "Points",
-        anchor="mm",
-        font=fnt_bold_small,
-        fill="white",
-    )
-    # Right column header
-    d.text(
-        (770, 60),
-        "Points",
-        anchor="mm",
-        font=fnt_bold_small,
-        fill="white",
-    )
+    # Add column headers
+    if latest_voter_points:
+        # Show both new points and total
+        # Left column headers
+        d.text(
+            (290, header_y),
+            "+New",
+            anchor="mm",
+            font=fnt_regular,
+            fill="white",
+        )
+        d.text(
+            (350, header_y),
+            "Total",
+            anchor="mm",
+            font=fnt_bold_small,
+            fill="white",
+        )
+        # Right column headers
+        d.text(
+            (750, header_y),
+            "+New",
+            anchor="mm",
+            font=fnt_regular,
+            fill="white",
+        )
+        d.text(
+            (810, header_y),
+            "Total",
+            anchor="mm",
+            font=fnt_bold_small,
+            fill="white",
+        )
+    else:
+        # Show only total points
+        # Left column header
+        d.text(
+            (350, header_y),
+            "Points",
+            anchor="mm",
+            font=fnt_bold_small,
+            fill="white",
+        )
+        # Right column header
+        d.text(
+            (810, header_y),
+            "Points",
+            anchor="mm",
+            font=fnt_bold_small,
+            fill="white",
+        )
 
     # Display in 2 columns (top-to-bottom, left-to-right) - ranked order
     for i, submission in enumerate(ranked_submissions):
@@ -349,18 +408,40 @@ def gen_final_results_board(
         )
 
         # Points - show jury points
-        points_sub = points.get(submission, 0)
+        points_sub = all_votes.get(submission, 0)
         
         # Calculate x position based on column
-        jury_x = 310 if col == 0 else 770
+        total_x = 350 if col == 0 else 810
+        new_x = 290 if col == 0 else 750
 
+        # Show total points
         d.text(
-            (jury_x, y_pos + 5),
+            (total_x, y_pos + 5),
             str(points_sub),
             anchor="mm",
             font=fnt_bold_small,
             fill=color,
         )
+        
+        # Show new points from latest voter if provided
+        if latest_voter_points and submission in latest_voter_points:
+            new_points = latest_voter_points[submission]
+            if new_points > 0:
+                # Choose font size based on points value (similar to live reveal)
+                if new_points >= 10:
+                    font_choice = fnt_bold
+                elif new_points >= 5:
+                    font_choice = fnt_bold_small
+                else:
+                    font_choice = fnt_regular
+                
+                d.text(
+                    (new_x, y_pos + 5),
+                    f"+{new_points}",
+                    anchor="mm",
+                    font=font_choice,
+                    fill=color,
+                )
 
     save_path = f"photo_contest/generated_tables/final_results.png"
     img.save(save_path)
@@ -799,7 +880,7 @@ def generate_all_boards(
             generated_files[competition.type].append(board_path)
 
     # Generate special boards for finals and semifinals if they exist
-    if contest.final_competitions:
+    if contest.final_competition:
         final_board = gen_final_results_board(contest, id2name)
         generated_files["final"].append(final_board)
 
