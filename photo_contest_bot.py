@@ -2480,10 +2480,8 @@ def main():
         
         # Manually trigger the transition logic
         if old_period != target_period:
-            # Close the previous period
-            if old_period:
-                await close_period(old_period, bot)
-            
+            # Don't close the previous period - just jump to the new one
+            # This allows testing without triggering end-of-period cleanup
             current_period = target_period
             
             # Setup the new period

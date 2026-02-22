@@ -484,6 +484,7 @@ def split_entries_categ(categ_info: CompetitionInfo) -> list[list[Submission]]:
     entries_randomized = [
         e for contestant in contestants for e in entries_per_contestant[contestant]
     ]
+    shuffle(entries_randomized)
     print(f"DEBUG split_entries: entries_randomized count: {len(entries_randomized)}")
 
     def split_into_threads(
