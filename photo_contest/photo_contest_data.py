@@ -85,9 +85,9 @@ class JuryVote:
         if any(self.voter_id == submission.author_id for submission in ranking):
             raise ValueError(f"A juror cannot vote for their own submissions.")
 
+
     def points_to_submissions(self):
         ranking = self.ranking
-
         return {
             submission: points
             for submission, points in zip(ranking, POINTS_SETS[len(ranking)])
@@ -113,9 +113,9 @@ class Period:
     start: int  # timestamp
     end: int  # timestamp
     
-    def __init__(self, start: float | int, end: float | int):
-        self.start = int(start)
-        self.end = int(end)
+    def __post_init__(self):
+        self.start = int(self.start)
+        self.end = int(self.end)
 
 
 @dataclass
@@ -129,30 +129,30 @@ class CompetitionInfo:
     thread_id: Optional[int] = None
     competing_entries: list[Submission] = field(default_factory=list)
     msg_to_sub: dict[int, int] = field(default_factory=dict)  # message_id -> index within self.competing_entries
-    submission_to_summary_msg: dict[Submission, int] = field(default_factory=dict)  # submission -> summary_message_id
     votes_jury: dict[int, JuryVote] = field(default_factory=dict)  # voter_id -> vote
-    votes_public: dict[tuple[int, Submission], PublicVote] = field(default_factory=dict)  # (voter_id, submission) -> public_vote
+    votes_public: list[PublicVote] = field(default_factory=list)  # list of public votes
     jury_commentaries: list[JuryCommentary] = field(default_factory=list)
-    commentary_summaries: dict[Submission, str] = field(default_factory=dict)  # submission -> AI-generated summary (cached and persisted)
     # Cached vote breakdowns for efficient querying (not serialized)
     _jury_breakdown: dict[Submission, dict[int, int]] = field(default_factory=dict, init=False, repr=False, compare=False)  # submission -> (voter_id -> points)
     _public_breakdown: dict[Submission, dict[int, int]] = field(default_factory=dict, init=False, repr=False, compare=False)  # submission -> (voter_id -> points)
 
     def _rebuild_vote_breakdowns(self):
         """Rebuild cached vote breakdowns from raw votes. Called after deserialization."""
-        # Rebuild jury breakdown
         self._jury_breakdown = {}
         for voter_id, jury_vote in self.votes_jury.items():
             for submission, points in jury_vote.points_to_submissions().items():
                 if submission not in self._jury_breakdown:
                     self._jury_breakdown[submission] = {}
+
                 self._jury_breakdown[submission][voter_id] = points
-        
-        # Rebuild public breakdown
+
         self._public_breakdown = {}
-        for (voter_id, submission), public_vote in self.votes_public.items():
+        for public_vote in self.votes_public:
+            submission = public_vote.submission
+            voter_id = public_vote.voter_id
             if submission not in self._public_breakdown:
                 self._public_breakdown[submission] = {}
+
             current = self._public_breakdown[submission].get(voter_id, 0)
             self._public_breakdown[submission][voter_id] = current + public_vote.nb_points
 
@@ -223,14 +223,14 @@ class CompetitionInfo:
             )
         
         copy = deepcopy(self)
-        copy.submission_to_summary_msg[submission] = summary_message_id
+        # Remove existing mapping if any
+        raise NotImplementedError("SubmissionSummaryMapping is no longer used.")
         return copy
 
     def add_jury_vote(self, vote: JuryVote) -> "CompetitionInfo":
         copy = deepcopy(self)
         copy.votes_jury[vote.voter_id] = vote
-        
-        # Update cached breakdown
+
         for submission, points in vote.points_to_submissions().items():
             if submission not in copy._jury_breakdown:
                 copy._jury_breakdown[submission] = {}
@@ -243,13 +243,18 @@ class CompetitionInfo:
             raise ValueError("Not allowed to vote for yourself")
 
         copy = deepcopy(self)
-        copy.votes_public[vote.voter_id, vote.submission] = vote
+        
+        # Remove any existing vote from this voter for this submission
+        copy.votes_public = [
+            v for v in copy.votes_public 
+            if not (v.voter_id == vote.voter_id and v.submission == vote.submission)
+        ]
+        copy.votes_public.append(vote)
         
         # Update cached breakdown
         if vote.submission not in copy._public_breakdown:
             copy._public_breakdown[vote.submission] = {}
-        current = copy._public_breakdown[vote.submission].get(vote.voter_id, 0)
-        copy._public_breakdown[vote.submission][vote.voter_id] = current + vote.nb_points
+        copy._public_breakdown[vote.submission][vote.voter_id] = vote.nb_points
 
         return copy
 
@@ -257,15 +262,15 @@ class CompetitionInfo:
         points: dict[Submission, int] = dict()
 
         for vote in self.votes_jury.values():
-            for sub, nb_points in vote.points_to_submissions().items():
-                points[sub] = points.get(sub, 0) + nb_points
+            for submission, nb_points in vote.points_to_submissions().items():
+                points[submission] = points.get(submission, 0) + nb_points
 
         return points
 
     def count_votes_public(self) -> dict[Submission, int]:
         points: dict[Submission, int] = dict()
 
-        for vote in self.votes_public.values():
+        for vote in self.votes_public:
             sub = vote.submission
             points[sub] = points.get(sub, 0) + vote.nb_points
 
@@ -412,24 +417,11 @@ class CompetitionInfo:
         copy = deepcopy(self)
         copy.jury_commentaries.append(commentary)
         
-        # Regenerate the summary for this submission
-        summary = copy._generate_summary_for_submission(submission)
-        if summary:
-            copy.commentary_summaries[submission] = summary
-        
         return copy
     
     def get_all_commentaries_summaries(self) -> list[tuple[Submission, str]]:
-        """Get cached AI-generated summaries of commentaries for all submissions.
-        
-        Summaries are generated and cached when commentaries are added via add_jury_commentary().
-        The cache is persisted to YAML and restored on load.
-        
-        Returns:
-            List of (submission, summary) tuples for submissions that have commentaries
-        """
-        # Return cached summaries - they're persisted and loaded from YAML
-        return [(sub, summary) for sub, summary in self.commentary_summaries.items()]
+        """This method is no longer supported as commentary summaries have been removed."""
+        raise NotImplementedError("commentary_summaries is no longer used.")
 
     def withdraw_sub(self, message_id: int) -> tuple["CompetitionInfo", Submission]:
         """Withdraw a submission by message_id and return the updated competition and the withdrawn submission."""
@@ -537,7 +529,11 @@ class Contest:
     
     competitions: list[CompetitionInfo]
     schedule: Schedule
-    submissions: list[Submission] = field(default_factory=list)
+    
+    @property
+    def submissions(self) -> list[Submission]:
+        """Get a flat list of all submissions across all competitions."""
+        return [sub for comp in self.submission_competitions for sub in comp.competing_entries]
 
     @property
     def contestants(self):
@@ -591,6 +587,12 @@ class Contest:
     def from_file(path: str) -> "Contest":
         with open(path, "r") as f:
             data = yaml.safe_load(f)
+
+        if data is None:
+            raise ValueError(
+                f"YAML file '{path}' is empty or invalid. "
+                f"Please delete it to allow regeneration."
+            )
 
         # Use dacite to convert dicts to dataclasses automatically
         contest = from_dict(
@@ -810,7 +812,7 @@ class Contest:
         Raises:
             ValueError: If competition not found or commentary validation fails
         """
-        res = self.competition_from_channel_thread(channel_id, thread_id)
+        res = self.competition_from_channel_thread(channel_id, thread_id, ignore_time=True)
         if not res:
             raise ValueError(
                 f"Unable to find a valid competition from the (channel_id, thread_id) provided: ({channel_id}, {thread_id})"
@@ -836,7 +838,6 @@ class Contest:
 
             copy = deepcopy(self)
             copy.competitions[i] = competition_new
-            copy.submissions = [sub for sub in copy.submissions if sub != submission]
 
             return copy
         else:
@@ -904,7 +905,7 @@ class Contest:
         """
         vote = JuryVote(voter_id=voter_id, ranking=ranking)
         
-        res = self.competition_from_channel_thread(channel_id, thread_id)
+        res = self.competition_from_channel_thread(channel_id, thread_id, ignore_time=True)
         if res:
             i, competition = res
             competition_new = competition.add_jury_vote(vote)
@@ -935,7 +936,7 @@ class Contest:
         """
         vote = PublicVote(voter_id=voter_id, nb_points=nb_points, submission=submission)
         
-        res = self.competition_from_channel_thread(channel_id, thread_id)
+        res = self.competition_from_channel_thread(channel_id, thread_id, ignore_time=True)
 
         if res:
             i, competition = res
@@ -1085,7 +1086,7 @@ class Contest:
         Returns:
             Tuple of (votable_submissions, submission_numbers_dict)
         """
-        res = self.competition_from_channel_thread(channel_id, thread_id)
+        res = self.competition_from_channel_thread(channel_id, thread_id, ignore_time=True)
         if res:
             _, comp = res
             votable_submissions = []
@@ -1115,36 +1116,14 @@ class Contest:
             return comp.get_all_commentaries_summaries()
         return []
 
-    def get_submission_to_summary_msg(
-        self, channel_id: int, thread_id: Optional[int]
-    ) -> dict:
-        """Get the submission to summary message mapping for a competition.
-        
-        Args:
-            channel_id: The channel ID
-            thread_id: The thread ID (None for main channels)
-            
-        Returns:
-            Dictionary mapping submissions to summary message IDs
-        """
-        res = self.competition_from_channel_thread(channel_id, thread_id)
-        if res:
-            _, comp = res
-            return comp.submission_to_summary_msg
-        return {}
-
     def save(self, path: str):
         """Save contest to YAML file, excluding cached vote breakdowns."""
         def dict_factory(data):
-            # Filter out fields starting with underscore (cached data)
-            result = {}
-            for k, v in data:
-                if not k.startswith('_'):
-                    result[k] = v
-            return result
+            return {k: v for k, v in data if not k.startswith('_')}
         
         with open(path, "w") as f:
             yaml.dump(asdict(self, dict_factory=dict_factory), f)
+
 
 # The contest contains everything
 # Each contest consists of several competitions:
