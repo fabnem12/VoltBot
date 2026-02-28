@@ -75,7 +75,6 @@ current_period = None  # Will be set to ContestPeriod enum value
 
 if os.path.exists("photo_contest/contest2026.yaml"):
     contest = Contest.from_file("photo_contest/contest2026.yaml")
-    print(contest)
 else:
     # Regular contest schedule - 7 days per period
     start_time = datetime(2026, 2, 22, 8, 45)  # Start March 1st, 2026 at 8am CET
@@ -1122,11 +1121,8 @@ async def handle_public_vote(contest: Contest, message: discord.Message, user: d
     Returns:
         Updated contest object
     """
-    print(f"DEBUG: handle_public_vote called: emoji={emoji}, user={user.id}, current_period={current_period}")
-    
     # Enforce deadline: only allow votes during qualif or semis periods
     if current_period not in [ContestPeriod.QUALIF, ContestPeriod.SEMIS]:
-        print(f"DEBUG: Not in QUALIF or SEMIS period, removing reaction")
         try:
             await message.remove_reaction(emoji, user)
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
@@ -1142,19 +1138,15 @@ async def handle_public_vote(contest: Contest, message: discord.Message, user: d
     }
     
     if emoji not in emoji_to_points:
-        print(f"DEBUG: Emoji {emoji} not in emoji_to_points mapping")
         return contest
     
     points = emoji_to_points[emoji]
-    print(f"DEBUG: Mapped emoji to {points} points")
     
     # During qualif period, only contestants can vote
     if current_period == ContestPeriod.QUALIF:
         contestant_ids = contest.contestants
-        print(f"DEBUG: QUALIF period - checking if user {user.id} is in contestants: {user.id in contestant_ids}")
         if user.id not in contestant_ids:
             # Not a contestant, remove their reaction
-            print(f"DEBUG: User {user.id} is not a contestant, removing reaction")
             try:
                 await message.remove_reaction(emoji, user)
             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
@@ -1163,34 +1155,27 @@ async def handle_public_vote(contest: Contest, message: discord.Message, user: d
     
     # Get channel and thread
     channel_id, thread_id = get_channel_and_thread(message)
-    print(f"DEBUG: Channel/Thread: {channel_id}/{thread_id}")
     
     # Find the competition (ignore_time=True to work during manual testing)
     res = contest.competition_from_channel_thread(channel_id, thread_id, ignore_time=TEST_MODE)
     if not res:
-        print(f"DEBUG: Could not find competition for channel {channel_id}, thread {thread_id}")
         return contest
     
     _, competition = res
-    print(f"DEBUG: Found competition with {len(competition.competing_entries)} entries")
     
     # Check if this message is a submission
     if message.id not in competition.msg_to_sub:
-        print(f"DEBUG: Message {message.id} not in msg_to_sub mapping")
         return contest
     
     # Get the submission
     submission_idx = competition.msg_to_sub[message.id]
     submission = competition.competing_entries[submission_idx]
-    print(f"DEBUG: Found submission at index {submission_idx}, author={submission.author_id}")
     
     try:
         # Save the vote
-        print(f"DEBUG: Attempting to save vote...")
         contest = contest.save_public_vote(channel_id, thread_id, user.id, points, submission)
         contest.save("photo_contest/contest2026.yaml")
         logger.info(f"Public vote saved: user={user.id}, points={points}, channel={channel_id}, thread={thread_id}")
-        print(f"DEBUG: Vote saved successfully")
         
         # Send confirmation DM to the user
         plural = "points" if points != 1 else "point"
@@ -1201,7 +1186,6 @@ async def handle_public_vote(contest: Contest, message: discord.Message, user: d
         )
         embed.set_image(url=submission.discord_save_path)
         await send_dm_safe(user, embed=embed)
-        print(f"DEBUG: Sent DM confirmation to user")
         
         # Remove all number reactions from this user on this message to keep votes invisible
         for emoji_str in ["0️⃣", "1️⃣", "2️⃣", "3️⃣"]:
@@ -1209,10 +1193,8 @@ async def handle_public_vote(contest: Contest, message: discord.Message, user: d
                 await message.remove_reaction(emoji_str, user)
             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                 pass
-        print(f"DEBUG: Removed reactions")
     except ValueError as e:
         # User tried to vote for themselves, remove their reaction
-        print(f"DEBUG: ValueError when saving vote: {e}")
         try:
             await message.remove_reaction(emoji, user)
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
@@ -2032,10 +2014,7 @@ async def setup_qualif_period(bot: discord.Client):
         )
     
     # Update contest with qualifications
-    print(f"DEBUG: About to call make_qualifs with all_thread_ids: {all_thread_ids}")
-    print(f"DEBUG: Number of submission competitions: {len(contest.submission_competitions)}")
-    for i, comp in enumerate(contest.submission_competitions):
-        print(f"DEBUG:   Submission competition {i}: channel={comp.channel_id}, entries={len(comp.competing_entries)}, needs_qual={comp.needs_qualification}")
+    # Removed debug prints
     
     contest = contest.make_qualifs(all_thread_ids)
     contest.save("photo_contest/contest2026.yaml")
@@ -2332,31 +2311,31 @@ def main():
         # Get the user who reacted
         guild = bot.get_guild(payload.guild_id)
         if not guild:
-            print(f"DEBUG: Could not find guild {payload.guild_id}")
+            # Guild not found
             return
         
         user = guild.get_member(payload.user_id)
         if not user:
-            print(f"DEBUG: Could not find user {payload.user_id}")
+            # User not found
             return
         
         # Get the channel and message
         channel = bot.get_channel(payload.channel_id)
         if not channel:
-            print(f"DEBUG: Could not find channel {payload.channel_id} in cache, trying fetch")
+            # Channel not in cache; will try fetching
             try:
                 channel = await bot.fetch_channel(payload.channel_id)
             except (discord.NotFound, discord.Forbidden) as e:
-                print(f"DEBUG: Could not fetch channel {payload.channel_id}: {e}")
+                # Could not fetch channel
                 return
         
-        print(f"DEBUG: Reaction {payload.emoji.name} from user {user.id} in channel {payload.channel_id}, current_period={current_period}")
+        # Reaction received; handle based on emoji and period
         
         try:
             assert isinstance(channel, discord.TextChannel) or isinstance(channel, discord.Thread), "Channel is not a TextChannel or Thread"
             message = await channel.fetch_message(payload.message_id)
         except (discord.NotFound, discord.Forbidden) as e:
-            print(f"DEBUG: Could not fetch message {payload.message_id}: {e}")
+            # Could not fetch message
             return
         
         # Handle withdrawal reactions (❌) - allowed during any period
@@ -2376,9 +2355,7 @@ def main():
         elif current_period == ContestPeriod.QUALIF or current_period == ContestPeriod.SEMIS:
             # Handle public votes (0-3 points)
             if payload.emoji.name in ["0️⃣", "1️⃣", "2️⃣", "3️⃣"]:
-                print(f"DEBUG: Calling handle_public_vote for emoji {payload.emoji.name}")
                 contest = await handle_public_vote(contest, message, user, payload.emoji.name, current_period)
-                print(f"DEBUG: handle_public_vote completed")
             # Handle jury vote requests
             elif payload.emoji.name == "🗳️":
                 await handle_jury_vote_request(contest, message, user, bot, current_period)
@@ -2386,7 +2363,7 @@ def main():
             elif payload.emoji.name == "💬" and current_period == ContestPeriod.SEMIS:
                 await handle_commentary_request(contest, message, user, current_period)
             else:
-                print(f"DEBUG: Emoji {payload.emoji.name} not recognized in QUALIF/SEMIS period")
+                # Emoji not recognized for this period
         
         elif current_period == ContestPeriod.FINAL:
             # Handle jury vote requests (top 5 ranking)
