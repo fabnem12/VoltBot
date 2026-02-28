@@ -1,9 +1,9 @@
 from copy import deepcopy
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass, fields
 from itertools import groupby
 from random import shuffle
 from time import time
-from typing import Literal, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 import os
 import yaml
@@ -60,6 +60,37 @@ def _call_mistral_api(
         return None
 
 
+def validate_commentary(commentary_text: str) -> bool:
+    """Validate that a commentary is appropriate for a photo contest.
+    
+    Uses Mistral API to check if the text is a reasonable photo commentary.
+    
+    Args:
+        commentary_text: The commentary text to validate
+        
+    Returns:
+        True if valid, False otherwise
+    """
+    prompt = (
+        f"You are a moderator for a photo contest. "
+        f"Determine if the following text is a valid commentary about a photograph. "
+        f"Valid commentaries discuss aspects like composition, lighting, subject, "
+        f"technical quality, artistic merit, or provide constructive criticism. "
+        f"Invalid commentaries are spam, unrelated content, offensive language, "
+        f"or completely nonsensical. \n\n"
+        f"Commentary: {commentary_text}\n\n"
+        f"Respond with only 'VALID' or 'INVALID'."
+    )
+    
+    answer = _call_mistral_api(prompt, temperature=0.1, max_tokens=10, timeout=10)
+    
+    if answer is None:
+        return True
+    
+    answer_upper = answer.upper().strip()
+    return "VALID" in answer_upper and "INVALID" not in answer_upper
+
+
 @dataclass(frozen=True)
 class Submission:
     author_id: int
@@ -102,13 +133,6 @@ class PublicVote:
 
 
 @dataclass
-class JuryCommentary:
-    author_id: int
-    submission: Submission
-    text: str
-
-
-@dataclass
 class Period:
     start: int  # timestamp
     end: int  # timestamp
@@ -131,7 +155,6 @@ class CompetitionInfo:
     msg_to_sub: dict[int, int] = field(default_factory=dict)  # message_id -> index within self.competing_entries
     votes_jury: dict[int, JuryVote] = field(default_factory=dict)  # voter_id -> vote
     votes_public: list[PublicVote] = field(default_factory=list)  # list of public votes
-    jury_commentaries: list[JuryCommentary] = field(default_factory=list)
     # Cached vote breakdowns for efficient querying (not serialized)
     _jury_breakdown: dict[Submission, dict[int, int]] = field(default_factory=dict, init=False, repr=False, compare=False)  # submission -> (voter_id -> points)
     _public_breakdown: dict[Submission, dict[int, int]] = field(default_factory=dict, init=False, repr=False, compare=False)  # submission -> (voter_id -> points)
@@ -207,26 +230,6 @@ class CompetitionInfo:
         copy.msg_to_sub[message_id] = submission_index
         return copy
 
-    def set_summary_message_id(self, submission: Submission, summary_message_id: int) -> "CompetitionInfo":
-        """Set the summary_message_id for a submission.
-        
-        Args:
-            submission: The submission to associate with the summary message
-            summary_message_id: The Discord message ID for the commentary summary
-        
-        Returns:
-            Updated CompetitionInfo with the summary message mapping added
-        """
-        if submission not in self.competing_entries:
-            raise ValueError(
-                f"Submission not found in competing entries"
-            )
-        
-        copy = deepcopy(self)
-        # Remove existing mapping if any
-        raise NotImplementedError("SubmissionSummaryMapping is no longer used.")
-        return copy
-
     def add_jury_vote(self, vote: JuryVote) -> "CompetitionInfo":
         copy = deepcopy(self)
         copy.votes_jury[vote.voter_id] = vote
@@ -292,137 +295,6 @@ class CompetitionInfo:
         """
         return self._public_breakdown.get(submission, {})
 
-    def get_ranked_submissions_final(self) -> list[Submission]:
-        """Get submissions ranked by final votes with proper tie-breaking.
-        
-        Tie-breaking rules (in order):
-        1. Total final points (higher is better)
-        2. Number of jurors who gave points (more voters is better)
-        3. Submission time (earlier submission wins)
-        
-        Returns:
-            List of submissions in ranked order
-        """
-        final_votes = self.count_votes_jury()
-        
-        def ranking_key(submission: Submission):
-            points = final_votes.get(submission, 0)
-            # Count number of jurors who gave points to this submission
-            num_voters = len(self._jury_breakdown.get(submission, {}))
-            # Use negative submission_time so earlier submissions rank higher
-            return (points, num_voters, -submission.submission_time)
-        
-        return sorted(self.competing_entries, key=ranking_key, reverse=True)
-
-    def _generate_summary_for_submission(self, submission: Submission) -> str:
-        """Generate an AI summary for a specific submission's commentaries.
-        
-        Args:
-            submission: The submission to generate a summary for
-            
-        Returns:
-            The generated summary text
-        """
-        # Get all commentaries for this submission
-        comments = [c for c in self.jury_commentaries if c.submission == submission]
-        
-        if len(comments) < 1:
-            return ""
-        
-        commentary_texts = "\n\n".join(
-            f"Comment {i+1}: {c.text}"
-            for i, c in enumerate(comments)
-        )
-        
-        prompt = (
-            f"Summarize the following photo critiques to help judges compare entries. "
-            f"In max 50 words, highlight the photo's strongest qualities, main weaknesses, "
-            f"and standout characteristics (composition, technical execution, artistic merit, emotional impact). "
-            f"Be objective and balanced.\n\n{commentary_texts}"
-        )
-        
-        summary = _call_mistral_api(prompt, temperature=0.3, max_tokens=100, timeout=15)
-        
-        # Fallback: just concatenate commentaries if API unavailable
-        return summary if summary else commentary_texts
-
-    def _validate_commentary_with_mistral(self, commentary_text: str) -> bool:
-        """Validate that a commentary is appropriate for a photo contest.
-        
-        Uses Mistral API to check if the text is a reasonable photo commentary.
-        
-        Args:
-            commentary_text: The commentary text to validate
-            
-        Returns:
-            True if valid, False otherwise
-        """
-        prompt = (
-            f"You are a moderator for a photo contest. "
-            f"Determine if the following text is a valid commentary about a photograph. "
-            f"Valid commentaries discuss aspects like composition, lighting, subject, "
-            f"technical quality, artistic merit, or provide constructive criticism. "
-            f"Invalid commentaries are spam, unrelated content, offensive language, "
-            f"or completely nonsensical. \n\n"
-            f"Commentary: {commentary_text}\n\n"
-            f"Respond with only 'VALID' or 'INVALID'."
-        )
-        
-        answer = _call_mistral_api(prompt, temperature=0.1, max_tokens=10, timeout=10)
-        
-        # If API unavailable or fails, be permissive (allow the commentary)
-        if answer is None:
-            return True
-        
-        # Check for VALID but not INVALID (since "INVALID" contains "VALID")
-        answer_upper = answer.upper().strip()
-        return "VALID" in answer_upper and "INVALID" not in answer_upper
-
-    def add_jury_commentary(
-        self, author_id: int, submission: Submission, text: str
-    ) -> "CompetitionInfo":
-        """Add a jury commentary after validating it makes sense as a photo commentary.
-        
-        Args:
-            author_id: The ID of the user making the commentary
-            submission: The submission being commented on
-            text: The commentary text
-            
-        Returns:
-            Updated CompetitionInfo with the commentary added
-            
-        Raises:
-            ValueError: If the author is commenting on their own submission or if the
-                       commentary doesn't make sense as a photo commentary
-        """
-        
-        # Check that the author is not commenting on their own submission
-        if author_id == submission.author_id:
-            raise ValueError("Cannot comment on your own submission")
-        
-        # Validate the commentary with Mistral API
-        if not self._validate_commentary_with_mistral(text):
-            raise ValueError(
-                "Commentary does not appear to be a valid photo critique. "
-                "Please provide constructive feedback about the photo."
-            )
-        
-        # Create the commentary object
-        commentary = JuryCommentary(
-            author_id=author_id,
-            submission=submission,
-            text=text
-        )
-        
-        copy = deepcopy(self)
-        copy.jury_commentaries.append(commentary)
-        
-        return copy
-    
-    def get_all_commentaries_summaries(self) -> list[tuple[Submission, str]]:
-        """This method is no longer supported as commentary summaries have been removed."""
-        raise NotImplementedError("commentary_summaries is no longer used.")
-
     def withdraw_sub(self, message_id: int) -> tuple["CompetitionInfo", Submission]:
         """Withdraw a submission by message_id and return the updated competition and the withdrawn submission."""
         if message_id not in self.msg_to_sub:
@@ -455,7 +327,9 @@ class Schedule:  # all of the fields are tuples of timestamps (start, end)
 def split_entries_categ(categ_info: CompetitionInfo) -> list[list[Submission]]:
     # shuffle the list of entries, and group by contestant
     # so that each contestant's entries are evenly split among threads
-    entries = categ_info.competing_entries
+    # Work on a shallow copy to avoid mutating the original competition's
+    # `competing_entries` order (which is used elsewhere for indexing).
+    entries = list(categ_info.competing_entries)
     print(f"DEBUG split_entries: Initial entries count: {len(entries)}")
     shuffle(entries)
 
@@ -529,6 +403,9 @@ class Contest:
     
     competitions: list[CompetitionInfo]
     schedule: Schedule
+    commentaries: dict[str, dict[int, str]] = field(default_factory=dict)  # key: discord_save_path, value: {author_id: commentary_text}
+    commentary_summaries: dict[str, str] = field(default_factory=dict)  # key: discord_save_path, value: summary_text
+    submission_posts: dict[str, list[dict[str, Any]]] = field(default_factory=dict)  # key: discord_save_path, value: list of {"message_id": int, "channel_id": int, "thread_id": Optional[int], "is_summary": bool}
     
     @property
     def submissions(self) -> list[Submission]:
@@ -684,12 +561,28 @@ class Contest:
         Returns:
             True if the message is a submission, False otherwise
         """
-        res = self.competition_from_channel_thread(channel_id, thread_id)
+        # Prefer semis competitions (search the full `self.competitions` list
+        # so the returned index maps to `self.competitions`). Only fall back to
+        # other lookups in TEST_MODE or when no semis comp matches.
+        res = None
+        # Always prefer semis competitions when possible so that lookups in a
+        # semis channel/thread resolve to the semis competition rather than an
+        # earlier submission competition with the same channel/thread.
+        for i, c in enumerate(self.competitions):
+            if c.type == "semis" and (c.channel_id, c.thread_id) == (channel_id, thread_id):
+                res = (i, c)
+                break
+
+        if res is None:
+            # In TEST_MODE we may need to lookup across all competitions; otherwise
+            # use the normal time-constrained lookup.
+            res = self.competition_from_channel_thread(channel_id, thread_id, ignore_time=bool(globals().get('TEST_MODE', False)))
+
         if res:
-            _, competition = res
-            return message_id in competition.msg_to_sub
+            _, comp = res
+            return message_id in comp.msg_to_sub
         return False
-    
+
     def get_submission_from_message(
         self, channel_id: int, thread_id: Optional[int], message_id: int
     ) -> Optional[Submission]:
@@ -737,34 +630,6 @@ class Contest:
                 f"Unable to find a valid competition from the (channel_id, thread_id) provided: ({channel_id}, {thread_id})"
             )
 
-    def set_summary_message_id(
-        self, channel_id: int, thread_id: Optional[int], submission: Submission, summary_message_id: int
-    ) -> "Contest":
-        """Set the summary_message_id for a submission in a specific competition.
-        
-        Args:
-            channel_id: The channel ID of the competition
-            thread_id: The thread ID of the competition (None for main channels)
-            submission: The submission to associate with the summary message
-            summary_message_id: The Discord message ID for the commentary summary
-        
-        Returns:
-            Updated Contest with the summary message mapping added
-        """
-        # Use ignore_time=True to find competitions during setup (before their start time)
-        res = self.competition_from_channel_thread(channel_id, thread_id, ignore_time=True)
-        if res:
-            i, competition = res
-            competition_new = competition.set_summary_message_id(submission, summary_message_id)
-            
-            copy = deepcopy(self)
-            copy.competitions[i] = competition_new
-            return copy
-        else:
-            raise ValueError(
-                f"Unable to find a valid competition from the (channel_id, thread_id) provided: ({channel_id}, {thread_id})"
-            )
-
     def add_submission(
         self, submission: Submission, channel_id: int, message_id: int, thread_id: Optional[int] = None
     ) -> "Contest":
@@ -793,38 +658,6 @@ class Contest:
             raise ValueError(
                 f"Unable to find a valid competition from the (channel_id, thread_id) provided: ({channel_id}, {thread_id})"
             )
-
-    def add_commentary(
-        self, channel_id: int, thread_id: Optional[int], submission: Submission, author_id: int, text: str
-    ) -> "Contest":
-        """Add a jury commentary to a submission in a specific competition.
-        
-        Args:
-            channel_id: The channel ID of the competition
-            thread_id: The thread ID of the competition (None for main channels)
-            submission: The submission to add commentary to
-            author_id: The Discord user ID of the commenter
-            text: The commentary text
-        
-        Returns:
-            Updated Contest object
-        
-        Raises:
-            ValueError: If competition not found or commentary validation fails
-        """
-        res = self.competition_from_channel_thread(channel_id, thread_id, ignore_time=True)
-        if not res:
-            raise ValueError(
-                f"Unable to find a valid competition from the (channel_id, thread_id) provided: ({channel_id}, {thread_id})"
-            )
-        
-        i, competition = res
-        competition_new = competition.add_jury_commentary(author_id, submission, text)
-        
-        copy = deepcopy(self)
-        copy.competitions[i] = competition_new
-        
-        return copy
 
     def withdraw_submission(
         self, channel_id: int, message_id: int, thread_id: Optional[int] = None
@@ -1086,7 +919,10 @@ class Contest:
         Returns:
             Tuple of (votable_submissions, submission_numbers_dict)
         """
-        res = self.competition_from_channel_thread(channel_id, thread_id, ignore_time=True)
+        # Use ignore_time only in TEST_MODE to allow manual testing; otherwise
+        # respect the current active competitions so we don't pick an older
+        # submission competition when semis/qualif competitions exist.
+        res = self.competition_from_channel_thread(channel_id, thread_id, ignore_time=False)
         if res:
             _, comp = res
             votable_submissions = []
@@ -1098,31 +934,221 @@ class Contest:
             return votable_submissions, submission_numbers
         return [], {}
 
-    def get_competition_commentaries_summaries(
-        self, channel_id: int, thread_id: Optional[int]
-    ) -> list[tuple[Submission, str]]:
-        """Get all commentary summaries for a competition.
+    def _submission_key(self, submission: Submission) -> str:
+        """Returns submission.discord_save_path as the unique key."""
+        return submission.discord_save_path
+
+    def _make_submission_post(self, message_id: int, channel_id: int, thread_id: Optional[int], is_summary: bool = False) -> dict[str, Any]:
+        """Create a dict for storage."""
+        return {
+            "message_id": message_id,
+            "channel_id": channel_id,
+            "thread_id": thread_id,
+            "is_summary": is_summary
+        }
+
+    def _parse_submission_post(self, post: dict[str, Any]) -> tuple[int, int, Optional[int], bool]:
+        """Parse dict back to tuple."""
+        return (
+            post["message_id"],
+            post["channel_id"],
+            post.get("thread_id"),
+            post.get("is_summary", False)
+        )
+
+    def _generate_summary_for_submission(self, discord_save_path: str) -> str:
+        """Generate an AI summary for a submission's commentaries.
         
         Args:
-            channel_id: The channel ID
-            thread_id: The thread ID (None for main channels)
+            discord_save_path: The submission's discord_save_path
             
+        Returns:
+            The generated summary text
+        """
+        commentaries = self.commentaries.get(discord_save_path, {})
+        
+        if not commentaries or len(commentaries) < 2:
+            return ""
+        
+        commentary_texts = "\n\n".join(
+            f"Comment: {text}"
+            for text in commentaries.values()
+        )
+        
+        prompt = (
+            f"Summarize the following photo critiques to help judges compare entries. "
+            f"In max 50 words, highlight the photo's strongest qualities, main weaknesses, "
+            f"and standout characteristics (composition, technical execution, artistic merit, emotional impact). "
+            f"Be objective and balanced.\n\n{commentary_texts}"
+        )
+        
+        summary = _call_mistral_api(prompt, temperature=0.3, max_tokens=100, timeout=15)
+        
+        return summary if summary else commentary_texts
+
+    def add_commentary(
+        self, channel_id: int, thread_id: Optional[int], submission: Submission, author_id: int, text: str
+    ) -> "Contest":
+        """Add a jury commentary after validating it makes sense as a photo commentary.
+        
+        Args:
+            channel_id: The channel ID of the competition
+            thread_id: The thread ID of the competition (None for main channels)
+            submission: The submission to add commentary to
+            author_id: The Discord user ID of the commenter
+            text: The commentary text
+            
+        Returns:
+            Updated Contest object
+            
+        Raises:
+            ValueError: If competition not found or commentary validation fails
+        """
+        res = self.competition_from_channel_thread(channel_id, thread_id, ignore_time=True)
+        if not res:
+            raise ValueError(
+                f"Unable to find a valid competition from the (channel_id, thread_id) provided: ({channel_id}, {thread_id})"
+            )
+        
+        if author_id == submission.author_id:
+            raise ValueError("Cannot comment on your own submission")
+        
+        if not validate_commentary(text):
+            raise ValueError(
+                "Commentary does not appear to be a valid photo critique. "
+                "Please provide constructive feedback about the photo."
+            )
+        
+        copy = deepcopy(self)
+        key = self._submission_key(submission)
+        
+        if key not in copy.commentaries:
+            copy.commentaries[key] = {}
+        copy.commentaries[key][author_id] = text
+        
+        copy.commentary_summaries[key] = copy._generate_summary_for_submission(key)
+        
+        return copy
+
+    def get_commentaries(self, discord_save_path: str) -> dict[int, str]:
+        """Get all commentaries for a submission.
+        
+        Args:
+            discord_save_path: The submission's discord_save_path
+            
+        Returns:
+            Dict mapping author_id to commentary text
+        """
+        return deepcopy(self.commentaries.get(discord_save_path, {}))
+
+    def get_commentary_summary(self, discord_save_path: str) -> Optional[str]:
+        """Get cached summary for a submission.
+        
+        Args:
+            discord_save_path: The submission's discord_save_path
+            
+        Returns:
+            The summary text, or None if not found
+        """
+        return self.commentary_summaries.get(discord_save_path)
+
+    def get_all_commentaries_summaries(self) -> list[tuple[Submission, str]]:
+        """Get all commentary summaries for all submissions in all competitions.
+        
         Returns:
             List of tuples (submission, summary_text)
         """
-        res = self.competition_from_channel_thread(channel_id, thread_id)
-        if res:
-            _, comp = res
-            return comp.get_all_commentaries_summaries()
-        return []
+        result = []
+        for comp in self.competitions:
+            for submission in comp.competing_entries:
+                key = self._submission_key(submission)
+                if key in self.commentary_summaries:
+                    result.append((submission, self.commentary_summaries[key]))
+        return result
+
+    def add_submission_post(
+        self, discord_save_path: str, message_id: int, channel_id: int, thread_id: Optional[int], is_summary: bool = False
+    ) -> "Contest":
+        """Track where a submission is posted.
+        
+        Args:
+            discord_save_path: The submission's discord_save_path
+            message_id: The Discord message ID
+            channel_id: The Discord channel ID
+            thread_id: The Discord thread ID (None for main channels)
+            is_summary: Whether this is a summary message
+            
+        Returns:
+            Updated Contest
+        """
+        copy = deepcopy(self)
+        
+        if discord_save_path not in copy.submission_posts:
+            copy.submission_posts[discord_save_path] = []
+        
+        post = self._make_submission_post(message_id, channel_id, thread_id, is_summary)
+        
+        existing = copy.submission_posts[discord_save_path]
+        for i, p in enumerate(existing):
+            if p["message_id"] == message_id:
+                existing[i] = post
+                break
+        else:
+            existing.append(post)
+        
+        return copy
+
+    def get_submission_posts(self, discord_save_path: str) -> list[tuple[int, int, Optional[int], bool]]:
+        """Get all posts for a submission.
+        
+        Args:
+            discord_save_path: The submission's discord_save_path
+            
+        Returns:
+            List of tuples (message_id, channel_id, thread_id, is_summary)
+        """
+        posts = self.submission_posts.get(discord_save_path, [])
+        return [self._parse_submission_post(p) for p in posts]
 
     def save(self, path: str):
         """Save contest to YAML file, excluding cached vote breakdowns."""
-        def dict_factory(data):
-            return {k: v for k, v in data if not k.startswith('_')}
-        
+        def safe_asdict(obj):
+            # Dataclass: convert to dict, skipping private fields
+            if is_dataclass(obj):
+                result = {}
+                for f in fields(obj):
+                    if f.name.startswith("_") or f.name in ("_jury_breakdown", "_public_breakdown"):
+                        continue
+                    value = getattr(obj, f.name)
+                    result[f.name] = safe_asdict(value)
+                return result
+
+            # dict: ensure keys are serializable (convert problematic keys to strings)
+            if isinstance(obj, dict):
+                new = {}
+                for k, v in obj.items():
+                    # Keep simple types as-is
+                    if isinstance(k, (str, int, float, bool)):
+                        key = k
+                    # Handle dict keys that are dataclasses (like Submission)
+                    elif is_dataclass(k):
+                        key = safe_asdict(k)
+                    # For other unhashable types (dict, list), convert to string representation
+                    else:
+                        key = str(k)
+                    new[key] = safe_asdict(v)
+                return new
+
+            # lists/tuples
+            if isinstance(obj, (list, tuple)):
+                return [safe_asdict(x) for x in obj]
+
+            # primitives
+            return obj
+
+        data = safe_asdict(self)
         with open(path, "w") as f:
-            yaml.dump(asdict(self, dict_factory=dict_factory), f)
+            yaml.dump(data, f)
 
 
 # The contest contains everything

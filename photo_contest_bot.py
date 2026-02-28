@@ -1,4 +1,5 @@
 import asyncio
+from copy import deepcopy
 import os
 from datetime import datetime, timedelta
 from enum import Enum
@@ -80,20 +81,20 @@ else:
     start_time = datetime(2026, 2, 22, 8, 45)  # Start March 1st, 2026 at 8am CET
 
     submission_period = Period(
-        start=start_time.timestamp(),
-        end=(start_time + timedelta(days=7, hours=12)).timestamp(),
+        start=int(start_time.timestamp()),
+        end=int((start_time + timedelta(days=7, hours=12)).timestamp()),
     )
     qualif_period = Period(
-        start=(start_time + timedelta(days=8)).timestamp(),
-        end=(start_time + timedelta(days=11, hours=12)).timestamp(),
+        start=int((start_time + timedelta(days=8)).timestamp()),
+        end=int((start_time + timedelta(days=11, hours=12)).timestamp()),
     )
     semis_period = Period(
-        start=(start_time + timedelta(days=12)).timestamp(),
-        end=(start_time + timedelta(days=15, hours=12)).timestamp(),
+        start=int((start_time + timedelta(days=12)).timestamp()),
+        end=int((start_time + timedelta(days=15, hours=12)).timestamp()),
     )
     final_period = Period(
-        start=(start_time + timedelta(days=16)).timestamp(),
-        end=(start_time + timedelta(days=20, hours=12)).timestamp(),
+        start=int((start_time + timedelta(days=16)).timestamp()),
+        end=int((start_time + timedelta(days=20, hours=12)).timestamp()),
     )
 
     schedule = Schedule(
@@ -768,13 +769,16 @@ async def withdraw(contest: Contest, message: discord.Message, user: discord.Mem
 class JuryConfirmView(discord.ui.View):
     """Confirmation view for jury voting."""
     
-    def __init__(self, ranking: list[Submission], user_id: int, channel_id: int, thread_id: Optional[int], contest: Contest):
+    def __init__(self, ranking: list[Submission], ranking_text: str, user_id: int, channel_id: int, thread_id: Optional[int], contest: Contest, voter_id_for_save: Optional[int] = None):
         super().__init__(timeout=600)  # 10 minutes timeout
         self.ranking = ranking
+        self.ranking_text = ranking_text
         self.user_id = user_id
         self.channel_id = channel_id
         self.thread_id = thread_id
         self.contest = contest
+        # If provided, use this id to save the vote instead of the DM recipient
+        self.voter_id_for_save = voter_id_for_save if voter_id_for_save is not None else user_id
     
     @discord.ui.button(label="Confirm Vote", style=discord.ButtonStyle.success)
     async def confirm_button(self, button: discord.ui.Button, interaction: discord.Interaction):
@@ -787,12 +791,14 @@ class JuryConfirmView(discord.ui.View):
         # Save the vote
         global contest
         try:
-            contest = contest.save_jury_vote(self.channel_id, self.thread_id, self.user_id, self.ranking)
+            # Save using the explicit voter id when provided (for 'vote as')
+            save_vid = self.voter_id_for_save
+            contest = contest.save_jury_vote(self.channel_id, self.thread_id, save_vid, self.ranking)
             contest.save("photo_contest/contest2026.yaml")
-            logger.info(f"Jury vote saved: user={self.user_id}, channel={self.channel_id}, thread={self.thread_id}")
-            
+            logger.info(f"Jury vote saved: user={save_vid}, channel={self.channel_id}, thread={self.thread_id}")
+
             await interaction.response.edit_message(
-                content="✅ Your vote has been saved successfully!",
+                content=f"{self.ranking_text}\n\n✅ Your vote has been saved successfully!",
                 view=None
             )
         except ValueError as e:
@@ -818,20 +824,24 @@ class JuryConfirmView(discord.ui.View):
 class JuryVotingView(discord.ui.View):
     """Interactive view for jury voting with buttons for each submission."""
     
-    def __init__(self, submissions: list[Submission], user_id: int, channel_id: int, thread_id: Optional[int], contest: Contest, ranking_length: int = 10):
+    def __init__(self, submissions: list[Submission], dm_user_id: int, channel_id: int, thread_id: Optional[int], contest: Contest, ranking_length: int = 10, submission_numbers: dict[Submission, int] | None = None, voter_id_for_save: Optional[int] = None):
         super().__init__(timeout=3600)  # 1 hour timeout
         self.submissions = submissions
-        self.user_id = user_id
+        self.user_id = dm_user_id
         self.channel_id = channel_id
         self.thread_id = thread_id
         self.contest = contest
         self.ranking: list[Submission] = []
         self.ranking_length = ranking_length  # Number of submissions to rank (10 for qualif/semis, 5 for finals)
+        self.submission_numbers = submission_numbers or {}
+        self.voter_id_for_save = voter_id_for_save if voter_id_for_save is not None else self.user_id
         
-        # Create buttons for each submission
+        # Create buttons for each submission (label with original submission number)
         for i in range(len(submissions)):
+            sub = submissions[i]
+            display_num = self.submission_numbers.get(sub, i + 1)
             button = discord.ui.Button(
-                label=f"Submission #{i+1}",
+                label=f"Submission #{display_num}",
                 custom_id=f"vote_{i}",
                 style=discord.ButtonStyle.primary
             )
@@ -855,7 +865,7 @@ class JuryVotingView(discord.ui.View):
             
             # Update the message to show current ranking
             ranking_text = "\n".join(
-                f"#{i+1} Submission #{self.submissions.index(sub)+1}"
+                f"#{i+1} Submission #{self.submission_numbers.get(sub, self.submissions.index(sub)+1)}"
                 for i, sub in enumerate(self.ranking)
             )
             
@@ -866,7 +876,7 @@ class JuryVotingView(discord.ui.View):
                 )
             else:
                 # Ranking is complete, show confirmation
-                confirm_view = JuryConfirmView(self.ranking, self.user_id, self.channel_id, self.thread_id, self.contest)
+                confirm_view = JuryConfirmView(self.ranking, ranking_text, self.user_id, self.channel_id, self.thread_id, self.contest, voter_id_for_save=self.voter_id_for_save)
                 await interaction.response.edit_message(
                     content=f"**Your final ranking:**\n{ranking_text}\n\nPlease confirm your vote.",
                     view=confirm_view
@@ -875,7 +885,7 @@ class JuryVotingView(discord.ui.View):
         return callback
 
 
-async def send_vote_reminder(user: discord.User | discord.Member, contest: Contest, channel_id: int, current_submissions: list[Submission], submission_numbers: dict[Submission, int]):
+async def send_vote_reminder(user: discord.User | discord.Member, contest: Contest, channel_id: int, current_submissions: list[Submission], submission_numbers: dict[Submission, int], voter_id: Optional[int] = None):
     """Send a reminder to the user about their previous votes from the previous stage.
     
     Args:
@@ -914,13 +924,14 @@ async def send_vote_reminder(user: discord.User | discord.Member, contest: Conte
         for comp in contest.qualif_competitions:
             if comp.channel_id == channel_id:
                 # Gather jury votes from this qualif thread
-                if user.id in comp.votes_jury:
+                vid = voter_id if voter_id is not None else user.id
+                if vid in comp.votes_jury:
                     assert comp.thread_id is not None, "Qualif competition should have a thread_id"
-                    all_qualif_jury_votes[comp.thread_id] = comp.votes_jury[user.id]
+                    all_qualif_jury_votes[comp.thread_id] = comp.votes_jury[vid]
                 
                 # Gather public votes from this qualif thread
                 for vote in comp.votes_public:
-                    if vote.voter_id == user.id and vote.submission in current_submissions:
+                    if vote.voter_id == (voter_id if voter_id is not None else user.id) and vote.submission in current_submissions:
                         all_qualif_public_votes[vote.submission] = vote.nb_points
         
         # Send jury vote reminder
@@ -952,9 +963,10 @@ async def send_vote_reminder(user: discord.User | discord.Member, contest: Conte
     
     # For FINAL, check previous semis votes
     elif current_period == ContestPeriod.FINAL and prev_comp:
-        # Check if user had a jury vote in semis
-        if user.id in prev_comp.votes_jury:
-            jury_vote = prev_comp.votes_jury[user.id]
+        # Check if voter had a jury vote in semis
+        vid = voter_id if voter_id is not None else user.id
+        if vid in prev_comp.votes_jury:
+            jury_vote = prev_comp.votes_jury[vid]
             recap = []
             
             # Find which submissions from the current final were in their semis ranking
@@ -995,7 +1007,7 @@ async def send_vote_reminder(user: discord.User | discord.Member, contest: Conte
             await user.send("\n".join(reminder_lines))
 
 
-async def handle_jury_vote_request(contest: Contest, message: discord.Message, user: discord.Member | discord.User, bot: discord.Client, current_period: ContestPeriod):
+async def handle_jury_vote_request(contest: Contest, message: discord.Message, user: discord.Member | discord.User, bot: discord.Client, current_period: ContestPeriod, as_voter_id: Optional[int] = None):
     """Handle a jury vote request (🗳️ reaction) by sending voting UI in DM.
     
     Args:
@@ -1021,8 +1033,9 @@ async def handle_jury_vote_request(contest: Contest, message: discord.Message, u
     channel_id, thread_id = get_channel_and_thread(message)
     
     # Find the competition and get votable submissions
+    voter_id_for_lookup = as_voter_id if as_voter_id is not None else user.id
     votable_submissions, submission_numbers = contest.get_votable_submissions(
-        channel_id, thread_id, user.id
+        channel_id, thread_id, voter_id_for_lookup
     )
     
     # Determine ranking length based on period and number of votable submissions
@@ -1064,7 +1077,20 @@ async def handle_jury_vote_request(contest: Contest, message: discord.Message, u
             return
     
     try:
-        # Send jury oath
+        # Send all submission images in DM
+        await user.send("📸 **Here are all the submissions for your review:**")
+
+        for submission in votable_submissions:
+            await user.send(
+                content=f"Submission #{submission_numbers[submission]}",
+                embed=discord.Embed().set_image(url=submission.discord_save_path)
+            )
+
+        # If voting in SEMIS or FINAL period, remind user of their previous votes
+        if current_period in (ContestPeriod.SEMIS, ContestPeriod.FINAL):
+            await send_vote_reminder(user, contest, channel_id, votable_submissions, submission_numbers, voter_id_for_lookup)
+
+        # Send jury oath AFTER the submissions and reminders, before the voting interface
         await user.send(
             "⚖️ **Jury Oath**\n\n"
             "As a jury member, I pledge to:\n"
@@ -1074,22 +1100,10 @@ async def handle_jury_vote_request(contest: Contest, message: discord.Message, u
             "• Set aside personal biases and vote with integrity\n\n"
             "Thank you for your commitment to maintaining the quality of this contest. 🎖️"
         )
-        
-        # Send all submission images in DM
-        await user.send("📸 **Here are all the submissions for your review:**")
-        
-        for submission in votable_submissions:
-            await user.send(
-                content=f"Submission #{submission_numbers[submission]}",
-                embed=discord.Embed().set_image(url=submission.discord_save_path)
-            )
-        
-        # If voting in SEMIS or FINAL period, remind user of their previous votes
-        if current_period in (ContestPeriod.SEMIS, ContestPeriod.FINAL):
-            await send_vote_reminder(user, contest, channel_id, votable_submissions, submission_numbers)
-        
+
         # Send the voting interface
-        view = JuryVotingView(votable_submissions, user.id, channel_id, thread_id, contest, ranking_length)
+        # DM recipient is `user`; use `voter_id_for_lookup` for saving when voting-as
+        view = JuryVotingView(votable_submissions, user.id, channel_id, thread_id, contest, ranking_length, submission_numbers, voter_id_for_save=voter_id_for_lookup)
         await user.send(
             content=f"**Click the buttons below to build your top {ranking_length} ranking.**\nSelect submissions in order from your most preferred to your {ranking_length}th preferred.",
             view=view
@@ -1227,19 +1241,34 @@ async def handle_commentary_request(contest: Contest, message: discord.Message, 
     # Get channel and thread
     channel_id, thread_id = get_channel_and_thread(message)
     
-    # Find the competition (ignore_time=True to work during manual testing)
-    res = contest.competition_from_channel_thread(channel_id, thread_id, ignore_time=TEST_MODE)
+    # Find the competition. Prefer the semis competition when available
+    # to avoid matching the original submission competition (which can
+    # share the same channel/thread) unless we're in TEST_MODE.
+    # Prefer a semis competition match regardless of TEST_MODE so that
+    # reactions in a semis channel match the semis competition rather than
+    # accidentally matching an earlier submission competition.
+    res = None
+    for i, c in enumerate(contest.competitions):
+        if c.type == "semis" and (c.channel_id, c.thread_id) == (channel_id, thread_id):
+            res = (i, c)
+            break
+
+    if res is None:
+        res = contest.competition_from_channel_thread(channel_id, thread_id, ignore_time=TEST_MODE)
     if not res:
         return
-    
+
     _, competition = res
     
     # Check if this message is a photo submission
     if message.id not in competition.msg_to_sub:
         return
     
+    # Derive submission using the competition helper to avoid index mismatches
+    submission = competition.get_submission_from_message(message.id)
+    if submission is None:
+        return
     submission_index = competition.msg_to_sub[message.id]
-    submission = competition.competing_entries[submission_index]
     
     # Check if user is trying to comment on their own photo
     if user.id == submission.author_id:
@@ -1294,7 +1323,7 @@ async def handle_commentary_request(contest: Contest, message: discord.Message, 
                 
                 # Update the summary for this specific submission
                 assert message.guild is not None, "Message guild is None"
-                await update_commentary_summary(contest, channel_id, thread_id, submission, message.guild)
+                await update_commentary_summary(contest, submission, message.guild)
                 
                 await interaction.response.send_message(
                     "✅ Your commentary has been recorded! Thank you for your feedback.",
@@ -1320,18 +1349,31 @@ async def handle_commentary_request(contest: Contest, message: discord.Message, 
     
     # Send an ephemeral message with the button to open the modal
     view = CommentaryButton()
+    embed = discord.Embed(
+        title=f"Add Commentary for Photo #{submission_index + 1}",
+        description="Click the button below to open the commentary form.",
+        color=0x7289DA
+    )
+    embed.set_image(url=submission.discord_save_path)
     dm_sent = await send_dm_safe(
         user,
-        f"💬 **Add a commentary for Photo #{submission_index + 1}**\n"
-        f"Click the button below to open the commentary form.",
+        content="",
+        embed=embed,
         view=view
     )
     
     if not dm_sent:
         # User has DMs disabled, try to send in channel
         try:
+            fallback_embed = discord.Embed(
+                title=f"Add Commentary for Photo #{submission_index + 1}",
+                description=f"{user.mention}, click the button below to add your commentary:",
+                color=0x7289DA
+            )
+            fallback_embed.set_image(url=submission.discord_save_path)
             await message.channel.send(
-                f"{user.mention}, click the button below to add your commentary:",
+                content="",
+                embed=fallback_embed,
                 view=view,
                 delete_after=60
             )
@@ -1339,52 +1381,49 @@ async def handle_commentary_request(contest: Contest, message: discord.Message, 
             pass
 
 
-async def update_commentary_summary(contest: Contest, channel_id: int, thread_id: Optional[int], submission: Submission, guild: discord.Guild):
-    """Update the commentary summary message for a specific submission.
+async def update_commentary_summary(contest: Contest, submission: Submission, guild: discord.Guild):
+    """Update the commentary summary messages for a specific submission.
     
     Args:
         contest: The contest object
-        channel_id: The channel ID
-        thread_id: The thread ID (None for main channels)
         submission: The submission whose summary to update
         guild: The Discord guild
     """
-    # Get the commentary summaries
-    summaries = contest.get_competition_commentaries_summaries(channel_id, thread_id)
-    summaries_dict = {sub: summary for sub, summary in summaries}
-    summary_text = summaries_dict.get(submission, "")
+    # Get the commentary summary
+    summary_text = contest.get_commentary_summary(submission.discord_save_path) or ""
     
-    # Get the channel
-    channel = guild.get_channel(channel_id)
-    if not channel or not isinstance(channel, discord.TextChannel):
-        return
+    # Get all posts for this submission
+    posts = contest.get_submission_posts(submission.discord_save_path)
     
-    # Get the summary message ID for this submission
-    submission_to_summary = contest.get_submission_to_summary_msg(channel_id, thread_id)
-    summary_msg_id = submission_to_summary.get(submission)
-    if summary_msg_id is None:
-        return
-    
-    # Update the summary message
-    try:
-        summary_msg = await channel.fetch_message(summary_msg_id)
+    for message_id, channel_id, thread_id, is_summary in posts:
+        if not is_summary:
+            continue
         
-        if summary_text:
-            content = (
-                f"📝 **Commentary Summary**\n"
-                f"{summary_text}\n\n"
-                f"💬 React above to add your commentary"
-            )
-        else:
-            content = (
-                f"📝 **Commentary Summary**\n"
-                f"_No commentaries yet_\n\n"
-                f"💬 React above to add your commentary"
-            )
+        # Get the channel
+        channel = guild.get_channel(channel_id)
+        if not channel or not isinstance(channel, discord.TextChannel):
+            continue
         
-        await summary_msg.edit(content=content)
-    except (discord.NotFound, discord.Forbidden):
-        pass
+        # Update the summary message
+        try:
+            summary_msg = await channel.fetch_message(message_id)
+            
+            if summary_text:
+                content = (
+                    f"📝 **Commentary Summary**\n"
+                    f"{summary_text}\n\n"
+                    f"💬 React above to add your commentary"
+                )
+            else:
+                content = (
+                    f"📝 **Commentary Summary**\n"
+                    f"_No commentaries yet_\n\n"
+                    f"💬 React above to add your commentary"
+                )
+            
+            await summary_msg.edit(content=content)
+        except (discord.NotFound, discord.Forbidden):
+            pass
 
 
 async def announce_stage_results(bot: discord.Client, contest: Contest, competition_type: Literal["semis", "final"], stage_name: str, next_stage_name: str):
@@ -1613,16 +1652,45 @@ async def notify_period_start(bot: discord.Client, period: ContestPeriod):
             f"Deadline: <t:{int(contest.schedule.submission_period.end)}:F>"
         )
     elif period == ContestPeriod.QUALIF:
-        # Get all contestants to ping
-        contestant_mentions = " ".join(f"<@{user_id}>" for user_id in contest.contestants)
-        
-        await announcement_channel.send(
-            "🗳️ **QUALIFICATION VOTING HAS BEGUN!** 🗳️\n\n"
-            "Check the qualification threads and vote for your favorites!\n"
-            f"Deadline: <t:{int(contest.schedule.qualif_period.end)}:F>\n\n"
-            f"📢 **Note:** Only contestants can vote in the qualification phase.\n"
-            f"{contestant_mentions}"
-        )
+        # If qualification threads were created, announce inside each thread and ping that thread's contestants
+        if contest.qualif_competitions:
+            for comp in contest.qualif_competitions:
+                if not comp.thread_id:
+                    continue
+                try:
+                    thread = await bot.fetch_channel(comp.thread_id)
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                    continue
+
+                # Build a mention list from authors who have entries in this competition
+                author_ids = {sub.author_id for sub in comp.competing_entries if sub.author_id}
+                if not author_ids:
+                    mentions = ""
+                else:
+                    mentions = " ".join(f"<@{uid}>" for uid in sorted(author_ids))
+
+                try:
+                    assert isinstance(thread, discord.Thread), "Thread ID does not correspond to a thread channel"
+                    await thread.send(
+                        "🗳️ **QUALIFICATION VOTING HAS BEGUN!** 🗳️\n\n"
+                        "Vote for your favorite photos in this thread to help them advance to the Semi-Finals!\n"
+                        f"Deadline: <t:{int(contest.schedule.qualif_period.end)}:F>\n\n"
+                        f"📢 **Note:** Only contestants can vote in the qualification phase.\n"
+                        f"{mentions}"
+                    )
+                except (discord.Forbidden, discord.HTTPException):
+                    # ignore send failures per-thread
+                    pass
+        else:
+            # Fallback to the announcement channel if no qualif threads exist yet
+            contestant_mentions = " ".join(f"<@{user_id}>" for user_id in contest.contestants)
+            await announcement_channel.send(
+                "🗳️ **QUALIFICATION VOTING HAS BEGUN!** 🗳️\n\n"
+                "Check the qualification threads and vote for your favorites!\n"
+                f"Deadline: <t:{int(contest.schedule.qualif_period.end)}:F>\n\n"
+                f"📢 **Note:** Only contestants can vote in the qualification phase.\n"
+                f"{contestant_mentions}"
+            )
     elif period == ContestPeriod.SEMIS:
         await announcement_channel.send(
             "🌟 **SEMI-FINALS HAVE BEGUN!** 🌟\n\n"
@@ -2018,6 +2086,49 @@ async def setup_qualif_period(bot: discord.Client):
     
     contest = contest.make_qualifs(all_thread_ids)
     contest.save("photo_contest/contest2026.yaml")
+    # For categories that have qualification threads, remove the original
+    # reposts in the main category channel to avoid duplicate posts.
+    for comp in contest.qualif_competitions:
+        if not comp.thread_id:
+            continue
+        for submission in comp.competing_entries:
+            key = submission.discord_save_path
+            posts = contest.get_submission_posts(key)
+            # posts: list of tuples (message_id, channel_id, thread_id, is_summary)
+            new_posts_dicts = []
+            removed = False
+            for (msg_id, ch_id, th_id, is_summary) in posts:
+                if ch_id == comp.channel_id and th_id is None and not is_summary:
+                    # Delete the original message in the category channel
+                    try:
+                        channel_obj = bot.get_channel(ch_id) or await bot.fetch_channel(ch_id)
+                        if channel_obj:
+                            try:
+                                assert isinstance(channel_obj, discord.TextChannel), "Channel ID does not correspond to a text channel"
+                                msg_obj = await channel_obj.fetch_message(msg_id)
+                                await msg_obj.delete()
+                            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                                pass
+                    except Exception:
+                        pass
+                    removed = True
+                    # omit this post from the new posts list
+                else:
+                    new_posts_dicts.append({
+                        "message_id": msg_id,
+                        "channel_id": ch_id,
+                        "thread_id": th_id,
+                        "is_summary": is_summary,
+                    })
+
+            if removed:
+                # Update contest.submission_posts immutably
+                copy_contest = deepcopy(contest)
+                if new_posts_dicts:
+                    copy_contest.submission_posts[key] = new_posts_dicts
+                else:
+                    copy_contest.submission_posts.pop(key, None)
+                contest = copy_contest
     
     # Post submissions in their respective threads with voting reactions
     for comp in contest.qualif_competitions:
@@ -2042,6 +2153,15 @@ async def setup_qualif_period(bot: discord.Client):
             
             # Update the contest with the message_id mapping
             contest = contest.set_message_id(comp.channel_id, comp.thread_id, i, msg.id)
+            
+            # Track the submission post
+            contest = contest.add_submission_post(
+                submission.discord_save_path,
+                msg.id,
+                comp.channel_id,
+                comp.thread_id,
+                is_summary=False
+            )
         
         # Send voting instruction message
         vote_msg = await thread.send(
@@ -2050,7 +2170,7 @@ async def setup_qualif_period(bot: discord.Client):
             "**Public Voting:**\n"
             "React with 0️⃣, 1️⃣, 2️⃣, or 3️⃣ on any photo to give it 0-3 points.\n"
             "You can vote on as many photos as you wish! Your reactions will be automatically removed to keep votes secret.\n\n"
-            "Note: The top 4 jury picks and top 1 public pick will advance to the semi-finals."
+            "Note: The top 4 of the jury and the top 1 of public among the remaining submissions will advance to the semi-finals."
         )
         await vote_msg.add_reaction("🗳️")
     
@@ -2148,8 +2268,23 @@ async def setup_semis_period(bot: discord.Client):
             # Update the contest with the message_id mapping
             contest = contest.set_message_id(comp.channel_id, comp.thread_id, i, msg.id)
             
-            # Update the contest with the summary message ID
-            contest = contest.set_summary_message_id(comp.channel_id, comp.thread_id, submission, summary_msg.id)
+            # Track the submission post
+            contest = contest.add_submission_post(
+                submission.discord_save_path,
+                msg.id,
+                comp.channel_id,
+                None,
+                is_summary=False
+            )
+            
+            # Track the summary post
+            contest = contest.add_submission_post(
+                submission.discord_save_path,
+                summary_msg.id,
+                comp.channel_id,
+                None,
+                is_summary=True
+            )
         
         # Send voting instruction message
         vote_msg = await channel.send(
@@ -2160,7 +2295,7 @@ async def setup_semis_period(bot: discord.Client):
             "You can vote on multiple photos! Your reactions will be automatically removed to keep votes secret.\n\n"
             "**Commentary:**\n"
             "React with 💬 on any photo to add your commentary about composition, lighting, and artistic merit.\n\n"
-            "Note: The top 3 jury picks and top 2 public picks will advance to the Grand Final."
+            "Note: The top 3 of the jury and top 2 of the public among the remaining submissions will advance to the Grand Final."
         )
         await vote_msg.add_reaction("🗳️")
     
@@ -2219,6 +2354,15 @@ async def setup_final_period(bot):
         
         # Update the contest with the message_id mapping
         contest = contest.set_message_id(final_channel_id, None, i, msg.id)
+        
+        # Track the submission post
+        contest = contest.add_submission_post(
+            submission.discord_save_path,
+            msg.id,
+            final_channel_id,
+            None,
+            is_summary=False
+        )
     
     # Send voting instruction message
     vote_msg = await final_channel.send(
@@ -2363,12 +2507,12 @@ def main():
             elif payload.emoji.name == "💬" and current_period == ContestPeriod.SEMIS:
                 await handle_commentary_request(contest, message, user, current_period)
             else:
-                # Emoji not recognized for this period
+                pass  # Emoji not recognized for this period
         
         elif current_period == ContestPeriod.FINAL:
             # Handle jury vote requests (top 5 ranking)
-            if payload.emoji.name == "🗳️":
-                await handle_jury_vote_request(contest, message, user, bot, current_period)
+                if payload.emoji.name == "🗳️":
+                    await handle_jury_vote_request(contest, message, user, bot, current_period)
 
     @bot.event
     async def on_message_delete(message: discord.Message):
@@ -2654,9 +2798,10 @@ def main():
             return
         
         await ctx.send(f"✅ Triggering jury vote for {user.mention}. Check your DMs!", delete_after=5)
-        
-        # Trigger the jury vote handler with the mentioned user
-        await handle_jury_vote_request(contest, voting_message, user, bot, current_period)
+
+        # Trigger the jury vote handler: send the DM to the command caller
+        # but perform the vote using the mentioned user's voter id.
+        await handle_jury_vote_request(contest, voting_message, ctx.author, bot, current_period, as_voter_id=user.id)
     
     @bot.command(name="public_vote_as")
     async def command_public_vote_as(ctx: commands.Context, user: discord.Member, submission_number: int, points: int):
@@ -2688,8 +2833,8 @@ def main():
         # Get the channel and thread
         channel_id, thread_id = get_channel_and_thread(ctx.message)
         
-        # Find the competition
-        res = contest.competition_from_channel_thread(channel_id, thread_id)
+        # Find the competition (allow ignoring time checks in TEST_MODE)
+        res = contest.competition_from_channel_thread(channel_id, thread_id, ignore_time=TEST_MODE)
         if not res:
             await ctx.send("❌ No active competition found in this channel/thread.", delete_after=5)
             return
