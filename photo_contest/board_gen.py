@@ -1,5 +1,6 @@
 from math import ceil
 from random import shuffle
+import re
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from PIL import Image, ImageDraw, ImageFont
@@ -7,6 +8,23 @@ from PIL import Image, ImageDraw, ImageFont
 from photo_contest.photo_contest_data import CompetitionInfo, Contest, Submission, POINTS_SETS
 
 BG_COLOR = "#502379"
+
+
+def strip_emoji(text: str) -> str:
+    """Remove emoji characters from text for compatibility with image generation."""
+    if not text:
+        return text
+    emoji_pattern = re.compile(
+        "["
+        "\U0001F600-\U0001F64F"  # emoticons
+        "\U0001F300-\U0001F5FF"  # symbols & pictographs
+        "\U0001F680-\U0001F6FF"  # transport & map symbols
+        "\U0001F1E0-\U0001F1FF"  # flags
+        "\U00002702-\U000027B0"  # dingbats
+        "\U000024C2-\U0001F251"  # enclosed characters
+        "]+", flags=re.UNICODE
+    )
+    return emoji_pattern.sub(r'', text)
 
 fnt_light = ImageFont.truetype("resource/Ubuntu-Light.ttf", 15)
 fnt_italic = ImageFont.truetype("resource/Ubuntu-LightItalic.ttf", 15)
@@ -119,8 +137,8 @@ def gen_competition_board(
     d = ImageDraw.Draw(img)
 
     # Title
-    title = f"Qualification in {channel_name}" + (
-        "#" + thread_name if thread_name else ""
+    title = f"Qualification in {strip_emoji(channel_name)}" + (
+        "#" + strip_emoji(thread_name) if thread_name else ""
     )
     d.text(
         (425, 20),
@@ -166,7 +184,7 @@ def gen_competition_board(
         
         # Photo number and author
         photo_num = i + 1
-        author_name = id2name.get(submission.author_id, f"User {submission.author_id}")
+        author_name = strip_emoji(id2name.get(submission.author_id, f"User {submission.author_id}"))
         
         # Determine if this submission qualifies
         qualifies = submission in qualifiers
@@ -380,7 +398,7 @@ def gen_final_results_board(
         position = i + 1
         # Photo number based on original order in competing_entries
         photo_num = submission_to_photo_num[submission]
-        author_name = id2name.get(submission.author_id, f"User {submission.author_id}")
+        author_name = strip_emoji(id2name.get(submission.author_id, f"User {submission.author_id}"))
         
         # Top 3 get special treatment
         is_top3 = position <= 3
@@ -460,7 +478,7 @@ def gen_semifinals_boards(
 
     for i, semifinal in enumerate(semifinal_competitions):
         # Get the channel name for this specific semifinal
-        channel_name = channel_names.get(semifinal.channel_id, f"Category {i+1}")
+        channel_name = strip_emoji(channel_names.get(semifinal.channel_id, f"Category {i+1}"))
         
         # Count votes
         jury_votes = semifinal.count_votes_jury()
@@ -522,7 +540,7 @@ def gen_semifinals_boards(
             y_pos = start_y + row * spacing
             
             photo_num = j + 1
-            author_name = id2name.get(submission.author_id, f"User {submission.author_id}")
+            author_name = strip_emoji(id2name.get(submission.author_id, f"User {submission.author_id}"))
             
             # Qualification status
             jury_points = jury_votes.get(submission, 0)
@@ -597,8 +615,8 @@ def gen_photo_vote_details(
         photo_num = competition.competing_entries.index(submission) + 1
 
     # Title
-    title = f"Photo #{photo_num} in {channel_name}" + (
-        "#" + thread_name if thread_name else ""
+    title = f"Photo #{photo_num} in {strip_emoji(channel_name)}" + (
+        "#" + strip_emoji(thread_name) if thread_name else ""
     )
     d.text(
         (375, 20),
@@ -609,7 +627,7 @@ def gen_photo_vote_details(
     )
     d.text(
         (375, 50),
-        f"submitted by {id2name.get(submission.author_id, f'User {submission.author_id}')}",
+        f"submitted by {strip_emoji(id2name.get(submission.author_id, f'User {submission.author_id}'))}",
         anchor="mt",
         font=fnt_italic,
         fill="white",
@@ -628,7 +646,7 @@ def gen_photo_vote_details(
     # Get jury vote breakdown from the competition data
     jury_votes_by_id = competition.get_jury_votes_per_juror(submission)
     jury_points_per_juror: Dict[str, int] = {
-        id2name.get(voter_id, f"User {voter_id}"): points
+        strip_emoji(id2name.get(voter_id, f"User {voter_id}")): points
         for voter_id, points in jury_votes_by_id.items()
     }
     total_jury_points = sum(jury_points_per_juror.values())
@@ -786,7 +804,7 @@ def gen_photo_vote_details(
     # Get public vote breakdown from the competition data
     public_votes_by_id = competition.get_public_votes_per_voter(submission)
     public_points_per_voter: Dict[str, int] = {
-        id2name.get(voter_id, f"User {voter_id}"): points
+        strip_emoji(id2name.get(voter_id, f"User {voter_id}")): points
         for voter_id, points in public_votes_by_id.items()
     }
     total_public_points = sum(public_points_per_voter.values())
@@ -965,14 +983,25 @@ def gen_live_final_reveal(
         
         return img, d
     
-    def draw_scores(d: Any, new_voter_points: Optional[Dict[Submission, int]] = None):
-        """Draw current scores and optionally highlight new points."""
+    def draw_scores(d: Any, new_voter_points: Optional[Dict[Submission, int]] = None, voter_top_points: Optional[Tuple[int, int]] = None):
+        """Draw current scores and optionally highlight new points.
+        
+        Args:
+            new_voter_points: Points from the latest voter to highlight
+            voter_top_points: Tuple of (top_point, second_point) from voter's ranking for font highlighting
+        """
         # Sort by score (highest first), then by submission time (earliest first as tiebreaker)
         ranked_entries = sorted(
             entries,
             key=lambda x: (running_totals[x], -x.submission_time),
             reverse=True
         )
+        
+        # Determine the top point values to use for highlighting
+        if voter_top_points:
+            top_p1, top_p2 = voter_top_points
+        else:
+            top_p1, top_p2 = points[0], points[1]  # Fallback to competition-based points
         
         for i, sub in enumerate(ranked_entries):
             photo_num = sub_to_num[sub]
@@ -994,7 +1023,7 @@ def gen_live_final_reveal(
             # Show new points if provided
             if new_voter_points and sub in new_voter_points and new_voter_points[sub] > 0:
                 nbP = new_voter_points[sub]
-                font_choice = fnt_bold if nbP == points[0] else (fnt_bold_small if nbP == points[1] else fnt_regular)
+                font_choice = fnt_bold if nbP == top_p1 else (fnt_bold_small if nbP == top_p2 else fnt_regular)
                 d.text((x_title + 250, y), str(nbP), anchor="lm", font=font_choice, fill="white")
     
     # Generate save path
@@ -1015,17 +1044,23 @@ def gen_live_final_reveal(
     
     # Reveal each voter's contribution
     for voter_id, jury_vote in jury_votes_list:
-        # Calculate points from this voter
-        voter_points: Dict[Submission, int] = {}
-        for sub, nbP in zip(jury_vote.ranking, points):
-            voter_points[sub] = nbP
+        # Calculate points from this voter using the same logic as count_votes_jury()
+        # This uses the ranking length from each vote, not the number of entries
+        voter_points: Dict[Submission, int] = jury_vote.points_to_submissions()
+        
+        # Get the voter's top point values for font highlighting
+        sorted_points = sorted(voter_points.values(), reverse=True) if voter_points else [0, 0]
+        voter_top_points = (sorted_points[0], sorted_points[1] if len(sorted_points) > 1 else 0)
+        
+        # Add to running totals
+        for sub, nbP in voter_points.items():
             running_totals[sub] += nbP
         
         # Generate board
         img, d = draw_base()
-        voter_name = id2name.get(voter_id, f"Juror {voter_id}")
+        voter_name = strip_emoji(id2name.get(voter_id, f"Juror {voter_id}"))
         d.text((375, 60), f"Votes by {voter_name}", anchor="mt", font=fnt_bold_small, fill="white")
-        draw_scores(d, voter_points)
+        draw_scores(d, voter_points, voter_top_points)
         
         img.save(save_file)
         yield save_file, voter_id, False, False

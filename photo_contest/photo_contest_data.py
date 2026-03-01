@@ -487,25 +487,33 @@ class Contest:
         return contest
 
     def competition_from_channel_thread(
-        self, channel_id: int, thread_id: Optional[int] = None, ignore_time: bool = False
+        self, channel_id: int, thread_id: Optional[int] = None, prefer_type: Optional[str] = None
     ) -> Optional[tuple[int, CompetitionInfo]]:
         """Find a competition by channel_id and thread_id.
         
         Args:
             channel_id: The channel ID to search for
             thread_id: The thread ID to search for (None for main channels)
-            ignore_time: If True, search all competitions regardless of current time.
-                        If False, only search competitions active at current time.
+            prefer_type: If provided, prefer competitions of this type (e.g., "semis", "final").
+                        Searches for preferred type first, then falls back to any matching competition.
         
         Returns:
             Tuple of (index, competition) if found, None otherwise
         """
-        competitions = self.competitions if ignore_time else self.current_competitions
-        for i, competition in enumerate(competitions):
-            if (competition.channel_id, competition.thread_id) == (
-                channel_id,
-                thread_id,
-            ):
+        # Always search all competitions (not just current_competitions)
+        # The prefer_type parameter determines which competition to prefer
+        
+        # First, try to find a competition of the preferred type
+        if prefer_type:
+            for i, competition in enumerate(self.competitions):
+                if competition.type == prefer_type and (competition.channel_id, competition.thread_id) == (channel_id, thread_id):
+                    return i, competition
+        
+        # Fall back to any matching competition - search in REVERSE order
+        # to return the most recent competition (e.g., semis instead of submission)
+        for i in range(len(self.competitions) - 1, -1, -1):
+            competition = self.competitions[i]
+            if (competition.channel_id, competition.thread_id) == (channel_id, thread_id):
                 return i, competition
         return None
 
@@ -549,7 +557,7 @@ class Contest:
             return True
     
     def is_submission_message(
-        self, channel_id: int, thread_id: Optional[int], message_id: int
+        self, channel_id: int, thread_id: Optional[int], message_id: int, prefer_type: Optional[str] = None
     ) -> bool:
         """Check if a message_id corresponds to a submission.
         
@@ -557,26 +565,12 @@ class Contest:
             channel_id: The channel ID
             thread_id: The thread ID (None for main channels)
             message_id: The Discord message ID to check
+            prefer_type: If provided, prefer competitions of this type.
         
         Returns:
             True if the message is a submission, False otherwise
         """
-        # Prefer semis competitions (search the full `self.competitions` list
-        # so the returned index maps to `self.competitions`). Only fall back to
-        # other lookups in TEST_MODE or when no semis comp matches.
-        res = None
-        # Always prefer semis competitions when possible so that lookups in a
-        # semis channel/thread resolve to the semis competition rather than an
-        # earlier submission competition with the same channel/thread.
-        for i, c in enumerate(self.competitions):
-            if c.type == "semis" and (c.channel_id, c.thread_id) == (channel_id, thread_id):
-                res = (i, c)
-                break
-
-        if res is None:
-            # In TEST_MODE we may need to lookup across all competitions; otherwise
-            # use the normal time-constrained lookup.
-            res = self.competition_from_channel_thread(channel_id, thread_id, ignore_time=bool(globals().get('TEST_MODE', False)))
+        res = self.competition_from_channel_thread(channel_id, thread_id, prefer_type=prefer_type)
 
         if res:
             _, comp = res
@@ -616,8 +610,8 @@ class Contest:
         Returns:
             Updated Contest with the message_id mapping added
         """
-        # Use ignore_time=True to find competitions during setup (before their start time)
-        res = self.competition_from_channel_thread(channel_id, thread_id, ignore_time=True)
+        # Find any competition with this channel_id/thread_id (setup phase should only have one)
+        res = self.competition_from_channel_thread(channel_id, thread_id)
         if res:
             i, competition = res
             competition_new = competition.set_message_id(submission_index, message_id)
@@ -723,7 +717,7 @@ class Contest:
         return copy
 
     def save_jury_vote(
-        self, channel_id: int, thread_id: Optional[int], voter_id: int, ranking: list[Submission]
+        self, channel_id: int, thread_id: Optional[int], voter_id: int, ranking: list[Submission], period: Optional[str] = None
     ) -> "Contest":
         """Save a jury vote for a competition.
         
@@ -732,13 +726,14 @@ class Contest:
             thread_id: The thread ID of the competition (None for main channels)
             voter_id: The ID of the voter
             ranking: The ranked list of submissions
+            period: The current contest period name. If provided, prefers competitions of this type.
             
         Returns:
             Updated Contest with the vote saved
         """
         vote = JuryVote(voter_id=voter_id, ranking=ranking)
         
-        res = self.competition_from_channel_thread(channel_id, thread_id, ignore_time=True)
+        res = self.competition_from_channel_thread(channel_id, thread_id, prefer_type=period)
         if res:
             i, competition = res
             competition_new = competition.add_jury_vote(vote)
@@ -753,7 +748,7 @@ class Contest:
             )
 
     def save_public_vote(
-        self, channel_id: int, thread_id: Optional[int], voter_id: int, nb_points: Union[Literal[0], Literal[1], Literal[2], Literal[3]], submission: Submission
+        self, channel_id: int, thread_id: Optional[int], voter_id: int, nb_points: Union[Literal[0], Literal[1], Literal[2], Literal[3]], submission: Submission, period: Optional[str] = None
     ) -> "Contest":
         """Save a public vote for a competition.
         
@@ -763,13 +758,14 @@ class Contest:
             voter_id: The ID of the voter
             nb_points: Number of points (0-3)
             submission: The submission being voted for
+            period: The current contest period name. If provided, prefers competitions of this type.
             
         Returns:
             Updated Contest with the vote saved
         """
         vote = PublicVote(voter_id=voter_id, nb_points=nb_points, submission=submission)
         
-        res = self.competition_from_channel_thread(channel_id, thread_id, ignore_time=True)
+        res = self.competition_from_channel_thread(channel_id, thread_id, prefer_type=period)
 
         if res:
             i, competition = res
@@ -869,12 +865,12 @@ class Contest:
 
             top_jury = sorted(
                 semi.competing_entries,
-                key=lambda x: (res_jury[x], res_public[x], -x.submission_time),
+                key=lambda x: (res_jury.get(x, 0), res_public.get(x, 0), -x.submission_time),
                 reverse=True,
             )[:3]
             top_public = sorted(
                 [x for x in semi.competing_entries if x not in top_jury],
-                key=lambda x: (res_public[x], res_jury[x], -x.submission_time),
+                key=lambda x: (res_public.get(x, 0), res_jury.get(x, 0), -x.submission_time),
                 reverse=True,
             )[:2]
 
@@ -907,7 +903,7 @@ class Contest:
         return copy
 
     def get_votable_submissions(
-        self, channel_id: int, thread_id: Optional[int], user_id: int
+        self, channel_id: int, thread_id: Optional[int], user_id: int, period: Optional[str] = None
     ) -> tuple[list[Submission], dict[Submission, int]]:
         """Get submissions that a user can vote on (excludes their own submissions).
         
@@ -915,14 +911,17 @@ class Contest:
             channel_id: The channel ID
             thread_id: The thread ID (None for main channels)
             user_id: The user ID
+            period: The current contest period name ("submission", "qualif", "semis", "final").
+                   If provided, will prefer competitions of this type.
             
         Returns:
             Tuple of (votable_submissions, submission_numbers_dict)
         """
-        # Use ignore_time only in TEST_MODE to allow manual testing; otherwise
-        # respect the current active competitions so we don't pick an older
-        # submission competition when semis/qualif competitions exist.
-        res = self.competition_from_channel_thread(channel_id, thread_id, ignore_time=False)
+        # Map period names to competition types
+        prefer_type = period if period else None
+        
+        # Always search all competitions; prefer_type determines which to prefer
+        res = self.competition_from_channel_thread(channel_id, thread_id, prefer_type=prefer_type)
         if res:
             _, comp = res
             votable_submissions = []
@@ -976,10 +975,11 @@ class Contest:
         )
         
         prompt = (
-            f"Summarize the following photo critiques to help judges compare entries. "
-            f"In max 50 words, highlight the photo's strongest qualities, main weaknesses, "
-            f"and standout characteristics (composition, technical execution, artistic merit, emotional impact). "
-            f"Be objective and balanced.\n\n{commentary_texts}"
+            f"You are a photo competition commentator. Summarize the jury critiques for a photo in 2-3 sentences.\n\n"
+            f"Focus on: What's working well (technique, composition, storytelling), what could be improved, "
+            f"and the overall impression. Keep it conversational and helpful, like you'd tell a friend "
+            f"about the photo. Skip generic phrases like 'overall' or 'in conclusion'.\n\n"
+            f"Critiques:\n{commentary_texts}"
         )
         
         summary = _call_mistral_api(prompt, temperature=0.3, max_tokens=100, timeout=15)
@@ -1004,7 +1004,8 @@ class Contest:
         Raises:
             ValueError: If competition not found or commentary validation fails
         """
-        res = self.competition_from_channel_thread(channel_id, thread_id, ignore_time=True)
+        # Use prefer_type="semis" since commentary only happens during semis period
+        res = self.competition_from_channel_thread(channel_id, thread_id, prefer_type="semis")
         if not res:
             raise ValueError(
                 f"Unable to find a valid competition from the (channel_id, thread_id) provided: ({channel_id}, {thread_id})"
