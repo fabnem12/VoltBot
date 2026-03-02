@@ -141,7 +141,7 @@ async def build_id2name_mapping(bot: discord.Client, contest: Contest, include_v
             try:
                 member = await guild.fetch_member(submission.author_id)
                 if member:
-                    id2name[submission.author_id] = member.display_name
+                    id2name[submission.author_id] = member.name
                 else:
                     id2name[submission.author_id] = f"User <@{submission.author_id}>"
             except:
@@ -154,7 +154,7 @@ async def build_id2name_mapping(bot: discord.Client, contest: Contest, include_v
                 if voter_id not in id2name:
                     try:
                         member = await guild.fetch_member(voter_id)
-                        id2name[voter_id] = member.display_name
+                        id2name[voter_id] = member.name
                     except:
                         id2name[voter_id] = f"Juror <@{voter_id}>"
     
