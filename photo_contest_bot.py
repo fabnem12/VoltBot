@@ -1649,7 +1649,7 @@ async def announce_individual_vote_boards(bot: discord.Client):
                     message_id = msg_id
                     break
             
-            if message_id and target_channel:
+            if message_id and target_channel and isinstance(target_channel, (discord.TextChannel, discord.Thread)):
                 try:
                     message = await target_channel.fetch_message(message_id)
                     # Update embed to include individual vote board as thumbnail
@@ -1691,7 +1691,7 @@ async def announce_individual_vote_boards(bot: discord.Client):
                     message_id = msg_id
                     break
             
-            if message_id and category_channel:
+            if message_id and category_channel and isinstance(category_channel, (discord.TextChannel, discord.Thread)):
                 try:
                     message = await category_channel.fetch_message(message_id)
                     # Update embed to include individual vote board as thumbnail
@@ -1766,7 +1766,9 @@ async def announce_final_boards(bot: discord.Client):
                 file=discord.File(f, filename=os.path.basename(board_path))
             )
     
-    await announcement_channel.send("\n✨ **Contest complete! See you next year!** ✨")
+    announcement_channel = bot.get_channel(announcement_channel_id)
+    if announcement_channel and isinstance(announcement_channel, (discord.TextChannel, discord.Thread)):
+        await announcement_channel.send("\n✨ **Contest complete! See you next year!** ✨")
 
 
 async def notify_period_start(bot: discord.Client, period: ContestPeriod):
