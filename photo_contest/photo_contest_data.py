@@ -802,12 +802,12 @@ class Contest:
                 qualif.competing_entries,
                 key=lambda x: (res_jury.get(x, 0), res_public.get(x, 0), -x.submission_time),
                 reverse=True,
-            )[:4]
+            )[:6]
             top_public = sorted(
                 [x for x in qualif.competing_entries if x not in top_jury],
                 key=lambda x: (res_public.get(x, 0), res_jury.get(x, 0), -x.submission_time),
                 reverse=True,
-            )[:1]
+            )[:2]
 
             top = top_jury + top_public
             shuffle(top)

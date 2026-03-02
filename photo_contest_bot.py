@@ -2353,7 +2353,7 @@ async def setup_qualif_period(bot: discord.Client):
             "**Public Voting:**\n"
             "React with 0️⃣, 1️⃣, 2️⃣, or 3️⃣ on any photo to give it 0-3 points.\n"
             "You can vote on as many photos as you wish! Your reactions will be automatically removed to keep votes secret.\n\n"
-            "Note: The top 4 of the jury and the top 1 of public among the remaining submissions will advance to the semi-finals."
+            "Note: The top 6 of the jury and the top 2 of public among the remaining submissions will advance to the semi-finals."
         )
         await vote_msg.add_reaction("🗳️")
     

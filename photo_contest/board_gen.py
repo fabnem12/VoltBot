@@ -156,17 +156,17 @@ def gen_competition_board(
     # Add column headers for Jury and Public points
     draw_column_headers(d, 70)
 
-    # Determine qualifiers: top 4 by jury, top 1 by public (from remaining)
+    # Determine qualifiers: top 6 by jury, top 2 by public (from remaining)
     top_jury = sorted(
         competition.competing_entries,
         key=lambda x: (jury_votes.get(x, 0), public_votes.get(x, 0), -x.submission_time),
         reverse=True,
-    )[:4]
+    )[:6]
     top_public = sorted(
         [x for x in competition.competing_entries if x not in top_jury],
         key=lambda x: (public_votes.get(x, 0), jury_votes.get(x, 0), -x.submission_time),
         reverse=True,
-    )[:1]
+    )[:2]
     qualifiers = set(top_jury + top_public)
     
     # Display in 2 columns (top-to-bottom, left-to-right)
@@ -513,12 +513,12 @@ def gen_semifinals_boards(
         # Add column headers for Jury and Public points
         draw_column_headers(d, 80, "semis")
         
-        # Determine qualifiers: top 4 by jury, top 2 by public (from remaining)
+        # Determine qualifiers: top 6 by jury, top 2 by public (from remaining)
         top_jury = sorted(
             semifinal.competing_entries,
             key=lambda x: (jury_votes.get(x, 0), public_votes.get(x, 0), -x.submission_time),
             reverse=True,
-        )[:4]
+        )[:6]
         top_public = sorted(
             [x for x in semifinal.competing_entries if x not in top_jury],
             key=lambda x: (public_votes.get(x, 0), jury_votes.get(x, 0), -x.submission_time),
