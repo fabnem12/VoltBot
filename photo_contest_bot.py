@@ -662,14 +662,15 @@ async def submit(message: discord.Message, bot: discord.Client) -> Contest:
     return contest
 
 
-async def _perform_withdrawal(contest: Contest, message: discord.Message, channel_id: int, thread_id: Optional[int]) -> Contest:
+async def _perform_withdrawal(contest: Contest, message: Optional[discord.Message], channel_id: int, thread_id: Optional[int], bot: Optional[discord.Client] = None) -> Contest:
     """Core withdrawal logic - withdraws submission, renumbers messages, and saves contest.
     
     Args:
         contest: The contest object
-        message: The Discord message of the submission
+        message: The Discord message of the submission (can be None if message already deleted)
         channel_id: The channel ID
         thread_id: The thread ID (None for main channels)
+        bot: The discord bot client (required if message is None)
     
     Returns:
         Updated contest object
@@ -679,10 +680,25 @@ async def _perform_withdrawal(contest: Contest, message: discord.Message, channe
     if not res:
         return contest
     _, competition = res
-    submission_index = competition.msg_to_sub[message.id]
+    
+    # Find the message_id to withdraw
+    if message is not None:
+        message_id = message.id
+    else:
+        # Find the message_id from the competition that was at this position
+        # We need to find which submission was at the current index before withdrawal
+        message_id = None
+        for msg_id, idx in competition.msg_to_sub.items():
+            if idx == 0:  # Get the first submission to determine which one to withdraw
+                message_id = msg_id
+                break
+        if message_id is None:
+            return contest
+    
+    submission_index = competition.msg_to_sub[message_id]
     
     # Withdraw the submission
-    contest = contest.withdraw_submission(channel_id, message.id, thread_id)
+    contest = contest.withdraw_submission(channel_id, message_id, thread_id)
     
     # Update the message numbers for all subsequent submissions
     # Get the updated competition
@@ -690,18 +706,31 @@ async def _perform_withdrawal(contest: Contest, message: discord.Message, channe
     if res:
         _, updated_competition = res
         
-        # For each submission with a higher index, update their message
-        for msg_id, idx in updated_competition.msg_to_sub.items():
-            if idx >= submission_index:  # All submissions that were after the withdrawn one
-                try:
-                    msg = await message.channel.fetch_message(msg_id)
-                    await msg.edit(content=f"Submission #{idx + 1}")
-                except discord.NotFound:
-                    # Message was deleted, skip
-                    pass
-                except discord.Forbidden:
-                    # No permission to edit, skip
-                    pass
+        # Get the channel for editing messages
+        channel = None
+        if message is not None:
+            channel = message.channel
+        elif bot is not None:
+            # Need to fetch the channel from the guild
+            for guild in bot.guilds:
+                channel = guild.get_channel(channel_id)
+                if channel:
+                    break
+        
+        if channel:
+            # For each submission with a higher index, update their message
+            for msg_id, idx in updated_competition.msg_to_sub.items():
+                if idx >= submission_index:  # All submissions that were after the withdrawn one
+                    try:
+                        assert isinstance(channel, (discord.TextChannel, discord.Thread)), "Channel is not a TextChannel or Thread"
+                        msg = await channel.fetch_message(msg_id)
+                        await msg.edit(content=f"Submission #{idx + 1}")
+                    except discord.NotFound:
+                        # Message was deleted, skip
+                        pass
+                    except discord.Forbidden:
+                        # No permission to edit, skip
+                        pass
     
     # Save the updated contest
     contest.save("photo_contest/contest2026.yaml")
@@ -2694,8 +2723,12 @@ def main():
                     await handle_jury_vote_request(contest, message, user, bot, current_period)
 
     @bot.event
-    async def on_message_delete(message: discord.Message):
-        """Handle message deletions - withdraw submission if a submission message is deleted."""
+    async def on_raw_message_delete(payload: discord.RawMessageDeleteEvent):
+        """Handle message deletions - withdraw submission if a submission message is deleted.
+        
+        Interprets deletion as moderator withdrawal (same as ❌ reaction from discord_team_role).
+        Only works during submission period.
+        """
         global contest
         
         # Only process during submission period
@@ -2703,22 +2736,37 @@ def main():
             return
         
         # Ignore DMs
-        if not message.guild:
+        if not payload.guild_id:
             return
         
-        # Check the channel and thread
-        channel_id, thread_id = get_channel_and_thread(message)
+        # Get the guild
+        guild = bot.get_guild(payload.guild_id)
+        if not guild:
+            return
+        
+        # Get the channel to determine if it's a thread
+        channel = guild.get_channel(payload.channel_id)
+        if not channel:
+            return
+        
+        # Determine channel_id and thread_id
+        if isinstance(channel, discord.Thread):
+            channel_id = channel.parent_id
+            thread_id = channel.id
+        else:
+            channel_id = channel.id
+            thread_id = None
         
         # Check if this channel/thread is valid for submissions
         if (channel_id, thread_id) not in contest.channel_threads_open_for_submissions:
             return
         
-        # Check if this message is a submission (prefer submission period competitions)
-        if not contest.is_submission_message(channel_id, thread_id, message.id, prefer_type="submission"):
+        # Check if this message is a submission
+        if not contest.is_submission_message(channel_id, thread_id, payload.message_id, prefer_type="submission"):
             return
         
-        # Perform the withdrawal (message is already deleted, so no need to delete it again)
-        contest = await _perform_withdrawal(contest, message, channel_id, thread_id)
+        # Perform the withdrawal (message is already deleted, so pass None for message)
+        contest = await _perform_withdrawal(contest, message=None, channel_id=channel_id, thread_id=thread_id, bot=bot)
 
     @bot.command(name="setup")
     async def command_setup(ctx: commands.Context, *channels: discord.TextChannel):
