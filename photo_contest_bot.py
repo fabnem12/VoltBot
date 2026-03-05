@@ -1197,17 +1197,6 @@ async def handle_public_vote(contest: Contest, message: discord.Message, user: d
     
     points = emoji_to_points[emoji]
     
-    # During qualif period, only contestants can vote
-    if current_period == ContestPeriod.QUALIF:
-        contestant_ids = contest.contestants
-        if user.id not in contestant_ids:
-            # Not a contestant, remove their reaction
-            try:
-                await message.remove_reaction(emoji, user)
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                pass
-            return contest
-    
     # Get channel and thread
     channel_id, thread_id = get_channel_and_thread(message)
     
@@ -1277,10 +1266,10 @@ async def handle_commentary_request(contest: Contest, message: discord.Message, 
         user: The user who wants to comment
         current_period: The current contest period
     """
-    # Enforce deadline: only allow commentary during semis period
-    if current_period != ContestPeriod.SEMIS:
+    # Enforce deadline: allow commentary during qualif and semis periods
+    if current_period not in (ContestPeriod.QUALIF, ContestPeriod.SEMIS):
         try:
-            await user.send("⏰ Commentary is only available during the semi-finals period.")
+            await user.send("⏰ Commentary is only available during the qualification or semi-finals periods.")
         except discord.Forbidden:
             pass
         try:
@@ -1295,7 +1284,10 @@ async def handle_commentary_request(contest: Contest, message: discord.Message, 
     # Find the competition, preferring the semis competition when available
     # to avoid matching the original submission competition (which can
     # share the same channel/thread) unless we're in TEST_MODE.
+    # Fall back to qualif if semis not available
     res = contest.competition_from_channel_thread(channel_id, thread_id, prefer_type="semis")
+    if not res:
+        res = contest.competition_from_channel_thread(channel_id, thread_id, prefer_type="qualif")
     if not res:
         return
 
@@ -1366,8 +1358,10 @@ async def handle_commentary_request(contest: Contest, message: discord.Message, 
                 assert message.guild is not None, "Message guild is None"
                 await update_commentary_summary(contest, submission, message.guild)
                 
+                add_qualif = "\n\n💡 Summaries of all commentaries will be revealed during the Semi-Finals." if current_period == ContestPeriod.QUALIF else ""
+                
                 await interaction.response.send_message(
-                    "✅ Your commentary has been recorded! Thank you for your feedback.",
+                    "✅ Your commentary has been recorded! Thank you for your feedback." + add_qualif,
                     ephemeral=True
                 )
                 
@@ -2454,11 +2448,17 @@ async def setup_semis_period(bot: discord.Client, force: bool = False):
             # Add commentary reaction
             await msg.add_reaction("💬")
             
+            # Check if there's an existing summary from qualification round
+            existing_summary = contest.get_commentary_summary(submission.discord_save_path)
+            
+            if not existing_summary:
+                existing_summary = "_No commentaries yet_"
+            
             # Post commentary summary message below the photo
             summary_msg = await channel.send(
-                "📝 **Commentary Summary**\n"
-                "_No commentaries yet_\n\n"
-                "💬 React above to add your commentary"
+                f"📝 **Commentary Summary**\n"
+                f"{existing_summary}\n\n"
+                f"💬 React above to add your commentary"
             )
             
             # Update the contest with the message_id mapping

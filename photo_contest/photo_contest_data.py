@@ -1006,11 +1006,13 @@ class Contest:
         Raises:
             ValueError: If competition not found or commentary validation fails
         """
-        # Use prefer_type="semis" since commentary only happens during semis period
+        # Try semis first, then fall back to qualif
         res = self.competition_from_channel_thread(channel_id, thread_id, prefer_type="semis")
         if not res:
+            res = self.competition_from_channel_thread(channel_id, thread_id, prefer_type="qualif")
+        if not res:
             raise ValueError(
-                f"Unable to find a valid competition from the (channel_id, thread_id) provided: ({channel_id}, {thread_id})"
+                f"Unable to find a valid competition from the (channel_id, thread_id) provided: ({channel_id}, {thread_id}). Commentary is only available during qualification or semi-finals."
             )
         
         if author_id == submission.author_id:
