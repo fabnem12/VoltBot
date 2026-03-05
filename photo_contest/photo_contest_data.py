@@ -53,8 +53,10 @@ def _call_mistral_api(
         res = response.choices[0].message.content
         if res is None:
             return None
-        else:
+        elif isinstance(res, str):
             return res.strip()
+        else:
+            return str(res).strip()
     except Exception as e:
         print(f"Warning: Mistral API call failed: {e}")
         return None
