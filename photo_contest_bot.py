@@ -332,20 +332,33 @@ async def download_missing_pictures():
 async def close_period(period: ContestPeriod, bot: discord.Client):
     """Close a contest period by running period-specific cleanup.
     
+    At the end of each period, prepares the next period by posting photos and reactions.
+    The actual period start announcements happen in setup_period().
+    
     Args:
         period: The period to close
         bot: Discord client
     """
-    if period == ContestPeriod.QUALIF:
+    if period == ContestPeriod.SUBMISSION:
+        # End of submission period: prepare qualification period
+        await prep_qualif_period(bot)
+    elif period == ContestPeriod.QUALIF:
+        # Close qualif period and prepare semis period
         await close_qualif_period(bot)
+        await prep_semis_period(bot)
     elif period == ContestPeriod.SEMIS:
+        # Close semis period and prepare final period
         await close_semis_period(bot)
+        await prep_final_period(bot)
     elif period == ContestPeriod.FINAL:
         await close_final_period(bot)
 
 
 async def setup_period(new_period: ContestPeriod, old_period: Optional[ContestPeriod], bot: discord.Client):
     """Setup a new contest period by running period-specific initialization.
+    
+    Note: Photo posting is done in close_period() at the end of the previous period.
+    This function handles period start announcements only.
     
     Args:
         new_period: The period to enter
@@ -357,11 +370,11 @@ async def setup_period(new_period: ContestPeriod, old_period: Optional[ContestPe
     logger.info(f"Setting up period: {new_period.value} (previous: {old_period.value if old_period else 'None'})")
     
     if new_period == ContestPeriod.QUALIF:
-        await setup_qualif_period(bot)
+        await notify_period_start(bot, ContestPeriod.QUALIF)
     elif new_period == ContestPeriod.SEMIS:
-        await setup_semis_period(bot)
+        await notify_period_start(bot, ContestPeriod.SEMIS)
     elif new_period == ContestPeriod.FINAL:
-        await setup_final_period(bot)
+        await notify_period_start(bot, ContestPeriod.FINAL)
     elif new_period == ContestPeriod.IDLE and old_period == ContestPeriod.FINAL:
         await announce_final_results(bot)
         await announce_final_boards(bot)
@@ -1620,6 +1633,8 @@ async def announce_individual_vote_boards(bot: discord.Client):
             target_channel = category_channel
             thread_name = None
         
+        assert isinstance(target_channel, (discord.TextChannel, discord.Thread)), "Target channel must be a text channel or thread"
+        
         # Generate individual vote board for each submission
         for i, submission in enumerate(comp.competing_entries):
             # Generate the individual vote board
@@ -1660,7 +1675,8 @@ async def announce_individual_vote_boards(bot: discord.Client):
     # Process semis competitions - post in category channels
     for comp in contest.semis_competitions:
         category_channel = await bot.fetch_channel(comp.channel_id)
-        category_name = getattr(category_channel, "name", f"Category {comp.channel_id}")
+        assert isinstance(category_channel, (discord.TextChannel, discord.Thread)), "Category channel must be a text channel or thread"
+        category_name = category_channel.name
         
         # Generate individual vote board for each submission
         for i, submission in enumerate(comp.competing_entries):
@@ -1730,6 +1746,8 @@ async def announce_final_boards(bot: discord.Client):
             thread_name = None
             target_channel = category_channel  # Post in category channel
         
+        assert isinstance(target_channel, (discord.TextChannel, discord.Thread)), "Target channel must be a text channel or thread"
+        
         board_path = gen_competition_board(comp, category_name, id2name, thread_name)
         
         with open(board_path, "rb") as f:
@@ -1742,6 +1760,7 @@ async def announce_final_boards(bot: discord.Client):
     semifinal_boards = gen_semifinals_boards(contest, channel_names, id2name)
     for comp, board_path in zip(contest.semis_competitions, semifinal_boards):
         category_channel = bot.get_channel(comp.channel_id)
+        assert isinstance(category_channel, (discord.TextChannel, discord.Thread)), "Category channel must be a text channel or thread"
         
         with open(board_path, "rb") as f:
             await category_channel.send(
@@ -1992,15 +2011,19 @@ async def recover_state(bot: discord.Client):
     print(f"Recovering state... Current period should be: {target_period.value}")
     
     # Check if we need to set up periods that we missed
+    # Note: When recovering, we need to run both prep_* (post photos) and notify_* (announce)
     if target_period == ContestPeriod.QUALIF and not contest.qualif_competitions:
         print("Missed qualif setup, setting up now...")
-        await setup_qualif_period(bot)
+        await prep_qualif_period(bot)
+        await notify_period_start(bot, ContestPeriod.QUALIF)
     elif target_period == ContestPeriod.SEMIS and not contest.semis_competitions:
         print("Missed semis setup, setting up now...")
-        await setup_semis_period(bot)
+        await prep_semis_period(bot)
+        await notify_period_start(bot, ContestPeriod.SEMIS)
     elif target_period == ContestPeriod.FINAL and not contest.final_competition:
         print("Missed final setup, setting up now...")
-        await setup_final_period(bot)
+        await prep_final_period(bot)
+        await notify_period_start(bot, ContestPeriod.FINAL)
     elif target_period == ContestPeriod.IDLE and current_timestamp > contest.schedule.final_period.end:
         # Check if we missed the final results announcement
         print("Contest has ended. Results may have been announced.")
@@ -2198,17 +2221,13 @@ async def close_final_period(bot: discord.Client):
             pass
 
 
-async def setup_qualif_period(bot: discord.Client):
-    """Set up qualification threads and post submissions."""
+async def prep_qualif_period(bot: discord.Client):
+    """Prepare qualification period: create threads and post submissions with voting reactions.
+    
+    Called at the END of the submission period to prepare for qualification voting.
+    Voting will be announced and become valid at the START of the qualification period.
+    """
     global contest
-    
-    # Check if qualification period was already set up
-    if contest.qualif_competitions:
-        print("Qualification period already set up, skipping setup")
-        return
-    
-    # Send period start announcement
-    await notify_period_start(bot, ContestPeriod.QUALIF)
     
     # Get the number of threads needed per category
     thread_counts = contest.count_qualifs()
@@ -2261,7 +2280,6 @@ async def setup_qualif_period(bot: discord.Client):
         )
     
     # Update contest with qualifications
-    # Removed debug prints
     
     contest = contest.make_qualifs(all_thread_ids)
     contest.save("photo_contest/contest2026.yaml")
@@ -2392,24 +2410,13 @@ def copy_qualif_public_votes_to_semis():
     logger.info("Public votes copied successfully")
 
 
-async def setup_semis_period(bot: discord.Client, force: bool = False):
-    """Set up semi-final competitions and post qualified submissions.
+async def prep_semis_period(bot: discord.Client):
+    """Prepare semi-final period: solve qualifs, copy votes, and post submissions.
     
-    Args:
-        bot: Discord client
-        force: If True, delete existing semis and recreate (default: False)
+    Called at the END of the qualification period to prepare for semi-finals voting.
+    Voting will be announced and become valid at the START of the semi-finals period.
     """
     global contest
-    
-    # Check if semis period was already set up
-    if contest.semis_competitions and not force:
-        print("Semis period already set up, skipping setup")
-        return
-    
-    # If force=True, remove existing semis competitions first
-    if force and contest.semis_competitions:
-        print("Force: Removing existing semis competitions...")
-        contest.competitions = [c for c in contest.competitions if c.type != "semis"]
     
     # Solve qualifications to determine semi-finalists
     contest = contest.solve_qualifs()
@@ -2423,9 +2430,6 @@ async def setup_semis_period(bot: discord.Client, force: bool = False):
     
     # Send DM notifications to qualifiers
     await notify_qualifiers(bot, contest, "semis", "Semi-Finals")
-    
-    # Send period start announcement
-    await notify_period_start(bot, ContestPeriod.SEMIS)
     
     # Post submissions in semi-final channels
     for comp in contest.semis_competitions:
@@ -2488,7 +2492,7 @@ async def setup_semis_period(bot: discord.Client, force: bool = False):
             "React with 🗳️ to this message to cast your jury vote (top 10 ranking).\n\n"
             "**Public Voting:**\n"
             "React with 0️⃣, 1️⃣, 2️⃣, or 3️⃣ on any photo to give it 0-3 points.\n"
-            "You can vote on multiple photos! Your reactions will be automatically removed to keep votes secret.\n\n"
+            "You can vote multiple photos! Your reactions will be automatically removed to keep votes secret.\n\n"
             "**Commentary:**\n"
             "React with 💬 on any photo to add your commentary about composition, lighting, and artistic merit.\n\n"
             "Note: The top 3 of the jury and top 2 of the public among the remaining submissions will advance to the Grand Final."
@@ -2499,24 +2503,13 @@ async def setup_semis_period(bot: discord.Client, force: bool = False):
     contest.save("photo_contest/contest2026.yaml")
 
 
-async def setup_final_period(bot, force: bool = False):
-    """Set up final competitions and post finalists.
+async def prep_final_period(bot):
+    """Prepare final period: solve semis, announce results, and post finalists.
     
-    Args:
-        bot: Discord client
-        force: If True, delete existing final and recreate (default: False)
+    Called at the END of the semi-finals period to prepare for final voting.
+    Voting will be announced and become valid at the START of the final period.
     """
     global contest
-    
-    # Check if final period was already set up
-    if contest.final_competition and not force:
-        print("Final period already set up, skipping setup")
-        return
-    
-    # If force=True, remove existing final competition first
-    if force and contest.final_competition:
-        print("Force: Removing existing final competition...")
-        contest.competitions = [c for c in contest.competitions if c.type != "final"]
     
     # Solve semi-finals to determine finalists with the correct channel_id
     contest = contest.solve_semis(final_channel_id)
@@ -2535,9 +2528,6 @@ async def setup_final_period(bot, force: bool = False):
     
     # Send DM notifications to finalists
     await notify_qualifiers(bot, contest, "final", "Grand Final")
-    
-    # Send period start announcement
-    await notify_period_start(bot, ContestPeriod.FINAL)
     
     # Post submissions in the final channel (single channel for all categories)
     final_channel = bot.get_channel(final_channel_id)
@@ -2714,7 +2704,7 @@ def main():
             elif payload.emoji.name == "🗳️":
                 await handle_jury_vote_request(contest, message, user, bot, current_period)
             # Handle commentary requests (semis only)
-            elif payload.emoji.name == "💬" and current_period == ContestPeriod.SEMIS:
+            elif payload.emoji.name == "💬" and current_period in (ContestPeriod.QUALIF, ContestPeriod.SEMIS):
                 await handle_commentary_request(contest, message, user, current_period)
             else:
                 pass  # Emoji not recognized for this period
@@ -2935,15 +2925,27 @@ def main():
         if old_period != target_period or force:
             # Don't close the previous period - just jump to the new one
             # This allows testing without triggering end-of-period cleanup
-            current_period = target_period
             
-            # Setup the new period (pass force flag for semis/final)
-            if target_period == ContestPeriod.SEMIS:
-                await setup_semis_period(bot, force=force)
+            # Run prep_* to set up photos/reactions, then notify for announcement
+            if target_period == ContestPeriod.SUBMISSION:
+                # SUBMISSION period: no prep needed, just notify
+                await notify_period_start(bot, ContestPeriod.SUBMISSION)
+            elif target_period == ContestPeriod.QUALIF:
+                await prep_qualif_period(bot)
+                await notify_period_start(bot, ContestPeriod.QUALIF)
+            elif target_period == ContestPeriod.SEMIS:
+                await prep_semis_period(bot)
+                await notify_period_start(bot, ContestPeriod.SEMIS)
             elif target_period == ContestPeriod.FINAL:
-                await setup_final_period(bot, force=force)
-            else:
-                await setup_period(target_period, old_period, bot)
+                await prep_final_period(bot)
+                await notify_period_start(bot, ContestPeriod.FINAL)
+            elif target_period == ContestPeriod.IDLE and old_period == ContestPeriod.FINAL:
+                # Final results announcement when going to IDLE
+                await announce_final_results(bot)
+                await announce_final_boards(bot)
+                await notify_final_results(bot, contest)
+            
+            current_period = target_period
             
             await ctx.send(f"✅ Transition complete! **{old_period.value.upper() if old_period else 'NONE'}** → **{target_period.value.upper()}** (force={force})")
         else:
