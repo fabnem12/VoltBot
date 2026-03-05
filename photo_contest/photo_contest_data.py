@@ -358,11 +358,11 @@ def split_entries_categ(categ_info: CompetitionInfo) -> list[list[Submission]]:
     ):
         best_distribution = None
 
-        for n_threads in range(1, n_photos + 1):
+        max_threads = n_photos // min_thread_size
+        for n_threads in range(max_threads, 0, -1):
             base_size = n_photos // n_threads
             extra = n_photos % n_threads
 
-            # Check that the "biggest" thread is above max_thread_size
             if base_size + 1 > max_thread_size:
                 continue
             if base_size < min_thread_size:
