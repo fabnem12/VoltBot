@@ -800,18 +800,19 @@ class Contest:
             res_jury = qualif.count_votes_jury()
             res_public = qualif.count_votes_public()
 
-            top_jury = sorted(
-                qualif.competing_entries,
-                key=lambda x: (res_jury.get(x, 0), res_public.get(x, 0), -x.submission_time),
-                reverse=True,
-            )[:6]
+            # Select top 2 of public first, then top 6 of jury from remaining
             top_public = sorted(
-                [x for x in qualif.competing_entries if x not in top_jury],
+                qualif.competing_entries,
                 key=lambda x: (res_public.get(x, 0), res_jury.get(x, 0), -x.submission_time),
                 reverse=True,
             )[:2]
+            top_jury = sorted(
+                [x for x in qualif.competing_entries if x not in top_public],
+                key=lambda x: (res_jury.get(x, 0), res_public.get(x, 0), -x.submission_time),
+                reverse=True,
+            )[:6]
 
-            top = top_jury + top_public
+            top = top_public + top_jury
             shuffle(top)
 
             # save the qualifiers of the thread
@@ -858,25 +859,26 @@ class Contest:
 
         for semi in semis_competitions:
             channel_id = semi.channel_id
-            # determine the top 3 of the jury and the top 2 of the public
+            # determine the top 2 of the public and the top 3 of the jury
             # with the vote of the other voter category being used in case of a tie
             # in a case of a new tie, the submission submitted earlier wins
 
             res_jury = semi.count_votes_jury()
             res_public = semi.count_votes_public()
 
-            top_jury = sorted(
-                semi.competing_entries,
-                key=lambda x: (res_jury.get(x, 0), res_public.get(x, 0), -x.submission_time),
-                reverse=True,
-            )[:3]
+            # Select top 2 of public first, then top 3 of jury from remaining
             top_public = sorted(
-                [x for x in semi.competing_entries if x not in top_jury],
+                semi.competing_entries,
                 key=lambda x: (res_public.get(x, 0), res_jury.get(x, 0), -x.submission_time),
                 reverse=True,
             )[:2]
+            top_jury = sorted(
+                [x for x in semi.competing_entries if x not in top_public],
+                key=lambda x: (res_jury.get(x, 0), res_public.get(x, 0), -x.submission_time),
+                reverse=True,
+            )[:3]
 
-            top = top_jury + top_public
+            top = top_public + top_jury
             shuffle(top)
 
             # save the qualifiers of the semi

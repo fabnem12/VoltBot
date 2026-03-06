@@ -2367,7 +2367,7 @@ async def prep_qualif_period(bot: discord.Client):
             "**Public Voting:**\n"
             "React with 0️⃣, 1️⃣, 2️⃣, or 3️⃣ on any photo to give it 0-3 points.\n"
             "You can vote on as many photos as you wish! Your reactions will be automatically removed to keep votes secret.\n\n"
-            "Note: The top 6 of the jury and the top 2 of public among the remaining submissions will advance to the semi-finals."
+            "Note: The top 2 of public and the top 6 of jury among the remaining submissions will advance to the semi-finals."
         )
         await vote_msg.add_reaction("🗳️")
     
@@ -2495,7 +2495,7 @@ async def prep_semis_period(bot: discord.Client):
             "You can vote multiple photos! Your reactions will be automatically removed to keep votes secret.\n\n"
             "**Commentary:**\n"
             "React with 💬 on any photo to add your commentary about composition, lighting, and artistic merit.\n\n"
-            "Note: The top 3 of the jury and top 2 of the public among the remaining submissions will advance to the Grand Final."
+            "Note: The top 2 of public and the top 3 of jury among the remaining submissions will advance to the Grand Final."
         )
         await vote_msg.add_reaction("🗳️")
     
