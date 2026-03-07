@@ -935,20 +935,12 @@ def gen_winner_announcement_board(
     img.paste(bg, (20, 60))
 
     # Winner text
-    d.text(
-        (220, 440),
-        "WINNER!",
-        anchor="mm",
-        font=fnt_bold,
-        fill="white",
-    )
-    
     author_name = strip_emoji(id2name.get(winner.author_id, f"User {winner.author_id}"))
     d.text(
-        (220, 470),
-        f"by {author_name}",
+        (220, 440),
+        f"Congratulations, {author_name}!",
         anchor="mm",
-        font=fnt_italic,
+        font=fnt_bold,
         fill="white",
     )
 
@@ -982,7 +974,6 @@ def gen_winner_announcement_board(
     for i, sub in enumerate(ranked):
         points = final_scores.get(sub, 0)
         photo_num = sub_to_photo[sub]
-        author = strip_emoji(id2name.get(sub.author_id, f"User {sub.author_id}"))
         
         is_winner = (sub == winner)
         color = "white" if is_winner else "#AAAAAA"
