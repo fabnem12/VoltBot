@@ -1,4 +1,5 @@
 from math import ceil
+import os
 from random import shuffle
 import re
 from typing import Any, Dict, Iterator, List, Optional, Tuple
@@ -157,11 +158,14 @@ def gen_competition_board(
     title = f"Qualification in {strip_emoji(channel_name)}" + (
         "#" + strip_emoji(thread_name) if thread_name else ""
     )
+    title_font = fnt_bold if len(title) < 46 else fnt_bold_small
+    title_bbox = d.textbbox((0, 0), title, font=title_font)
+    title_x = (950 - (title_bbox[2] - title_bbox[0])) // 2
     d.text(
-        (425, 20),
+        (title_x, 20),
         title,
-        anchor="mt",
-        font=fnt_bold if len(title) < 46 else fnt_bold_small,
+        anchor="lt",
+        font=title_font,
         fill="white",
     )
 
@@ -173,18 +177,18 @@ def gen_competition_board(
     # Add column headers for Jury and Public points
     draw_column_headers(d, 70)
 
-    # Determine qualifiers: top 6 by jury, top 2 by public (from remaining)
-    top_jury = sorted(
-        competition.competing_entries,
-        key=lambda x: (jury_votes.get(x, 0), public_votes.get(x, 0), -x.submission_time),
-        reverse=True,
-    )[:6]
+    # Determine qualifiers: top 2 by public, then top 6 by jury from remaining
     top_public = sorted(
-        [x for x in competition.competing_entries if x not in top_jury],
+        competition.competing_entries,
         key=lambda x: (public_votes.get(x, 0), jury_votes.get(x, 0), -x.submission_time),
         reverse=True,
     )[:2]
-    qualifiers = set(top_jury + top_public)
+    top_jury = sorted(
+        [x for x in competition.competing_entries if x not in top_public],
+        key=lambda x: (jury_votes.get(x, 0), public_votes.get(x, 0), -x.submission_time),
+        reverse=True,
+    )[:6]
+    qualifiers = set(top_public + top_jury)
     
     # Display in 2 columns (top-to-bottom, left-to-right)
     for i, submission in enumerate(submissions_to_display):
@@ -269,6 +273,8 @@ def gen_final_results_board(
     id2name: Dict[int, str],
     latest_voter_points: Optional[Dict[Submission, int]] = None,
     latest_voter_name: Optional[str] = None,
+    latest_voter_index: Optional[int] = None,
+    total_voters: Optional[int] = None,
 ) -> str:
     """Generate final results board combining all category finals.
     
@@ -279,6 +285,8 @@ def gen_final_results_board(
         id2name: Mapping of user IDs to display names
         latest_voter_points: Optional dict mapping submissions to points from latest voter
         latest_voter_name: Optional name of the latest voter for subtitle
+        latest_voter_index: Optional 1-based index of currently revealed voter
+        total_voters: Optional total number of voters in the reveal sequence
     """
     
     final_comp = contest.final_competition
@@ -333,9 +341,12 @@ def gen_final_results_board(
     
     # Subtitle with voter name if provided
     if latest_voter_name:
+        subtitle = f"After votes from {latest_voter_name}"
+        if latest_voter_index is not None and total_voters:
+            subtitle += f" ({latest_voter_index}/{total_voters} voters)"
         d.text(
             (475, 45),
-            f"After votes from {latest_voter_name}",
+            subtitle,
             anchor="mt",
             font=fnt_bold_small,
             fill="white",
@@ -523,10 +534,13 @@ def gen_semifinals_boards(
         d = ImageDraw.Draw(img)
 
         # Title
+        semi_title = f"Semi final for {channel_name}"
+        semi_bbox = d.textbbox((0, 0), semi_title, font=fnt_bold)
+        semi_x = (950 - (semi_bbox[2] - semi_bbox[0])) // 2
         d.text(
-            (475, 20),
-            f"Semifinal for {channel_name}",
-            anchor="mt",
+            (semi_x, 20),
+            semi_title,
+            anchor="lt",
             font=fnt_bold,
             fill="white",
         )
@@ -539,18 +553,18 @@ def gen_semifinals_boards(
         # Add column headers for Jury and Public points
         draw_column_headers(d, 80, "semis")
         
-        # Determine qualifiers: top 3 by jury, top 2 by public (from remaining) = 5 total
-        top_jury = sorted(
-            semifinal.competing_entries,
-            key=lambda x: (jury_votes.get(x, 0), public_votes.get(x, 0), -x.submission_time),
-            reverse=True,
-        )[:3]
+        # Determine qualifiers: top 2 by public, then top 3 by jury from remaining = 5 total
         top_public = sorted(
-            [x for x in semifinal.competing_entries if x not in top_jury],
+            semifinal.competing_entries,
             key=lambda x: (public_votes.get(x, 0), jury_votes.get(x, 0), -x.submission_time),
             reverse=True,
         )[:2]
-        qualifiers = set(top_jury + top_public)
+        top_jury = sorted(
+            [x for x in semifinal.competing_entries if x not in top_public],
+            key=lambda x: (jury_votes.get(x, 0), public_votes.get(x, 0), -x.submission_time),
+            reverse=True,
+        )[:3]
+        qualifiers = set(top_public + top_jury)
 
         # Display submissions in 2 columns (top-to-bottom, left-to-right)
         for j, submission in enumerate(submissions_to_display):
@@ -581,7 +595,7 @@ def gen_semifinals_boards(
             color = "white" if qualifies else "#888888"
             font_regular_choice = fnt_bold_small if qualifies else fnt_regular
             font_bold_choice = fnt_bold if qualifies else fnt_bold_small
-            font_italic_choice = fnt_regular if qualifies else fnt_italic
+            font_italic_choice = fnt_italic if qualifies else fnt_light
             
             d.text(
                 (x_offset, y_pos),
@@ -667,12 +681,9 @@ def gen_photo_vote_details(
     logo = Image.open("resource/logo_volt.png")
     img.paste(logo.resize((150, 150)), (585, 435))
 
-    # snippet of the photo
-    img_snippet = Image.open(submission.local_save_path)
-    fitted = ImageOps.fit(img_snippet, (360, 250), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
-    bg = Image.new("RGB", (360, 250), color=BG_COLOR)
-    bg.paste(fitted, (0, 0))
-    img.paste(bg, (20, 100))
+    # snippet of the photo (preserve aspect ratio with letterbox)
+    snippet = create_thumbnail(submission.local_save_path, (360, 250))
+    img.paste(snippet, (20, 100))
 
     # Get jury vote breakdown from the competition data
     jury_votes_by_id = competition.get_jury_votes_per_juror(submission)
@@ -900,8 +911,21 @@ def gen_photo_vote_details(
         # Add extra spacing between different point groups (public votes)
         y_offset += 10
 
-    # Save in generated_tables folder with a meaningful name
-    filename = f"photo_contest/generated_tables/photo_{competition.type}_{competition.channel_id}_{photo_num}_details.png"
+    # Save in generated_tables with category-based naming
+    safe_category = re.sub(r"[^A-Za-z0-9]+", "", strip_emoji(channel_name))
+    if not safe_category:
+        safe_category = f"Category{competition.channel_id}"
+
+    if competition.type == "qualif" and competition.thread_id is not None:
+        filename = (
+            f"photo_contest/generated_tables/"
+            f"photo_{competition.type}_{safe_category}_{competition.thread_id}_{photo_num}.png"
+        )
+    else:
+        filename = (
+            f"photo_contest/generated_tables/"
+            f"photo_{competition.type}_{safe_category}_{photo_num}.png"
+        )
     img.save(filename)
     return filename
 
@@ -912,8 +936,9 @@ def gen_winner_announcement_board(
     final_scores: Dict[Submission, int],
     category_name: str,
     id2name: Dict[int, str],
+    final_competition: Optional[CompetitionInfo] = None,
 ) -> str:
-    """Generate winner announcement board with winner photo and points recap."""
+    """Generate winner announcement board with winner photo and support recap."""
     
     img = Image.new("RGB", (900, 500), color=BG_COLOR)
     d = ImageDraw.Draw(img)
@@ -927,63 +952,163 @@ def gen_winner_announcement_board(
         fill="white",
     )
 
-    # Winner photo (large, on the left)
-    winner_photo = Image.open(winner.local_save_path)
-    fitted = ImageOps.fit(winner_photo, (400, 350), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+    def same_submission(left: Submission, right: Submission) -> bool:
+        if left == right:
+            return True
+        if left.discord_save_path and right.discord_save_path:
+            if left.discord_save_path.rstrip("/") == right.discord_save_path.rstrip("/"):
+                return True
+        if left.local_save_path and right.local_save_path:
+            if left.local_save_path == right.local_save_path:
+                return True
+            if os.path.basename(left.local_save_path) == os.path.basename(right.local_save_path):
+                return True
+        return left.author_id == right.author_id and left.submission_time == right.submission_time
+
+    def score_for_submission(submission: Submission) -> int:
+        if submission in final_scores:
+            return final_scores[submission]
+        for scored_submission, points in final_scores.items():
+            if same_submission(scored_submission, submission):
+                return points
+        return 0
+
+    # Sort finalists by score
+    ranked = sorted(
+        all_finalists,
+        key=lambda x: (score_for_submission(x), -x.submission_time),
+        reverse=True
+    )
+    resolved_winner = ranked[0] if ranked else winner
+
+    # Winner photo (large, on the left) - preserve aspect ratio with letterboxing
+    winner_photo = Image.open(resolved_winner.local_save_path)
+    winner_photo.thumbnail((400, 350), Image.Resampling.LANCZOS)
     bg = Image.new("RGB", (400, 350), color=BG_COLOR)
-    bg.paste(fitted, (0, 0))
+    x_offset = (400 - winner_photo.width) // 2
+    y_offset = (350 - winner_photo.height) // 2
+    bg.paste(winner_photo, (x_offset, y_offset))
     img.paste(bg, (20, 60))
 
     # Winner text
-    author_name = strip_emoji(id2name.get(winner.author_id, f"User {winner.author_id}"))
+    author_name = strip_emoji(id2name.get(resolved_winner.author_id, f"User {resolved_winner.author_id}"))
+    congrats_text = f"Congratulations, {author_name}!"
+    congrats_font = fnt_bold
+    max_congrats_width = 390
+    for candidate_font in (fnt_bold, fnt_bold_small, fnt_regular, fnt_light):
+        bbox = d.textbbox((0, 0), congrats_text, font=candidate_font)
+        if bbox[2] - bbox[0] <= max_congrats_width:
+            congrats_font = candidate_font
+            break
+    else:
+        fallback_name = author_name
+        while fallback_name:
+            fallback_name = fallback_name[:-1]
+            truncated = f"Congratulations, {fallback_name}...!"
+            bbox = d.textbbox((0, 0), truncated, font=fnt_light)
+            if bbox[2] - bbox[0] <= max_congrats_width:
+                congrats_text = truncated
+                congrats_font = fnt_light
+                break
+        if not fallback_name:
+            congrats_text = "Congratulations!"
+            congrats_font = fnt_light
+
     d.text(
         (220, 440),
-        f"Congratulations, {author_name}!",
+        congrats_text,
         anchor="mm",
-        font=fnt_bold,
+        font=congrats_font,
         fill="white",
     )
 
-    # Points table on the right
+    # Winner recap on the right
     d.text(
         (680, 60),
-        "Final Results",
+        "Why this photo won",
         anchor="mt",
         font=fnt_bold_small,
         fill="white",
     )
 
-    # Sort finalists by score
-    ranked = sorted(
-        all_finalists,
-        key=lambda x: (final_scores.get(x, 0), -x.submission_time),
-        reverse=True
-    )
+    # Winner total and lead over second place
+    winner_points = score_for_submission(resolved_winner)
+    second_points = score_for_submission(ranked[1]) if len(ranked) > 1 else 0
+    lead = winner_points - second_points
 
-    # Get photo numbers for each submission
-    sub_to_photo = {sub: i + 1 for i, sub in enumerate(all_finalists)}
+    d.text((470, 100), f"Total: {winner_points} pts", anchor="lt", font=fnt_bold_small, fill="white")
+    if len(ranked) > 1:
+        if lead > 0:
+            lead_text = f"Lead: +{lead} over #2"
+        elif lead == 0:
+            lead_text = "Lead: tied with #2"
+        else:
+            lead_text = f"Lead: {lead} vs #2"
+        d.text((470, 128), lead_text, anchor="lt", font=fnt_regular, fill="white")
 
-    # Table header
-    y_offset = 100
-    d.text((470, y_offset), "#", anchor="lt", font=fnt_light, fill="white")
-    d.text((510, y_offset), "Photo", anchor="lt", font=fnt_light, fill="white")
-    d.text((650, y_offset), "Points", anchor="lt", font=fnt_light, fill="white")
-    y_offset += 20
+    # Jury support recap for top point groups (7 and 5)
+    votes_by_id: Dict[int, int] = {}
 
-    # Draw each finalist's row
-    for i, sub in enumerate(ranked):
-        points = final_scores.get(sub, 0)
-        photo_num = sub_to_photo[sub]
-        
-        is_winner = (sub == winner)
-        color = "white" if is_winner else "#AAAAAA"
-        font = fnt_bold_small if is_winner else fnt_regular
-        
-        d.text((470, y_offset), f"{i+1}", anchor="lt", font=font, fill=color)
-        d.text((510, y_offset), f"#{photo_num}", anchor="lt", font=font, fill=color)
-        d.text((650, y_offset), str(points), anchor="lt", font=font, fill=color)
-        
-        y_offset += 25
+    if final_competition:
+        for voter_id, jury_vote in final_competition.votes_jury.items():
+            submission_points = jury_vote.points_to_submissions()
+            for submission, points in submission_points.items():
+                if points > 0 and same_submission(submission, resolved_winner):
+                    votes_by_id[voter_id] = points
+                    break
+
+    supporters_by_points: Dict[int, List[str]] = {}
+    for voter_id, points in votes_by_id.items():
+        voter_name = strip_emoji(id2name.get(voter_id, f"User {voter_id}"))
+        supporters_by_points.setdefault(points, []).append(voter_name)
+
+    for points in supporters_by_points:
+        supporters_by_points[points].sort(key=str.casefold)
+
+    preferred_groups = [7, 5, 3]
+    has_preferred_support = any(supporters_by_points.get(points) for points in preferred_groups)
+    if has_preferred_support:
+        groups_to_show = preferred_groups
+    else:
+        groups_to_show = sorted(
+            [points for points, names in supporters_by_points.items() if names],
+            reverse=True,
+        )[:2]
+        if not groups_to_show:
+            groups_to_show = preferred_groups
+
+    def draw_wrapped_support(prefix: str, names: List[str], y_start: int) -> int:
+        if not names:
+            d.text((470, y_start), f"{prefix} —", anchor="lt", font=fnt_light, fill="#DDDDDD")
+            return y_start + 22
+
+        lines: List[str] = []
+        current_line = f"{prefix} "
+        for idx, name in enumerate(names):
+            candidate = current_line + (name if idx == 0 else f", {name}")
+            bbox = d.textbbox((0, 0), candidate, font=fnt_regular)
+            if bbox[2] - bbox[0] > 390 and current_line != f"{prefix} ":
+                lines.append(current_line)
+                current_line = f"   {name}"
+            else:
+                current_line = candidate
+
+        if current_line:
+            lines.append(current_line)
+
+        y_cursor = y_start
+        for line in lines:
+            d.text((470, y_cursor), line, anchor="lt", font=fnt_regular, fill="white")
+            y_cursor += 22
+        return y_cursor
+
+    y_offset = 170
+    d.text((470, y_offset), "Top support", anchor="lt", font=fnt_bold_small, fill="white")
+    y_offset += 28
+    for idx, points in enumerate(groups_to_show):
+        y_offset = draw_wrapped_support(f"{points} pts:", supporters_by_points.get(points, []), y_offset)
+        if idx == 0:
+            y_offset += 4
 
     # Volt logo
     logo = Image.open("resource/logo_volt.png")
@@ -994,67 +1119,6 @@ def gen_winner_announcement_board(
     filename = f"photo_contest/generated_tables/winner_{safe_name}.png"
     img.save(filename)
     return filename
-
-
-def generate_all_boards(
-    contest: Contest,
-    channel_name: str,
-    id2name: Dict[int, str],
-    channel_names: Optional[Dict[int, str]] = None,
-) -> Dict[str, List[str]]:
-    """Generate boards for all active competitions."""
-    
-    generated_files = {
-        "submission": [],
-        "qualification": [],
-        "semifinal": [],
-        "final": [],
-        "photo_details": [],
-        "winner": []
-    }
-
-    # Generate boards for each competition type
-    for competition in contest.current_competitions:
-        if competition.competing_entries:  # Only generate if there are entries
-            board_path = gen_competition_board(competition, channel_name, id2name)
-            generated_files[competition.type].append(board_path)
-
-    # Generate special boards for finals and semifinals if they exist
-    if contest.final_competition:
-        final_board = gen_final_results_board(contest, id2name)
-        generated_files["final"].append(final_board)
-        
-        # Generate winner announcement board
-        final_comp = contest.final_competition
-        final_scores = final_comp.count_votes_jury()
-        ranked = sorted(
-            final_comp.competing_entries,
-            key=lambda x: (final_scores.get(x, 0), -x.submission_time),
-            reverse=True
-        )
-        winner = ranked[0]
-        winner_board = gen_winner_announcement_board(
-            winner, final_comp.competing_entries, final_scores, channel_name, id2name
-        )
-        generated_files["winner"].append(winner_board)
-
-    if contest.semis_competitions:
-        # Use channel_names dict if provided, otherwise create a single-entry dict
-        names_dict = channel_names if channel_names else {comp.channel_id: channel_name for comp in contest.semis_competitions}
-        semifinal_boards = gen_semifinals_boards(contest, names_dict, id2name)
-        generated_files["semifinal"].extend(semifinal_boards)
-
-    # Generate detailed photo boards for current competitions with votes
-    for competition in contest.current_competitions:
-        if competition.competing_entries and (competition.votes_jury or competition.votes_public):
-            thread_name = f"thread{competition.thread_id}" if competition.thread_id else None
-            for i, submission in enumerate(competition.competing_entries):
-                detail_board = gen_photo_vote_details(
-                    submission, competition, channel_name, id2name, thread_name, i + 1
-                )
-                generated_files["photo_details"].append(detail_board)
-
-    return generated_files
 
 
 def gen_live_final_reveal(
@@ -1179,7 +1243,8 @@ def gen_live_final_reveal(
     yield save_file, None, True, False
     
     # Reveal each voter's contribution
-    for voter_id, jury_vote in jury_votes_list:
+    total_voters = len(jury_votes_list)
+    for vote_index, (voter_id, jury_vote) in enumerate(jury_votes_list, start=1):
         # Calculate points from this voter using the same logic as count_votes_jury()
         # This uses the ranking length from each vote, not the number of entries
         voter_points: Dict[Submission, int] = jury_vote.points_to_submissions()
@@ -1195,7 +1260,13 @@ def gen_live_final_reveal(
         # Generate board
         img, d = draw_base()
         voter_name = strip_emoji(id2name.get(voter_id, f"Juror {voter_id}"))
-        d.text((375, 60), f"Votes by {voter_name}", anchor="mt", font=fnt_bold_small, fill="white")
+        d.text(
+            (375, 60),
+            f"After votes from {voter_name} ({vote_index}/{total_voters} voters)",
+            anchor="mt",
+            font=fnt_bold_small,
+            fill="white",
+        )
         draw_scores(d, voter_points, voter_top_points)
         
         img.save(save_file)
