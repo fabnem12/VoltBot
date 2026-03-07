@@ -358,34 +358,21 @@ def split_entries_categ(categ_info: CompetitionInfo) -> list[list[Submission]]:
     def split_into_threads(
         n_photos: int, min_thread_size: int = 12, max_thread_size: int = 24
     ):
-        best_distribution = None
-
-        max_threads = n_photos // min_thread_size
-        for n_threads in range(max_threads, 0, -1):
+        target_avg = (min_thread_size + max_thread_size) / 2
+        n_threads = max(1, round(n_photos / target_avg))
+        
+        base_size = n_photos // n_threads
+        extra = n_photos % n_threads
+        sizes = [base_size + 1] * extra + [base_size] * (n_threads - extra)
+        
+        # If out of bounds, adjust to nearest valid value
+        if sizes[0] > max_thread_size or sizes[-1] < min_thread_size:
+            n_threads = max(1, round(n_photos / target_avg))
             base_size = n_photos // n_threads
             extra = n_photos % n_threads
-
-            if base_size + 1 > max_thread_size:
-                continue
-            if base_size < min_thread_size:
-                break
-
             sizes = [base_size + 1] * extra + [base_size] * (n_threads - extra)
 
-            if all(min_thread_size <= s <= max_thread_size for s in sizes):
-                best_distribution = sizes
-                break
-
-        if not best_distribution:
-            # fallback simple : threads as evenly spread as possible
-            n_threads = max(1, n_photos // max_thread_size)
-            base_size = n_photos // n_threads
-            extra = n_photos % n_threads
-            best_distribution = [base_size + 1] * extra + [base_size] * (
-                n_threads - extra
-            )
-
-        return best_distribution
+        return sizes
 
     thread_lenghts = split_into_threads(len(entries))
     print(f"DEBUG split_entries: thread_lengths: {thread_lenghts}")
