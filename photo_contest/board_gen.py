@@ -33,7 +33,22 @@ fnt_bold_small = ImageFont.truetype("resource/Ubuntu-Bold.ttf", 20)
 fnt_bold = ImageFont.truetype("resource/Ubuntu-Bold.ttf", 30)
 
 
-def calculate_board_dimensions(num_submissions: int, mode: str = "qualif") -> Tuple[int, int, int]:
+def create_thumbnail(img_path: str, size: Tuple[int, int]) -> Image.Image:
+    """Create a thumbnail with preserved aspect ratio and purple background (letterbox)."""
+    img = Image.open(img_path)
+    
+    img.thumbnail(size, Image.Resampling.LANCZOS)
+    
+    bg = Image.new("RGB", size, color=BG_COLOR)
+    
+    x_offset = (size[0] - img.width) // 2
+    y_offset = (size[1] - img.height) // 2
+    
+    bg.paste(img, (x_offset, y_offset))
+    return bg
+
+
+def calculate_board_dimensions(num_submissions: int, mode: str = "qualif") -> Tuple[int, int, int, Tuple[int, int]]:
     """Calculate board dimensions based on number of submissions.
     
     Args:
@@ -41,30 +56,32 @@ def calculate_board_dimensions(num_submissions: int, mode: str = "qualif") -> Tu
         mode: "qualif" for qualification boards, "semis" for semifinals
     
     Returns:
-        Tuple of (img_height, row_spacing, start_y)
+        Tuple of (img_height, row_spacing, start_y, thumb_size)
     """
     num_rows = ceil(num_submissions / 2)
     
     if mode == "qualif":
         # More compact spacing for qualification boards
+        thumb_size = (45, 45)
         if num_rows <= 3:
-            return 100 + num_rows * 60 + 200, 60, 100
+            return 100 + num_rows * 70 + 200, 70, 100, thumb_size
         elif num_rows <= 6:
-            return 100 + num_rows * 55 + 200, 55, 100
+            return 100 + num_rows * 65 + 200, 65, 100, thumb_size
         elif num_rows <= 12:
-            return 100 + num_rows * 50 + 200, 50, 100
+            return 100 + num_rows * 60 + 200, 60, 100, thumb_size
         else:
-            return 100 + num_rows * 45 + 200, 45, 100
+            return 100 + num_rows * 55 + 200, 55, 100, thumb_size
     else:  # semis
         # More spacious for semifinals
+        thumb_size = (65, 65)
         if num_rows <= 3:
-            return 80 + num_rows * 75 + 200, 75, 110
+            return 80 + num_rows * 100 + 200, 100, 110, thumb_size
         elif num_rows <= 6:
-            return 80 + num_rows * 70 + 200, 70, 110
+            return 80 + num_rows * 95 + 200, 95, 110, thumb_size
         elif num_rows <= 12:
-            return 80 + num_rows * 65 + 200, 65, 110
+            return 80 + num_rows * 90 + 200, 90, 110, thumb_size
         else:
-            return 80 + num_rows * 60 + 200, 60, 110
+            return 80 + num_rows * 85 + 200, 85, 110, thumb_size
 
 
 def draw_column_headers(d: ImageDraw.ImageDraw, y: int, mode: str = "qualif"):
@@ -77,18 +94,18 @@ def draw_column_headers(d: ImageDraw.ImageDraw, y: int, mode: str = "qualif"):
     """
     if mode == "qualif":
         # Left column headers
-        d.text((280, y), "Jury", anchor="mm", font=fnt_bold_small, fill="white")
-        d.text((340, y), "Public", anchor="mm", font=fnt_bold_small, fill="white")
+        d.text((335, y), "Jury", anchor="mm", font=fnt_bold_small, fill="white")
+        d.text((395, y), "Public", anchor="mm", font=fnt_bold_small, fill="white")
         # Right column headers
-        d.text((740, y), "Jury", anchor="mm", font=fnt_bold_small, fill="white")
-        d.text((800, y), "Public", anchor="mm", font=fnt_bold_small, fill="white")
+        d.text((800, y), "Jury", anchor="mm", font=fnt_bold_small, fill="white")
+        d.text((860, y), "Public", anchor="mm", font=fnt_bold_small, fill="white")
     else:  # semis
         # Left column headers
-        d.text((280, y), "Jury", anchor="mm", font=fnt_bold_small, fill="white")
-        d.text((340, y), "Public", anchor="mm", font=fnt_bold_small, fill="white")
+        d.text((335, y), "Jury", anchor="mm", font=fnt_bold_small, fill="white")
+        d.text((395, y), "Public", anchor="mm", font=fnt_bold_small, fill="white")
         # Right column headers
-        d.text((690, y), "Jury", anchor="mm", font=fnt_bold_small, fill="white")
-        d.text((750, y), "Public", anchor="mm", font=fnt_bold_small, fill="white")
+        d.text((805, y), "Jury", anchor="mm", font=fnt_bold_small, fill="white")
+        d.text((865, y), "Public", anchor="mm", font=fnt_bold_small, fill="white")
 
 
 def select_fonts(qualifies: bool, num_rows: int) -> Tuple[ImageFont.FreeTypeFont, ImageFont.FreeTypeFont, ImageFont.FreeTypeFont]:
@@ -131,9 +148,9 @@ def gen_competition_board(
     num_rows = ceil(num_submissions / 2)
     
     # Calculate dynamic height and spacing
-    img_height, spacing, start_y = calculate_board_dimensions(num_submissions, "qualif")
+    img_height, spacing, start_y, thumb_size = calculate_board_dimensions(num_submissions, "qualif")
     
-    img = Image.new("RGB", (850, img_height), color=BG_COLOR)
+    img = Image.new("RGB", (950, img_height), color=BG_COLOR)
     d = ImageDraw.Draw(img)
 
     # Title
@@ -151,7 +168,7 @@ def gen_competition_board(
     # volt logo - position at bottom right
     logo = Image.open("resource/logo_volt.png")
     logo_y = img_height - 165
-    img.paste(logo.resize((150, 150)), (685, logo_y))
+    img.paste(logo.resize((150, 150)), (785, logo_y))
     
     # Add column headers for Jury and Public points
     draw_column_headers(d, 70)
@@ -179,8 +196,12 @@ def gen_competition_board(
             col = 1  # right column
             row = i - num_rows
         
-        x_offset = 40 if col == 0 else 500
+        x_offset = 95 if col == 0 else 560
         y_pos = start_y + row * spacing
+        
+        # Photo thumbnail
+        thumb = create_thumbnail(submission.local_save_path, thumb_size)
+        img.paste(thumb, (x_offset - 60, y_pos - 3))
         
         # Photo number and author
         photo_num = i + 1
@@ -213,8 +234,8 @@ def gen_competition_board(
         public_points = public_votes.get(submission, 0)
         
         # Calculate x positions based on column
-        jury_x = 280 if col == 0 else 740
-        public_x = 340 if col == 0 else 800
+        jury_x = 335 if col == 0 else 800
+        public_x = 395 if col == 0 else 860
 
         d.text(
             (jury_x, y_pos + 10),
@@ -283,26 +304,27 @@ def gen_final_results_board(
     # Calculate dynamic height based on number of rows (2 columns)
     num_rows = ceil(num_submissions / 2)
     
-    # Optimized height calculation with increased spacing
+    # Optimized height calculation with increased spacing for thumbnails
+    thumb_size = (55, 55)
     if num_rows <= 3:
-        row_spacing = 75
+        row_spacing = 90
         img_height = 80 + num_rows * row_spacing + 180
     elif num_rows <= 6:
-        row_spacing = 70
+        row_spacing = 85
         img_height = 80 + num_rows * row_spacing + 180
     else:
-        row_spacing = 65
+        row_spacing = 80
         img_height = 80 + num_rows * row_spacing + 180
     
     spacing = row_spacing
     
-    img = Image.new("RGB", (850, img_height), color=BG_COLOR)
+    img = Image.new("RGB", (950, img_height), color=BG_COLOR)
     d = ImageDraw.Draw(img)
 
     # Title
     title = "Final Results"
     d.text(
-        (425, 15),
+        (475, 15),
         title,
         anchor="mt",
         font=fnt_bold,
@@ -312,7 +334,7 @@ def gen_final_results_board(
     # Subtitle with voter name if provided
     if latest_voter_name:
         d.text(
-            (425, 45),
+            (475, 45),
             f"After votes from {latest_voter_name}",
             anchor="mt",
             font=fnt_bold_small,
@@ -327,21 +349,21 @@ def gen_final_results_board(
     # volt logo - position at bottom right
     logo = Image.open("resource/logo_volt.png")
     logo_y = img_height - 155
-    img.paste(logo.resize((150, 150)), (685, logo_y))
+    img.paste(logo.resize((150, 150)), (785, logo_y))
     
     # Add column headers
     if latest_voter_points:
         # Show both new points and total
         # Left column headers
         d.text(
-            (290, header_y),
+            (340, header_y),
             "+New",
             anchor="mm",
             font=fnt_regular,
             fill="white",
         )
         d.text(
-            (350, header_y),
+            (400, header_y),
             "Total",
             anchor="mm",
             font=fnt_bold_small,
@@ -349,14 +371,14 @@ def gen_final_results_board(
         )
         # Right column headers
         d.text(
-            (750, header_y),
+            (800, header_y),
             "+New",
             anchor="mm",
             font=fnt_regular,
             fill="white",
         )
         d.text(
-            (810, header_y),
+            (860, header_y),
             "Total",
             anchor="mm",
             font=fnt_bold_small,
@@ -366,7 +388,7 @@ def gen_final_results_board(
         # Show only total points
         # Left column header
         d.text(
-            (350, header_y),
+            (400, header_y),
             "Points",
             anchor="mm",
             font=fnt_bold_small,
@@ -374,7 +396,7 @@ def gen_final_results_board(
         )
         # Right column header
         d.text(
-            (810, header_y),
+            (860, header_y),
             "Points",
             anchor="mm",
             font=fnt_bold_small,
@@ -391,8 +413,12 @@ def gen_final_results_board(
             col = 1  # right column
             row = i - num_rows
         
-        x_offset = 40 if col == 0 else 500
+        x_offset = 95 if col == 0 else 560
         y_pos = start_y + row * spacing
+        
+        # Photo thumbnail
+        thumb = create_thumbnail(submission.local_save_path, thumb_size)
+        img.paste(thumb, (x_offset - 60, y_pos - 3))
         
         # Ranking position
         position = i + 1
@@ -429,8 +455,8 @@ def gen_final_results_board(
         points_sub = all_votes.get(submission, 0)
         
         # Calculate x position based on column
-        total_x = 350 if col == 0 else 810
-        new_x = 290 if col == 0 else 750
+        total_x = 400 if col == 0 else 860
+        new_x = 340 if col == 0 else 800
 
         # Show total points
         d.text(
@@ -491,14 +517,14 @@ def gen_semifinals_boards(
         num_rows = ceil(num_submissions / 2)
         
         # Calculate dynamic height and spacing
-        img_height, spacing, start_y = calculate_board_dimensions(num_submissions, "semis")
+        img_height, spacing, start_y, thumb_size = calculate_board_dimensions(num_submissions, "semis")
         
-        img = Image.new("RGB", (850, img_height), color=BG_COLOR)
+        img = Image.new("RGB", (950, img_height), color=BG_COLOR)
         d = ImageDraw.Draw(img)
 
         # Title
         d.text(
-            (425, 20),
+            (475, 20),
             f"Semifinal for {channel_name}",
             anchor="mt",
             font=fnt_bold,
@@ -508,17 +534,17 @@ def gen_semifinals_boards(
         # volt logo - position at bottom right
         logo = Image.open("resource/logo_volt.png")
         logo_y = img_height - 165
-        img.paste(logo.resize((150, 150)), (685, logo_y))
+        img.paste(logo.resize((150, 150)), (785, logo_y))
         
         # Add column headers for Jury and Public points
         draw_column_headers(d, 80, "semis")
         
-        # Determine qualifiers: top 6 by jury, top 2 by public (from remaining)
+        # Determine qualifiers: top 3 by jury, top 2 by public (from remaining) = 5 total
         top_jury = sorted(
             semifinal.competing_entries,
             key=lambda x: (jury_votes.get(x, 0), public_votes.get(x, 0), -x.submission_time),
             reverse=True,
-        )[:6]
+        )[:3]
         top_public = sorted(
             [x for x in semifinal.competing_entries if x not in top_jury],
             key=lambda x: (public_votes.get(x, 0), jury_votes.get(x, 0), -x.submission_time),
@@ -536,8 +562,12 @@ def gen_semifinals_boards(
                 col = 1  # right column
                 row = j - num_rows
             
-            x_offset = 40 if col == 0 else 450
+            x_offset = 110 if col == 0 else 565
             y_pos = start_y + row * spacing
+            
+            # Photo thumbnail
+            thumb = create_thumbnail(submission.local_save_path, thumb_size)
+            img.paste(thumb, (x_offset - 80, y_pos - 3))
             
             photo_num = j + 1
             author_name = strip_emoji(id2name.get(submission.author_id, f"User {submission.author_id}"))
@@ -570,8 +600,8 @@ def gen_semifinals_boards(
             
             # Points - show jury and public in separate columns
             # Calculate x positions based on column
-            jury_x = 280 if col == 0 else 690
-            public_x = 340 if col == 0 else 750
+            jury_x = 355 if col == 0 else 805
+            public_x = 415 if col == 0 else 865
             
             d.text(
                 (jury_x, y_pos + 10),
@@ -876,6 +906,105 @@ def gen_photo_vote_details(
     return filename
 
 
+def gen_winner_announcement_board(
+    winner: Submission,
+    all_finalists: list[Submission],
+    final_scores: Dict[Submission, int],
+    category_name: str,
+    id2name: Dict[int, str],
+) -> str:
+    """Generate winner announcement board with winner photo and points recap."""
+    
+    img = Image.new("RGB", (900, 500), color=BG_COLOR)
+    d = ImageDraw.Draw(img)
+
+    # Title
+    d.text(
+        (450, 20),
+        f"Winner for {strip_emoji(category_name)}",
+        anchor="mt",
+        font=fnt_bold,
+        fill="white",
+    )
+
+    # Winner photo (large, on the left)
+    winner_photo = Image.open(winner.local_save_path)
+    fitted = ImageOps.fit(winner_photo, (400, 350), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+    bg = Image.new("RGB", (400, 350), color=BG_COLOR)
+    bg.paste(fitted, (0, 0))
+    img.paste(bg, (20, 60))
+
+    # Winner text
+    d.text(
+        (220, 440),
+        "WINNER!",
+        anchor="mm",
+        font=fnt_bold,
+        fill="white",
+    )
+    
+    author_name = strip_emoji(id2name.get(winner.author_id, f"User {winner.author_id}"))
+    d.text(
+        (220, 470),
+        f"by {author_name}",
+        anchor="mm",
+        font=fnt_italic,
+        fill="white",
+    )
+
+    # Points table on the right
+    d.text(
+        (680, 60),
+        "Final Results",
+        anchor="mt",
+        font=fnt_bold_small,
+        fill="white",
+    )
+
+    # Sort finalists by score
+    ranked = sorted(
+        all_finalists,
+        key=lambda x: (final_scores.get(x, 0), -x.submission_time),
+        reverse=True
+    )
+
+    # Get photo numbers for each submission
+    sub_to_photo = {sub: i + 1 for i, sub in enumerate(all_finalists)}
+
+    # Table header
+    y_offset = 100
+    d.text((470, y_offset), "#", anchor="lt", font=fnt_light, fill="white")
+    d.text((510, y_offset), "Photo", anchor="lt", font=fnt_light, fill="white")
+    d.text((650, y_offset), "Points", anchor="lt", font=fnt_light, fill="white")
+    y_offset += 20
+
+    # Draw each finalist's row
+    for i, sub in enumerate(ranked):
+        points = final_scores.get(sub, 0)
+        photo_num = sub_to_photo[sub]
+        author = strip_emoji(id2name.get(sub.author_id, f"User {sub.author_id}"))
+        
+        is_winner = (sub == winner)
+        color = "white" if is_winner else "#AAAAAA"
+        font = fnt_bold_small if is_winner else fnt_regular
+        
+        d.text((470, y_offset), f"{i+1}", anchor="lt", font=font, fill=color)
+        d.text((510, y_offset), f"#{photo_num}", anchor="lt", font=font, fill=color)
+        d.text((650, y_offset), str(points), anchor="lt", font=font, fill=color)
+        
+        y_offset += 25
+
+    # Volt logo
+    logo = Image.open("resource/logo_volt.png")
+    img.paste(logo.resize((100, 100)), (780, 385))
+
+    # Save
+    safe_name = category_name.replace(" ", "_").replace("-", "_")
+    filename = f"photo_contest/generated_tables/winner_{safe_name}.png"
+    img.save(filename)
+    return filename
+
+
 def generate_all_boards(
     contest: Contest,
     channel_name: str,
@@ -889,7 +1018,8 @@ def generate_all_boards(
         "qualification": [],
         "semifinal": [],
         "final": [],
-        "photo_details": []
+        "photo_details": [],
+        "winner": []
     }
 
     # Generate boards for each competition type
@@ -902,6 +1032,20 @@ def generate_all_boards(
     if contest.final_competition:
         final_board = gen_final_results_board(contest, id2name)
         generated_files["final"].append(final_board)
+        
+        # Generate winner announcement board
+        final_comp = contest.final_competition
+        final_scores = final_comp.count_votes_jury()
+        ranked = sorted(
+            final_comp.competing_entries,
+            key=lambda x: (final_scores.get(x, 0), -x.submission_time),
+            reverse=True
+        )
+        winner = ranked[0]
+        winner_board = gen_winner_announcement_board(
+            winner, final_comp.competing_entries, final_scores, channel_name, id2name
+        )
+        generated_files["winner"].append(winner_board)
 
     if contest.semis_competitions:
         # Use channel_names dict if provided, otherwise create a single-entry dict
