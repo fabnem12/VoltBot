@@ -20,6 +20,7 @@ from photo_contest.board_gen import (
     gen_final_results_board,
     gen_live_final_reveal,
     gen_photo_vote_details,
+    gen_winner_announcement_board,
 )
 
 class ContestPeriod(Enum):
@@ -1599,6 +1600,19 @@ async def announce_final_results(bot: discord.Client, reveal_delay: int = 15):
         await dm_channel.send(embed=winner_embed)
     except Exception as e:
         print(f"Could not send DM to winner {winner.author_id}: {e}")
+    
+    # Generate winner recap board
+    winner_board_path = gen_winner_announcement_board(
+        winner=winner,
+        all_finalists=final_comp.competing_entries,
+        final_scores=jury_scores,
+        category_name="Grand Final",
+        id2name=id2name
+    )
+    await announcement_channel.send(
+        "📸 **Winner Recap:**",
+        file=discord.File(winner_board_path)
+    )
     
     await announcement_channel.send("\n✨ **Contest complete! Thank you to all participants!** ✨")
     
