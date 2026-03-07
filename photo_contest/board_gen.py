@@ -3,7 +3,7 @@ from random import shuffle
 import re
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from photo_contest.photo_contest_data import CompetitionInfo, Contest, Submission, POINTS_SETS
 
@@ -639,9 +639,10 @@ def gen_photo_vote_details(
 
     # snippet of the photo
     img_snippet = Image.open(submission.local_save_path)
-    width_snip = min(round(250 * img_snippet.size[0] / img_snippet.size[1]), 360)
-    left_img = 20 + (360 - width_snip) // 2
-    img.paste(img_snippet.resize((width_snip, 250)), (left_img, 100))
+    fitted = ImageOps.fit(img_snippet, (360, 250), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+    bg = Image.new("RGB", (360, 250), color=BG_COLOR)
+    bg.paste(fitted, (0, 0))
+    img.paste(bg, (20, 100))
 
     # Get jury vote breakdown from the competition data
     jury_votes_by_id = competition.get_jury_votes_per_juror(submission)
