@@ -1835,9 +1835,8 @@ async def notify_period_start(bot: discord.Client, period: ContestPeriod):
                     await thread.send(
                         "🗳️ **QUALIFICATION VOTING HAS BEGUN!** 🗳️\n\n"
                         "Vote for your favorite photos in this thread to help them advance to the Semi-Finals!\n"
-                        f"Deadline: <t:{int(contest.schedule.qualif_period.end)}:F>\n\n"
-                        f"📢 **Note:** Only contestants can vote in the qualification phase.\n"
-                        f"{mentions}"
+                        f"Deadline: <t:{int(contest.schedule.qualif_period.end)}:F>\n"
+                        + mentions
                     )
                 except (discord.Forbidden, discord.HTTPException):
                     # ignore send failures per-thread
@@ -1848,9 +1847,8 @@ async def notify_period_start(bot: discord.Client, period: ContestPeriod):
             await announcement_channel.send(
                 "🗳️ **QUALIFICATION VOTING HAS BEGUN!** 🗳️\n\n"
                 "Check the qualification threads and vote for your favorites!\n"
-                f"Deadline: <t:{int(contest.schedule.qualif_period.end)}:F>\n\n"
-                f"📢 **Note:** Only contestants can vote in the qualification phase.\n"
-                f"{contestant_mentions}"
+                f"Deadline: <t:{int(contest.schedule.qualif_period.end)}:F>\n"
+                + contestant_mentions
             )
     elif period == ContestPeriod.SEMIS:
         await announcement_channel.send(
@@ -2289,7 +2287,8 @@ async def prep_qualif_period(bot: discord.Client):
         category_name = getattr(channel, "name", f"Category {comp.channel_id}")
         thread_links = "\n".join(f"• <#{thread.id}>" for thread in threads)
         await channel.send(
-            f"🗳️ **Qualification voting is now open for {category_name}!**\n\n"
+            f"🗳️ **Qualification voting opens soon for {category_name}!**\n\n"
+            f"Voting will begin at <t:{int(contest.schedule.qualif_period.start)}:F>\n\n"
             f"Check out the qualification threads below:\n"
             f"{thread_links}\n\n"
             f"Vote for your favorite photos to help them advance to the semi-finals!"
@@ -2377,8 +2376,9 @@ async def prep_qualif_period(bot: discord.Client):
             )
         
         # Send voting instruction message
-        vote_msg = await thread.send(
-            "🗳️ **Jury Voting is now open!**\n"
+        vote_msg = await channel.send(
+            "🗳️ **Jury Voting opens soon!**\n"
+            f"Voting will begin at <t:{int(contest.schedule.semis_period.start)}:F>\n\n"
             "React with 🗳️ to this message to cast your jury vote (top 10 ranking).\n\n"
             "**Public Voting:**\n"
             "React with 0️⃣, 1️⃣, 2️⃣, or 3️⃣ on any photo to give it 0-3 points.\n"
@@ -2581,7 +2581,8 @@ async def prep_final_period(bot):
     
     # Send voting instruction message
     vote_msg = await final_channel.send(
-        "🗳️ **Final Voting is now open!**\n"
+        "🗳️ **Final Voting opens soon!**\n"
+        f"Voting will begin at <t:{int(contest.schedule.final_period.start)}:F>\n\n"
         "React with 🗳️ to this message to cast your vote.\n"
         "You will rank your top 5 out of the 15 finalists."
     )
