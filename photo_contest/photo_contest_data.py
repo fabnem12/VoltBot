@@ -327,34 +327,9 @@ class Schedule:  # all of the fields are tuples of timestamps (start, end)
 
 
 def split_entries_categ(categ_info: CompetitionInfo) -> list[list[Submission]]:
-    # shuffle the list of entries, and group by contestant
-    # so that each contestant's entries are evenly split among threads
-    # Work on a shallow copy to avoid mutating the original competition's
-    # `competing_entries` order (which is used elsewhere for indexing).
     entries = list(categ_info.competing_entries)
-    print(f"DEBUG split_entries: Initial entries count: {len(entries)}")
-    shuffle(entries)
-
-    # Group entries by contestant - use defaultdict instead of groupby
-    # because groupby returns iterators that can only be consumed once
-    from collections import defaultdict
-    entries_per_contestant: dict[int, list[Submission]] = defaultdict(list)
-    for entry in entries:
-        entries_per_contestant[entry.author_id].append(entry)
     
-    print(f"DEBUG split_entries: Grouped by {len(entries_per_contestant)} contestants")
-    for author_id, author_entries in entries_per_contestant.items():
-        print(f"DEBUG split_entries:   Author {author_id}: {len(author_entries)} entries")
-    
-    contestants = list(entries_per_contestant.keys())
-    shuffle(contestants)
-
-    entries_randomized = [
-        e for contestant in contestants for e in entries_per_contestant[contestant]
-    ]
-    shuffle(entries_randomized)
-    print(f"DEBUG split_entries: entries_randomized count: {len(entries_randomized)}")
-
+    # Calculate thread sizes first
     def split_into_threads(
         n_photos: int, min_thread_size: int = 12, max_thread_size: int = 24
     ):
@@ -379,15 +354,27 @@ def split_entries_categ(categ_info: CompetitionInfo) -> list[list[Submission]]:
 
         return sizes
 
-    thread_lenghts = split_into_threads(len(entries))
-    print(f"DEBUG split_entries: thread_lengths: {thread_lenghts}")
-    threads: list[list[Submission]] = [[] for _ in range(len(thread_lenghts))]
-
-    for i, e in enumerate(entries_randomized):
-        threads[i % len(threads)].append(e)
+    thread_sizes = split_into_threads(len(entries))
+    n_threads = len(thread_sizes)
+    threads: list[list[Submission]] = [[] for _ in range(n_threads)]
     
-    print(f"DEBUG split_entries: Final thread counts: {[len(t) for t in threads]}")
-
+    # Group entries by author
+    from collections import defaultdict
+    entries_by_author: dict[int, list[Submission]] = defaultdict(list)
+    for entry in entries:
+        entries_by_author[entry.author_id].append(entry)
+    
+    # Distribute each author's entries evenly across threads using round-robin
+    for author_id, author_entries in entries_by_author.items():
+        shuffle(author_entries)  # Randomize order of this author's entries
+        for i, entry in enumerate(author_entries):
+            thread_idx = i % n_threads
+            threads[thread_idx].append(entry)
+    
+    # Shuffle each thread to mix authors
+    for thread in threads:
+        shuffle(thread)
+    
     return threads
 
 
@@ -685,12 +672,7 @@ class Contest:
             # Skip qualification for categories with too few submissions (< 25)
             # Those will automatically qualify to semis
             if comp.needs_qualification:
-                print(f"DEBUG: Category {comp.channel_id} needs qualification with {len(comp.competing_entries)} submissions")
-                print(f"DEBUG: Thread IDs provided: {threads}")
                 list_subs_qualif = split_entries_categ(comp)
-                print(f"DEBUG: split_entries_categ returned {len(list_subs_qualif)} thread groups")
-                for i, subs in enumerate(list_subs_qualif):
-                    print(f"DEBUG:   Thread group {i} has {len(subs)} submissions")
                 
                 qualifs += [
                     CompetitionInfo(
@@ -703,7 +685,6 @@ class Contest:
                     )
                     for subs, thread_id in zip(list_subs_qualif, threads)
                 ]
-                print(f"DEBUG: Created {len([x for x in qualifs if x.channel_id == comp.channel_id])} qualif competitions for channel {comp.channel_id}")
 
         copy = deepcopy(self)
         copy.competitions += qualifs
