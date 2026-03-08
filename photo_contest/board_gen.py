@@ -660,7 +660,7 @@ def gen_photo_vote_details(
 
     # Title
     title = f"Photo #{photo_num} in {strip_emoji(channel_name)}" + (
-        "#" + strip_emoji(thread_name) if thread_name else ""
+        f" - Thread #{strip_emoji(thread_name)}" if thread_name else ""
     )
     d.text(
         (375, 20),
@@ -937,6 +937,7 @@ def gen_winner_announcement_board(
     category_name: str,
     id2name: Dict[int, str],
     final_competition: Optional[CompetitionInfo] = None,
+    contest: Optional[Contest] = None,
 ) -> str:
     """Generate winner announcement board with winner photo and support recap."""
     
@@ -1109,6 +1110,57 @@ def gen_winner_announcement_board(
         y_offset = draw_wrapped_support(f"{points} pts:", supporters_by_points.get(points, []), y_offset)
         if idx == 0:
             y_offset += 4
+
+    # Juror winner - among voters who voted in quals/semis
+    if contest and final_competition:
+        juror_ids = set()
+        for comp in contest.qualif_competitions:
+            juror_ids.update(comp.votes_jury.keys())
+        for comp in contest.semis_competitions:
+            juror_ids.update(comp.votes_jury.keys())
+        
+        if juror_ids:
+            juror_scores: Dict[Submission, int] = {}
+            for voter_id, jury_vote in final_competition.votes_jury.items():
+                if voter_id in juror_ids:
+                    for sub, pts in jury_vote.points_to_submissions().items():
+                        juror_scores[sub] = juror_scores.get(sub, 0) + pts
+            
+            if juror_scores:
+                juror_ranked = sorted(
+                    all_finalists,
+                    key=lambda x: (
+                        juror_scores.get(x, 0),
+                        final_scores.get(x, 0),
+                        -x.submission_time
+                    ),
+                    reverse=True
+                )
+                juror_winner = juror_ranked[0]
+                juror_winner_points = juror_scores.get(juror_winner, 0)
+                
+                if not same_submission(juror_winner, resolved_winner):
+                    # Find photo number for juror winner
+                    juror_photo_num = None
+                    for idx, sub in enumerate(all_finalists):
+                        if same_submission(sub, juror_winner):
+                            juror_photo_num = idx + 1
+                            break
+                    
+                    y_offset += 15
+                    d.text((470, y_offset), "Jury Winner", anchor="lt", font=fnt_bold_small, fill="white")
+                    y_offset += 26
+                    
+                    # Thumbnail
+                    thumb_size = (60, 60)
+                    juror_thumb = create_thumbnail(juror_winner.local_save_path, thumb_size)
+                    img.paste(juror_thumb, (470, y_offset))
+                    
+                    # Author name
+                    juror_name = strip_emoji(id2name.get(juror_winner.author_id, f"User {juror_winner.author_id}"))
+                    photo_label = f"Photo #{juror_photo_num}" if juror_photo_num else "Photo"
+                    d.text((545, y_offset + 10), photo_label, anchor="lt", font=fnt_regular, fill="white")
+                    d.text((545, y_offset + 32), juror_name, anchor="lt", font=fnt_regular, fill="white")
 
     # Volt logo
     logo = Image.open("resource/logo_volt.png")

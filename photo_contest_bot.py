@@ -1607,7 +1607,9 @@ async def announce_final_results(bot: discord.Client, reveal_delay: int = 15):
         all_finalists=final_comp.competing_entries,
         final_scores=jury_scores,
         category_name="Grand Final",
-        id2name=id2name
+        id2name=id2name,
+        final_competition=final_comp,
+        contest=contest,
     )
     await announcement_channel.send(
         "📸 **Winner Recap:**",

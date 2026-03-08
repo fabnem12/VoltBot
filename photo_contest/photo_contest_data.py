@@ -365,9 +365,14 @@ def split_entries_categ(categ_info: CompetitionInfo) -> list[list[Submission]]:
         extra = n_photos % n_threads
         sizes = [base_size + 1] * extra + [base_size] * (n_threads - extra)
         
-        # If out of bounds, adjust to nearest valid value
-        if sizes[0] > max_thread_size or sizes[-1] < min_thread_size:
-            n_threads = max(1, round(n_photos / target_avg))
+        # If out of bounds, adjust by 1 in the right direction
+        if sizes and sizes[0] > max_thread_size:
+            n_threads += 1
+            base_size = n_photos // n_threads
+            extra = n_photos % n_threads
+            sizes = [base_size + 1] * extra + [base_size] * (n_threads - extra)
+        elif sizes and sizes[-1] < min_thread_size:
+            n_threads = max(1, n_threads - 1)
             base_size = n_photos // n_threads
             extra = n_photos % n_threads
             sizes = [base_size + 1] * extra + [base_size] * (n_threads - extra)
