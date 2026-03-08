@@ -459,6 +459,12 @@ async def submit(message: discord.Message, bot: discord.Client) -> Contest:
         actual_author_id = message.mentions[0].id
         logger.info(f"TEST_MODE: Submission from {message.author.id} on behalf of {actual_author_id}")
     
+    # Check the channel and thread to see if they are valid for submissions
+    channel_id, thread_id = get_channel_and_thread(message)
+    
+    if (channel_id, thread_id) not in contest.channel_threads_open_for_submissions:
+        return contest
+    
     # Enforce deadline: only accept submissions during submission period
     current_timestamp = utcnow().timestamp()
     if not (contest.schedule.submission_period.start <= current_timestamp < contest.schedule.submission_period.end):
@@ -470,12 +476,6 @@ async def submit(message: discord.Message, bot: discord.Client) -> Contest:
             delete_after=30,
             reference=ref,
         )
-        return contest
-    
-    # Check the channel and thread to see if they are valid for submissions
-    channel_id, thread_id = get_channel_and_thread(message)
-    
-    if (channel_id, thread_id) not in contest.channel_threads_open_for_submissions:
         return contest
     
     # Enforce photo limit: maximum 6 photos per author per category
@@ -2736,11 +2736,16 @@ def main():
         if current_period == ContestPeriod.IDLE or current_period is None:
             # Check if this is a contest-related channel before removing reaction
             if payload.emoji.name in voting_emojis:
-                # Get thread_id if it's a thread
-                thread_id = channel.id if isinstance(channel, discord.Thread) else None
+                # Get channel_id and thread_id correctly
+                if isinstance(channel, discord.Thread):
+                    channel_id = channel.parent.id
+                    thread_id = channel.id
+                else:
+                    channel_id = channel.id
+                    thread_id = None
                 
                 # Check if this channel/thread is part of the contest
-                res = contest.competition_from_channel_thread(payload.channel_id, thread_id)
+                res = contest.competition_from_channel_thread(channel_id, thread_id)
                 
                 if res is not None:
                     # This is a contest channel - remove reaction and notify user
