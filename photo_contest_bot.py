@@ -1813,8 +1813,15 @@ async def notify_period_start(bot: discord.Client, period: ContestPeriod):
             f"Deadline: <t:{int(contest.schedule.submission_period.end)}:F>"
         )
     elif period == ContestPeriod.QUALIF:
-        # If qualification threads were created, announce inside each thread and ping that thread's contestants
+        # If qualification threads were created, announce inside each thread and ping ALL contestants
         if contest.qualif_competitions:
+            # Build a mention list for ALL contestants (not just thread-specific)
+            all_contestant_ids = contest.contestants
+            if all_contestant_ids:
+                contestant_mentions = " ".join(f"<@{user_id}>" for user_id in sorted(all_contestant_ids))
+            else:
+                contestant_mentions = ""
+
             for comp in contest.qualif_competitions:
                 if not comp.thread_id:
                     continue
@@ -1823,20 +1830,17 @@ async def notify_period_start(bot: discord.Client, period: ContestPeriod):
                 except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                     continue
 
-                # Build a mention list from authors who have entries in this competition
-                author_ids = {sub.author_id for sub in comp.competing_entries if sub.author_id}
-                if not author_ids:
-                    mentions = ""
-                else:
-                    mentions = " ".join(f"<@{uid}>" for uid in sorted(author_ids))
-
                 try:
                     assert isinstance(thread, discord.Thread), "Thread ID does not correspond to a thread channel"
                     await thread.send(
                         "🗳️ **QUALIFICATION VOTING HAS BEGUN!** 🗳️\n\n"
-                        "Vote for your favorite photos in this thread to help them advance to the Semi-Finals!\n"
+                        "Vote for your favorite photos in this thread to help them advance to the Semi-Finals!\n\n"
+                        "**How to vote:**\n"
+                        "• React with 0️⃣, 1️⃣, 2️⃣, or 3️⃣ on any photo to give it 0-3 public points\n"
+                        "• React with 💬 on any photo to add commentary about composition, lighting, and artistic merit. A summary of commentaries will be shown under each photo in the semi-finals.\n"
+                        "• React with 🗳️ to this message to cast your jury vote (top 10 ranking)\n\n"
                         f"Deadline: <t:{int(contest.schedule.qualif_period.end)}:F>\n"
-                        + mentions
+                        + contestant_mentions
                     )
                 except (discord.Forbidden, discord.HTTPException):
                     # ignore send failures per-thread
@@ -1846,7 +1850,11 @@ async def notify_period_start(bot: discord.Client, period: ContestPeriod):
             contestant_mentions = " ".join(f"<@{user_id}>" for user_id in contest.contestants)
             await announcement_channel.send(
                 "🗳️ **QUALIFICATION VOTING HAS BEGUN!** 🗳️\n\n"
-                "Check the qualification threads and vote for your favorites!\n"
+                "Check the qualification threads and vote for your favorites!\n\n"
+                "**How to vote:**\n"
+                "• React with 0️⃣, 1️⃣, 2️⃣, or 3️⃣ on any photo to give it 0-3 public points\n"
+                "• React with 💬 on any photo to add commentary about composition, lighting, and artistic merit\n"
+                "• React with 🗳️ to this message to cast your jury vote (top 10 ranking)\n\n"
                 f"Deadline: <t:{int(contest.schedule.qualif_period.end)}:F>\n"
                 + contestant_mentions
             )
@@ -2276,6 +2284,7 @@ async def prep_qualif_period(bot: discord.Client):
         for i in range(thread_count):
             thread = await channel.create_thread(
                 name=f"Qualification Thread {i+1}",
+                type=discord.ChannelType.public_thread,
                 auto_archive_duration=10080  # 7 days
             )
             thread_ids.append(thread.id)
@@ -2362,6 +2371,8 @@ async def prep_qualif_period(bot: discord.Client):
             await msg.add_reaction("1️⃣")
             await msg.add_reaction("2️⃣")
             await msg.add_reaction("3️⃣")
+            # Add commentary reaction
+            await msg.add_reaction("💬")
             
             # Update the contest with the message_id mapping
             contest = contest.set_message_id(comp.channel_id, comp.thread_id, i, msg.id)
@@ -2376,7 +2387,7 @@ async def prep_qualif_period(bot: discord.Client):
             )
         
         # Send voting instruction message
-        vote_msg = await channel.send(
+        vote_msg = await thread.send(
             "🗳️ **Jury Voting opens soon!**\n"
             f"Voting will begin at <t:{int(contest.schedule.semis_period.start)}:F>\n\n"
             "React with 🗳️ to this message to cast your jury vote (top 10 ranking).\n\n"
@@ -2498,23 +2509,22 @@ async def prep_semis_period(bot: discord.Client):
                 submission.discord_save_path,
                 summary_msg.id,
                 comp.channel_id,
-                None,
+                comp.thread_id,
                 is_summary=True
             )
-        
+
         # Send voting instruction message
         vote_msg = await channel.send(
-            "🗳️ **Jury Voting is now open!**\n"
+            "🗳️ **Jury Voting opens soon!**\n"
+            f"Voting will begin at <t:{int(contest.schedule.semis_period.start)}:F>\n\n"
             "React with 🗳️ to this message to cast your jury vote (top 10 ranking).\n\n"
             "**Public Voting:**\n"
             "React with 0️⃣, 1️⃣, 2️⃣, or 3️⃣ on any photo to give it 0-3 points.\n"
-            "You can vote multiple photos! Your reactions will be automatically removed to keep votes secret.\n\n"
-            "**Commentary:**\n"
-            "React with 💬 on any photo to add your commentary about composition, lighting, and artistic merit.\n\n"
-            "Note: The top 2 of public and the top 3 of jury among the remaining submissions will advance to the Grand Final."
+            "You can vote on as many photos as you wish! Your reactions will be automatically removed to keep votes secret.\n\n"
+            "Note: The top 2 of public and the top 6 of jury among the remaining submissions will advance to the semi-finals."
         )
         await vote_msg.add_reaction("🗳️")
-    
+
     # Save the updated contest with message mappings
     contest.save("photo_contest/contest2026.yaml")
 
