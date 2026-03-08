@@ -2405,7 +2405,7 @@ async def prep_qualif_period(bot: discord.Client):
         # Send voting instruction message
         vote_msg = await thread.send(
             "🗳️ **Jury Voting opens soon!**\n"
-            f"Voting will begin at <t:{int(contest.schedule.semis_period.start)}:F>\n\n"
+            f"Voting will begin at <t:{int(contest.schedule.qualif_period.start)}:F>\n\n"
             "React with 🗳️ to this message to cast your jury vote (top 10 ranking).\n\n"
             "**Public Voting:**\n"
             "React with 0️⃣, 1️⃣, 2️⃣, or 3️⃣ on any photo to give it 0-3 points.\n"
@@ -2834,6 +2834,79 @@ def main():
     def is_admin(user_id: int) -> bool:
         """Check if user is an admin (organizer or has discord team role)."""
         return user_id == organizer_id
+    
+    @bot.command(name="fix_qualif_timestamps")
+    async def command_fix_qualif_timestamps(ctx: commands.Context):
+        """Fix incorrect timestamps in 'Jury Voting opens soon' messages in qualification threads."""
+        if not is_admin(ctx.author.id):
+            await ctx.send("❌ This command is only available to admins.", delete_after=5)
+            return
+        
+        await ctx.send("🔍 Searching for messages to fix in qualification threads...")
+        
+        fixed_count = 0
+        error_count = 0
+        
+        # Get the correct timestamp
+        correct_timestamp = int(contest.schedule.qualif_period.start)
+        
+        # Iterate through all qualification competitions
+        for comp in contest.qualif_competitions:
+            if comp.thread_id is None:
+                continue
+            
+            try:
+                # Get the thread
+                thread = bot.get_channel(comp.thread_id)
+                if thread is None:
+                    print(f"⚠️ Could not find thread {comp.thread_id}")
+                    error_count += 1
+                    continue
+                
+                # Search through messages in the thread
+                async for message in thread.history(limit=100, oldest_first=True):
+                    # Check if this is the voting instruction message
+                    if message.author.id == bot.user.id and "🗳️ **Jury Voting opens soon!**" in message.content:
+                        # Extract current timestamp from message
+                        import re
+                        timestamp_pattern = r"<t:(\d+):F>"
+                        match = re.search(timestamp_pattern, message.content)
+                        
+                        if match:
+                            current_timestamp = int(match.group(1))
+                            
+                            # Check if it needs fixing (if it's not the correct timestamp)
+                            if current_timestamp != correct_timestamp:
+                                # Replace the timestamp
+                                new_content = re.sub(
+                                    timestamp_pattern,
+                                    f"<t:{correct_timestamp}:F>",
+                                    message.content
+                                )
+                                
+                                # Edit the message
+                                await message.edit(content=new_content)
+                                print(
+                                    f"✅ Fixed timestamp in thread <#{comp.thread_id}>\n"
+                                    f"   Old: <t:{current_timestamp}:F>\n"
+                                    f"   New: <t:{correct_timestamp}:F>"
+                                )
+                                fixed_count += 1
+                            else:
+                                print(f"✓ Thread <#{comp.thread_id}> already has correct timestamp")
+                        break  # Found the message in this thread, move to next thread
+                        
+            except Exception as e:
+                print(f"❌ Error processing thread {comp.thread_id}: {e}")
+                error_count += 1
+        
+        # Send summary
+        print(
+            f"\n📊 **Summary:**\n"
+            f"✅ Fixed: {fixed_count}\n"
+            f"❌ Errors: {error_count}\n"
+            f"🔍 Total qualification threads checked: {len(contest.qualif_competitions)}"
+        )
     
     @bot.command(name="contest_status")
     async def command_contest_status(ctx: commands.Context):
