@@ -2729,8 +2729,29 @@ def main():
             contest = await withdraw(contest, message, user)
             return
         
+        # Check for voting-related emojis
+        voting_emojis = ["0️⃣", "1️⃣", "2️⃣", "3️⃣", "🗳️", "💬"]
+        
         # Handle reactions based on current contest period
         if current_period == ContestPeriod.IDLE or current_period is None:
+            # Check if this is a contest-related channel before removing reaction
+            if payload.emoji.name in voting_emojis:
+                # Get thread_id if it's a thread
+                thread_id = channel.id if isinstance(channel, discord.Thread) else None
+                
+                # Check if this channel/thread is part of the contest
+                res = contest.competition_from_channel_thread(payload.channel_id, thread_id)
+                
+                if res is not None:
+                    # This is a contest channel - remove reaction and notify user
+                    try:
+                        await message.remove_reaction(payload.emoji.name, user)
+                    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                        pass
+                    try:
+                        await user.send("⏰ Voting is not currently open. Please wait for the next contest period.")
+                    except (discord.Forbidden, discord.HTTPException):
+                        pass
             return  # No active period, ignore other reactions
         
         # Handle different reactions based on current period
