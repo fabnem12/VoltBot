@@ -355,6 +355,8 @@ def split_entries_categ(categ_info: CompetitionInfo) -> list[list[Submission]]:
         return sizes
 
     thread_sizes = split_into_threads(len(entries))
+    n_threads = len(thread_sizes)
+    threads: list[list[Submission]] = [[] for _ in range(n_threads)]
     
     # Group entries by author
     from collections import defaultdict
@@ -362,30 +364,30 @@ def split_entries_categ(categ_info: CompetitionInfo) -> list[list[Submission]]:
     for entry in entries:
         entries_by_author[entry.author_id].append(entry)
     
-    # Create an interleaved list to spread authors evenly
-    all_entries_interleaved = []
+    # Shuffle author order for randomness
     authors = list(entries_by_author.keys())
-    shuffle(authors)  # Randomize author order
+    shuffle(authors)
     
-    # Shuffle each author's entries
+    # For each author, determine how many entries go to each thread
     for author_id in authors:
-        shuffle(entries_by_author[author_id])
+        author_entries = entries_by_author[author_id]
+        shuffle(author_entries)  # Randomize this author's entries
+        
+        # Count how many of this author's entries should go to each thread (round-robin)
+        entries_per_thread = [0] * n_threads
+        for i in range(len(author_entries)):
+            thread_idx = i % n_threads
+            entries_per_thread[thread_idx] += 1
+        
+        # Assign this author's entries to threads according to the counts
+        entry_idx = 0
+        for thread_idx in range(n_threads):
+            count = entries_per_thread[thread_idx]
+            for _ in range(count):
+                threads[thread_idx].append(author_entries[entry_idx])
+                entry_idx += 1
     
-    # Round-robin through authors to interleave entries
-    max_entries_per_author = max(len(entries) for entries in entries_by_author.values())
-    for i in range(max_entries_per_author):
-        for author_id in authors:
-            if i < len(entries_by_author[author_id]):
-                all_entries_interleaved.append(entries_by_author[author_id][i])
-    
-    # Split the interleaved list according to calculated thread sizes
-    threads: list[list[Submission]] = []
-    start_idx = 0
-    for size in thread_sizes:
-        threads.append(all_entries_interleaved[start_idx:start_idx + size])
-        start_idx += size
-    
-    # Shuffle each thread to further randomize
+    # Shuffle each thread to mix authors
     for thread in threads:
         shuffle(thread)
     
