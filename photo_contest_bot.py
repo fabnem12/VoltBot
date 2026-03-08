@@ -1585,38 +1585,54 @@ async def announce_final_results(bot: discord.Client, reveal_delay: int = 15):
     
     # Announce the winner
     jury_scores = final_comp.count_votes_jury()
-    winner = max(final_comp.competing_entries, key=lambda x: (jury_scores.get(x, 0), -x.submission_time))
     
-    winner_embed = discord.Embed(
-        description=f"**🎉 Congratulations, this photo wins the Grand Final! 🎉**"
-    )
-    winner_embed.set_image(url=winner.discord_save_path)
-    await announcement_channel.send(embed=winner_embed)
+    # Check for tie
+    max_score = max(jury_scores.values()) if jury_scores else 0
+    tied_entries = [sub for sub, score in jury_scores.items() if score == max_score]
+    is_tie = len(tied_entries) > 1
     
-    # DM the winner
-    try:
-        winner_user = await bot.fetch_user(winner.author_id)
-        dm_channel = winner_user.dm_channel or await winner_user.create_dm()
-        await dm_channel.send(embed=winner_embed)
-    except Exception as e:
-        print(f"Could not send DM to winner {winner.author_id}: {e}")
-    
-    # Generate winner recap board
-    winner_board_path = gen_winner_announcement_board(
-        winner=winner,
-        all_finalists=final_comp.competing_entries,
-        final_scores=jury_scores,
-        category_name="Grand Final",
-        id2name=id2name,
-        final_competition=final_comp,
-        contest=contest,
-    )
-    await announcement_channel.send(
-        "📸 **Winner Recap:**",
-        file=discord.File(winner_board_path)
-    )
-    
-    await announcement_channel.send("\n✨ **Contest complete! Thank you to all participants!** ✨")
+    if is_tie:
+        # Announce tie
+        tied_mentions = "\n".join(f"• Submission #{final_comp.competing_entries.index(sub) + 1}" for sub in tied_entries)
+        await announcement_channel.send(
+            f"⚖️ **There is a tie!** The following photos are tied with **{max_score} points** each:\n"
+            f"{tied_mentions}\n\n"
+            f"A tie-break vote will follow to determine the winner."
+        )
+    else:
+        # No tie - announce winner
+        winner = max(final_comp.competing_entries, key=lambda x: (jury_scores.get(x, 0), -x.submission_time))
+        
+        winner_embed = discord.Embed(
+            description=f"**🎉 Congratulations, this photo wins the Grand Final! 🎉**"
+        )
+        winner_embed.set_image(url=winner.discord_save_path)
+        await announcement_channel.send(embed=winner_embed)
+        
+        # DM the winner
+        try:
+            winner_user = await bot.fetch_user(winner.author_id)
+            dm_channel = winner_user.dm_channel or await winner_user.create_dm()
+            await dm_channel.send(embed=winner_embed)
+        except Exception as e:
+            print(f"Could not send DM to winner {winner.author_id}: {e}")
+        
+        # Generate winner recap board
+        winner_board_path = gen_winner_announcement_board(
+            winner=winner,
+            all_finalists=final_comp.competing_entries,
+            final_scores=jury_scores,
+            category_name="Grand Final",
+            id2name=id2name,
+            final_competition=final_comp,
+            contest=contest,
+        )
+        await announcement_channel.send(
+            "📸 **Winner Recap:**",
+            file=discord.File(winner_board_path)
+        )
+        
+        await announcement_channel.send("\n✨ **Contest complete! Thank you to all participants!** ✨")
     
     # Add individual vote boards to all submission embeds (after final winner announcement)
     await announce_individual_vote_boards(bot)
