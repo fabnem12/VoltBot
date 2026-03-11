@@ -1156,6 +1156,34 @@ async def handle_jury_vote_request(contest: Contest, message: discord.Message, u
         if current_period in (ContestPeriod.SEMIS, ContestPeriod.FINAL):
             await send_vote_reminder(user, contest, channel_id, votable_submissions, submission_numbers, voter_id_for_lookup)
 
+        # If voting in QUALIF period, show public votes in this thread
+        if current_period == ContestPeriod.QUALIF:
+            for comp in contest.qualif_competitions:
+                if comp.thread_id == thread_id:
+                    # Show public votes in this thread
+                    user_public_votes: dict[Submission, int] = {}
+                    for vote in comp.votes_public:
+                        if vote.voter_id == voter_id_for_lookup:
+                            user_public_votes[vote.submission] = vote.nb_points
+
+                    if user_public_votes:
+                        lines = []
+                        for sub, pts in sorted(user_public_votes.items(), key=lambda x: x[1], reverse=True):
+                            num = submission_numbers.get(sub, "?")
+                            plural = "s" if pts != 1 else ""
+                            lines.append(f"Submission #{num}: **{pts} point{plural}**")
+                        await user.send("📝 **Your public votes in this thread:**\n" + "\n".join(lines))
+
+                    # Show jury vote if already cast in this thread
+                    if voter_id_for_lookup in comp.votes_jury:
+                        jury_vote = comp.votes_jury[voter_id_for_lookup]
+                        lines = []
+                        for i, sub in enumerate(jury_vote.ranking, 1):
+                            num = submission_numbers.get(sub, "?")
+                            lines.append(f"#{i}: Submission #{num}")
+                        await user.send("🗳️ **Your current jury ranking in this thread:**\n" + "\n".join(lines))
+                    break
+
         # Send jury oath AFTER the submissions and reminders, before the voting interface
         await user.send(
             "⚖️ **Jury Oath**\n\n"
