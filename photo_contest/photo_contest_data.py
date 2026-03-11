@@ -775,7 +775,7 @@ class Contest:
                 f"Unable to find a valid competition from the (channel_id, thread_id) provided: ({channel_id}, {thread_id})"
             )
 
-    def solve_qualifs(self) -> "Contest":
+    def solve_qualifs(self) -> tuple["Contest", set[int]]:
         qualif_competitions = self.qualif_competitions
         submission_competitions = self.submission_competitions
         
@@ -834,7 +834,45 @@ class Contest:
         copy = deepcopy(self)
         copy.competitions += semis
 
-        return copy
+        # Copy public votes from qualif to semis for qualified submissions
+        copy, voters_transferred = Contest._copy_public_votes_to_semis_internal(copy)
+
+        return copy, voters_transferred
+
+    @staticmethod
+    def _copy_public_votes_to_semis_internal(contest: "Contest") -> tuple["Contest", set[int]]:
+        """Internal method to copy public votes from qualif to semis.
+
+        Uses the immutable pattern - save_public_vote creates new Contest objects.
+        Returns tuple of (updated Contest, set of voter_ids whose votes were transferred).
+        """
+        voters_transferred: set[int] = set()
+
+        for semi in contest.semis_competitions:
+            qualifs_for_channel = [
+                q for q in contest.qualif_competitions
+                if q.channel_id == semi.channel_id
+            ]
+
+            for qualif in qualifs_for_channel:
+                for vote in qualif.votes_public:
+                    if vote.submission not in semi.competing_entries:
+                        continue
+
+                    try:
+                        contest = contest.save_public_vote(
+                            semi.channel_id,
+                            None,
+                            vote.voter_id,
+                            vote.nb_points,
+                            vote.submission,
+                            period="semis"
+                        )
+                        voters_transferred.add(vote.voter_id)
+                    except ValueError:
+                        pass
+
+        return contest, voters_transferred
 
     def solve_semis(self, final_channel_id: int) -> "Contest":
         """Solve semi-finals and create the grand final competition.

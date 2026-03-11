@@ -2418,41 +2418,6 @@ async def prep_qualif_period(bot: discord.Client):
     contest.save("photo_contest/contest2026.yaml")
 
 
-def copy_qualif_public_votes_to_semis():
-    """Automatically copy public votes from qualification to semi-finals.
-    
-    This ensures users don't need to re-vote for photos they already voted for in qualifs.
-    """
-    global contest
-    
-    logger.info("Copying public votes from qualif to semis...")
-    
-    # For each semis competition
-    for semis_comp in contest.semis_competitions:
-        # Find all qualif competitions for this channel
-        for qualif_comp in contest.qualif_competitions:
-            if qualif_comp.channel_id == semis_comp.channel_id:
-                # Copy public votes for submissions that advanced to semis
-                for vote in qualif_comp.votes_public:
-                    if vote.submission in semis_comp.competing_entries:
-                        # Save this public vote in the semis competition
-                        try:
-                            contest = contest.save_public_vote(
-                                semis_comp.channel_id,
-                                None,
-                                vote.voter_id,
-                                vote.nb_points,
-                                vote.submission,
-                                period="semis"
-                            )
-                        except ValueError:
-                            # Vote already exists or voter is the author, skip
-                            pass
-    
-    contest.save("photo_contest/contest2026.yaml")
-    logger.info("Public votes copied successfully")
-
-
 async def prep_semis_period(bot: discord.Client):
     """Prepare semi-final period: solve qualifs, copy votes, and post submissions.
     
@@ -2461,12 +2426,22 @@ async def prep_semis_period(bot: discord.Client):
     """
     global contest
     
-    # Solve qualifications to determine semi-finalists
-    contest = contest.solve_qualifs()
+    # Solve qualifications to determine semi-finalists (includes copying public votes to semis)
+    contest, voters_transferred = contest.solve_qualifs()
     contest.save("photo_contest/contest2026.yaml")
     
-    # Copy public votes from qualif to semis automatically
-    copy_qualif_public_votes_to_semis()
+    # Send DM notifications to voters whose votes were transferred
+    for voter_id in voters_transferred:
+        try:
+            user = await bot.fetch_user(voter_id)
+            if user:
+                embed = discord.Embed(
+                    title="Your votes have been transferred!",
+                    description="Your public votes from the qualification round have been automatically transferred to the semi-finals! You can change them if you'd like by voting again in the semi-finals."
+                )
+                await send_dm_safe(user, embed=embed)
+        except Exception as e:
+            print(f"Could not send DM to voter {voter_id}: {e}")
     
     # Announce qualification results (random order, no authors)
     await announce_qualif_results(bot)
