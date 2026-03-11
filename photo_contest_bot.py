@@ -245,6 +245,15 @@ async def notify_organizer_error(bot: discord.Client, error_message: str):
         pass
 
 
+def reload_contest() -> Contest:
+    """Reload contest from disk to get latest state, avoiding race conditions.
+    
+    When multiple votes are submitted concurrently, each handler should call this
+    before saving to ensure they work with the most recent saved version.
+    """
+    return Contest.from_file("photo_contest/contest2026.yaml")
+
+
 async def send_dm_safe(user: discord.User | discord.Member, content: str = "", embed: Optional[discord.Embed] = None, view: Optional[discord.ui.View] = None) -> bool:
     """Safely send a DM to a user, handling Forbidden and NotFound errors.
     
@@ -836,6 +845,8 @@ class JuryConfirmView(discord.ui.View):
         # Save the vote
         global contest
         try:
+            # Reload contest to avoid race condition with concurrent votes
+            contest = reload_contest()
             # Save using the explicit voter id when provided (for 'vote as')
             save_vid = self.voter_id_for_save
             contest = contest.save_jury_vote(self.channel_id, self.thread_id, save_vid, self.ranking, period=self.period)
@@ -848,7 +859,7 @@ class JuryConfirmView(discord.ui.View):
             )
         except ValueError as e:
             await interaction.response.edit_message(
-                content=f"❌ Error saving vote: {e}",
+                content=f"{self.ranking_text}\n\n❌ Error saving vote: {e}",
                 view=None
             )
     
@@ -861,7 +872,7 @@ class JuryConfirmView(discord.ui.View):
             return
         
         await interaction.response.edit_message(
-            content="❌ Vote cancelled.",
+            content=f"{self.ranking_text}\n\n❌ Vote cancelled.",
             view=None
         )
 
@@ -1240,6 +1251,8 @@ async def handle_public_vote(contest: Contest, message: discord.Message, user: d
     submission = competition.competing_entries[submission_idx]
     
     try:
+        # Reload contest to avoid race condition with concurrent votes
+        contest = reload_contest()
         # Save the vote
         contest = contest.save_public_vote(channel_id, thread_id, user.id, points, submission, period=current_period.value)
         contest.save("photo_contest/contest2026.yaml")
@@ -2713,6 +2726,7 @@ def main():
             if payload.emoji.name in voting_emojis:
                 # Get channel_id and thread_id correctly
                 if isinstance(channel, discord.Thread):
+                    assert channel.parent is not None, "Thread channel has no parent"
                     channel_id = channel.parent.id
                     thread_id = channel.id
                 else:
@@ -2842,6 +2856,9 @@ def main():
                     print(f"⚠️ Could not find thread {comp.thread_id}")
                     error_count += 1
                     continue
+                
+                assert isinstance(thread, discord.Thread), f"Channel {comp.thread_id} is not a thread"
+                assert bot.user is not None, "Bot user is None"
                 
                 # Search through messages in the thread
                 async for message in thread.history(limit=100, oldest_first=True):
@@ -3257,6 +3274,8 @@ def main():
         
         # Save the vote
         try:
+            # Reload contest to avoid race condition with concurrent votes
+            contest = reload_contest()
             period_type = current_period.value if current_period != ContestPeriod.IDLE else None
             contest = contest.save_public_vote(channel_id, thread_id, user.id, points_literal, submission, period=period_type)
             contest.save("photo_contest/contest2026.yaml")
