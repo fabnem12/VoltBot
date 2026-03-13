@@ -1805,6 +1805,9 @@ async def announce_final_boards(bot: discord.Client):
         channel_names[comp.channel_id] = getattr(category_channel, "name", f"Category {comp.channel_id}")
     
     # Generate and post qualif boards - post in their respective threads
+    # Get jury voter authors for bonus display
+    qualif_jury_voter_authors = contest.get_jury_voter_authors("qualif")
+    
     for comp in contest.qualif_competitions:
         category_channel = bot.get_channel(comp.channel_id)
         category_name = getattr(category_channel, "name", f"Category {comp.channel_id}")
@@ -1821,7 +1824,7 @@ async def announce_final_boards(bot: discord.Client):
         
         assert isinstance(target_channel, (discord.TextChannel, discord.Thread)), "Target channel must be a text channel or thread"
         
-        board_path = gen_competition_board(comp, category_name, id2name, thread_name)
+        board_path = gen_competition_board(comp, category_name, id2name, thread_name, qualif_jury_voter_authors)
         
         with open(board_path, "rb") as f:
             await target_channel.send(
@@ -2120,6 +2123,9 @@ async def close_qualif_period(bot: discord.Client):
     # Build id2name mapping
     id2name = await build_id2name_mapping(bot, contest)
     
+    # Get jury voter authors for bonus display
+    qualif_jury_voter_authors = contest.get_jury_voter_authors("qualif")
+    
     for comp in contest.qualif_competitions:
         if comp.thread_id:
             thread = await bot.fetch_channel(comp.thread_id)
@@ -2129,7 +2135,7 @@ async def close_qualif_period(bot: discord.Client):
                 category_name = getattr(category_channel, "name", f"Category {comp.channel_id}")
                 
                 # Generate the results board
-                board_path = gen_competition_board(comp, category_name, id2name, thread.name)
+                board_path = gen_competition_board(comp, category_name, id2name, thread.name, qualif_jury_voter_authors)
                 
                 # Upload the board to save channel for permanent URL
                 try:
@@ -2182,6 +2188,9 @@ async def close_semis_period(bot: discord.Client):
     # Build id2name mapping
     id2name = await build_id2name_mapping(bot, contest)
     
+    # Get jury voter authors for bonus display
+    semis_jury_voter_authors = contest.get_jury_voter_authors("semis")
+    
     for comp in contest.semis_competitions:
         channel = await bot.fetch_channel(comp.channel_id)
         if channel and isinstance(channel, discord.TextChannel):
@@ -2189,7 +2198,7 @@ async def close_semis_period(bot: discord.Client):
             category_name = getattr(channel, "name", f"Category {comp.channel_id}")
             
             # Generate the results board
-            board_path = gen_competition_board(comp, category_name, id2name, None)
+            board_path = gen_competition_board(comp, category_name, id2name, None, semis_jury_voter_authors)
             
             # Upload the board to save channel for permanent URL
             try:
@@ -3032,13 +3041,16 @@ def main():
         # Build id2name mapping
         id2name = await build_id2name_mapping(bot, contest)
         
+        # Get jury voter authors for bonus display
+        qualif_jury_voter_authors = contest.get_jury_voter_authors("qualif")
+        
         for comp in contest.qualif_competitions:
             # Get category name
             category_channel = bot.get_channel(comp.channel_id)
             category_name = getattr(category_channel, "name", f"Category {comp.channel_id}")
             
             # Generate board
-            board_path = gen_competition_board(comp, category_name, id2name, None)
+            board_path = gen_competition_board(comp, category_name, id2name, None, qualif_jury_voter_authors)
             
             # Send board to channel
             with open(board_path, "rb") as f:

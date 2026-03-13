@@ -135,8 +135,17 @@ def gen_competition_board(
     channel_name: str,
     id2name: Dict[int, str],
     thread_name: Optional[str] = None,
+    jury_voter_authors: Optional[set[int]] = None,
 ) -> str:
-    """Generate a competition board showing current standings for a competition."""
+    """Generate a competition board showing current standings for a competition.
+    
+    Args:
+        competition: The competition to generate the board for
+        channel_name: Name of the channel/category
+        id2name: Mapping of user IDs to names
+        thread_name: Optional thread name for qualification boards
+        jury_voter_authors: Set of author IDs who voted as jury (for bonus display)
+    """
     
     # Count votes
     jury_votes = competition.count_votes_jury()
@@ -237,13 +246,18 @@ def gen_competition_board(
         jury_points = jury_votes.get(submission, 0)
         public_points = public_votes.get(submission, 0)
         
+        # Add bonus display for submissions from jury voters
+        bonus_text = ""
+        if jury_voter_authors and submission.author_id in jury_voter_authors:
+            bonus_text = " (+3)"
+        
         # Calculate x positions based on column
         jury_x = 335 if col == 0 else 800
         public_x = 395 if col == 0 else 860
 
         d.text(
             (jury_x, y_pos + 10),
-            str(jury_points),
+            str(jury_points) + bonus_text,
             anchor="mm",
             font=font_regular_choice,
             fill=color,
@@ -507,8 +521,13 @@ def gen_semifinals_boards(
     contest: Contest,
     channel_names: Dict[int, str],
     id2name: Dict[int, str],
+    jury_voter_authors: Optional[set[int]] = None,
 ) -> List[str]:
     """Generate boards for all semifinal competitions."""
+    
+    # Get jury voter authors if not provided
+    if jury_voter_authors is None:
+        jury_voter_authors = contest.get_jury_voter_authors("semis")
     
     semifinal_competitions = contest.semis_competitions
     generated_files = []
@@ -613,13 +632,18 @@ def gen_semifinals_boards(
             )
             
             # Points - show jury and public in separate columns
+            # Add bonus display for submissions from jury voters
+            bonus_text = ""
+            if jury_voter_authors and submission.author_id in jury_voter_authors:
+                bonus_text = " (+3)"
+            
             # Calculate x positions based on column
             jury_x = 355 if col == 0 else 805
             public_x = 415 if col == 0 else 865
             
             d.text(
                 (jury_x, y_pos + 10),
-                str(jury_points),
+                str(jury_points) + bonus_text,
                 anchor="mm",
                 font=font_regular_choice,
                 fill=color,

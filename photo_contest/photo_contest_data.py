@@ -446,6 +446,21 @@ class Contest:
         finals = self._competitions_by_type("final")
         return finals[0] if finals else None
 
+    def get_jury_voter_authors(self, period: str) -> set[int]:
+        """Get authors who cast at least one jury vote in the given period.
+        
+        Args:
+            period: "qualif", "semis", or "final"
+        
+        Returns:
+            Set of author IDs who voted as jury in this period
+        """
+        voters = set()
+        for comp in self.competitions:
+            if comp.type == period:
+                voters.update(comp.votes_jury.keys())
+        return voters
+
     @property
     def channel_threads_open_for_submissions(self) -> list[tuple[int, Optional[int]]]:
         ts = time()
@@ -790,8 +805,16 @@ class Contest:
             # with the vote of the other voter category being used in case of a tie
             # in case of a new tie, the submission submitted earlier wins
 
+            # Get authors who voted as jury in this period
+            jury_voter_authors = self.get_jury_voter_authors("qualif")
+
             res_jury = qualif.count_votes_jury()
             res_public = qualif.count_votes_public()
+
+            # Add +3 bonus to submissions from authors who voted as jury
+            for sub in qualif.competing_entries:
+                if sub.author_id in jury_voter_authors:
+                    res_jury[sub] = res_jury.get(sub, 0) + 3
 
             # Select top 2 of public first, then top 6 of jury from remaining
             top_public = sorted(
@@ -894,8 +917,16 @@ class Contest:
             # with the vote of the other voter category being used in case of a tie
             # in a case of a new tie, the submission submitted earlier wins
 
+            # Get authors who voted as jury in this period
+            jury_voter_authors = self.get_jury_voter_authors("semis")
+
             res_jury = semi.count_votes_jury()
             res_public = semi.count_votes_public()
+
+            # Add +3 bonus to submissions from authors who voted as jury
+            for sub in semi.competing_entries:
+                if sub.author_id in jury_voter_authors:
+                    res_jury[sub] = res_jury.get(sub, 0) + 3
 
             # Select top 2 of public first, then top 3 of jury from remaining
             top_public = sorted(
