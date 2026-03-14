@@ -7,6 +7,8 @@ from typing import Dict, Literal, Optional
 
 import logging
 import nextcord as discord
+import random
+import re
 import requests
 from arrow import utcnow
 from nextcord.ext import commands, tasks
@@ -1541,13 +1543,8 @@ async def announce_stage_results(bot: discord.Client, contest: Contest, competit
         # Post announcement for the combined Grand Final
         await announcement_channel.send(f"🎊 **{stage_name} for the {next_stage_name}**\n")
         await announcement_channel.send(f"Check the category channels to see the finalists!")
-    else:
-        # For semis, announce qualifiers per category (photos already posted in their channels)
-        competitions = contest.semis_competitions
-        for comp in competitions:
-            # Get category name
-            category_channel = bot.get_channel(comp.channel_id)
-            category_name = getattr(category_channel, "name", f"Category <#{comp.channel_id}>")
+    elif competition_type == "semis":
+        await announcement_channel.send(f"**Vote in the {stage_name} to determine who advances to the {next_stage_name}!**\n\nCheck the category channels to see the qualifiers!")
 
 
 async def announce_qualif_results(bot: discord.Client):
@@ -2476,9 +2473,19 @@ async def prep_semis_period(bot: discord.Client):
     """
     global contest
     
+    # Store qualif info before solving (to map semis back to threads)
+    qualif_competitions = contest.qualif_competitions
+    
     # Solve qualifications to determine semi-finalists (includes copying public votes to semis)
     contest, voters_transferred = contest.solve_qualifs()
     contest.save("photo_contest/contest2026.yaml")
+    
+    # Map channel_id to list of original thread_ids for that channel
+    channel_to_thread_ids = {}
+    for comp in qualif_competitions:
+        if comp.channel_id not in channel_to_thread_ids:
+            channel_to_thread_ids[comp.channel_id] = []
+        channel_to_thread_ids[comp.channel_id].append(comp.thread_id)
     
     # Send DM notifications to voters whose votes were transferred
     for voter_id in voters_transferred:
@@ -2493,8 +2500,37 @@ async def prep_semis_period(bot: discord.Client):
         except Exception as e:
             print(f"Could not send DM to voter {voter_id}: {e}")
     
-    # Announce qualification results (random order, no authors)
+    # Announce qualification results (random order, no authors) in announcement channel
     await announce_qualif_results(bot)
+    
+    # Announce qualifiers in each original qualification thread
+    for comp in contest.qualif_competitions:
+        assert comp.thread_id is not None, "Qualification competition missing thread_id"
+        qualifiers = contest.get_qualifiers_for_thread(comp.channel_id, comp.thread_id)
+        
+        if not qualifiers:
+            continue
+        
+        channel = bot.get_channel(comp.channel_id)
+        try:
+            thread = await bot.fetch_channel(comp.thread_id)
+        except Exception:
+            continue
+        
+        if thread:
+            await thread.send("🏆 **Qualification Results** 🏆\nThe following photos have qualified for the Semi-Finals (in no particular order):")
+            
+            for i, sub in enumerate(qualifiers):
+                await thread.send(
+                    f"Qualifier **#{i+1}**",
+                    embed=discord.Embed().set_image(url=sub.discord_save_path)
+                )
+            
+            start_time = int(contest.schedule.semis_period.start)
+            timestamp_str = f"<t:{start_time}:F>"
+            await thread.send(
+                "📅 **Voting will begin at** " + timestamp_str
+            )
     
     # Send DM notifications to qualifiers
     await notify_qualifiers(bot, contest, "semis", "Semi-Finals")
@@ -2556,7 +2592,7 @@ async def prep_semis_period(bot: discord.Client):
 
         # Send voting instruction message
         vote_msg = await channel.send(
-            "🗳️ **Jury Voting opens soon!**\n"
+            "🗳️ **Voting has NOT started yet!**\n"
             f"Voting will begin at <t:{int(contest.schedule.semis_period.start)}:F>\n\n"
             "React with 🗳️ to this message to cast your jury vote (top 10 ranking).\n\n"
             "**Public Voting:**\n"
@@ -2902,7 +2938,6 @@ def main():
                     # Check if this is the voting instruction message
                     if message.author.id == bot.user.id and "🗳️ **Jury Voting opens soon!**" in message.content:
                         # Extract current timestamp from message
-                        import re
                         timestamp_pattern = r"<t:(\d+):F>"
                         match = re.search(timestamp_pattern, message.content)
                         

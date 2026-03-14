@@ -461,6 +461,51 @@ class Contest:
                 voters.update(comp.votes_jury.keys())
         return voters
 
+    def get_qualifiers_for_thread(self, channel_id: int, thread_id: int) -> list["Submission"]:
+        """Return list of qualified submissions for a given thread.
+        
+        Applies +3 bonus for submissions from authors who voted as jury.
+        Uses top 2 public + top 6 jury (from remaining) qualification rules.
+        
+        Args:
+            channel_id: The channel ID for the category
+            thread_id: The thread ID for the qualification thread
+            
+        Returns:
+            List of qualified Submission objects
+        """
+        result = self.competition_from_channel_thread(channel_id, thread_id, prefer_type="qualif")
+        if not result:
+            return []
+        
+        _, qualif_comp = result
+        
+        jury_voter_authors = self.get_jury_voter_authors("qualif")
+        
+        res_jury = qualif_comp.count_votes_jury()
+        res_public = qualif_comp.count_votes_public()
+        
+        for sub in qualif_comp.competing_entries:
+            if sub.author_id in jury_voter_authors:
+                res_jury[sub] = res_jury.get(sub, 0) + 3
+        
+        top_public = sorted(
+            qualif_comp.competing_entries,
+            key=lambda x: (res_public.get(x, 0), res_jury.get(x, 0), -x.submission_time),
+            reverse=True,
+        )[:2]
+        
+        remaining = [s for s in qualif_comp.competing_entries if s not in top_public]
+        top_jury = sorted(
+            remaining,
+            key=lambda x: (res_jury.get(x, 0), res_public.get(x, 0), -x.submission_time),
+            reverse=True,
+        )[:6]
+        res = top_public + top_jury
+        shuffle(res)
+        
+        return res
+
     @property
     def channel_threads_open_for_submissions(self) -> list[tuple[int, Optional[int]]]:
         ts = time()
@@ -801,38 +846,14 @@ class Contest:
         # Process qualification competitions (categories with >= 12 submissions)
         for qualif in qualif_competitions:
             channel_id = qualif.channel_id
-            # determine the top 4 of the jury and the top 1 of the public
-            # with the vote of the other voter category being used in case of a tie
-            # in case of a new tie, the submission submitted earlier wins
-
-            # Get authors who voted as jury in this period
-            jury_voter_authors = self.get_jury_voter_authors("qualif")
-
-            res_jury = qualif.count_votes_jury()
-            res_public = qualif.count_votes_public()
-
-            # Add +3 bonus to submissions from authors who voted as jury
-            for sub in qualif.competing_entries:
-                if sub.author_id in jury_voter_authors:
-                    res_jury[sub] = res_jury.get(sub, 0) + 3
-
-            # Select top 2 of public first, then top 6 of jury from remaining
-            top_public = sorted(
-                qualif.competing_entries,
-                key=lambda x: (res_public.get(x, 0), res_jury.get(x, 0), -x.submission_time),
-                reverse=True,
-            )[:2]
-            top_jury = sorted(
-                [x for x in qualif.competing_entries if x not in top_public],
-                key=lambda x: (res_jury.get(x, 0), res_public.get(x, 0), -x.submission_time),
-                reverse=True,
-            )[:6]
-
-            top = top_public + top_jury
-            shuffle(top)
-
+            thread_id = qualif.thread_id
+            assert thread_id is not None, "Qualification competitions must have a thread_id"
+            
+            # Get qualifiers using the helper method
+            qualifiers = self.get_qualifiers_for_thread(channel_id, thread_id)
+            
             # save the qualifiers of the thread
-            qualifs_per_categ[channel_id] = qualifs_per_categ.get(channel_id, []) + top
+            qualifs_per_categ[channel_id] = qualifs_per_categ.get(channel_id, []) + qualifiers
 
         # Auto-qualify categories with < 25 submissions (no qualification threads were created)
         channels_with_qualifs = set(q.channel_id for q in qualif_competitions)
@@ -845,6 +866,7 @@ class Contest:
 
         semis = []
         for categ, subs in qualifs_per_categ.items():
+            shuffle(subs)
             semi = CompetitionInfo(
                 "semis",
                 categ,
