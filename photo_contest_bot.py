@@ -33,6 +33,31 @@ class ContestPeriod(Enum):
     FINAL = "final"
 
 
+async def edit_interaction_or_dm(interaction: discord.Interaction, content: Optional[str] = None, view: Optional[discord.ui.View] = None, user: Optional[discord.User | discord.Member] = None):
+    """Try to edit the interaction message, if it fails (e.g., NotFound), send a DM to the user instead."""
+    try:
+        await interaction.response.edit_message(content=content, view=view)
+    except discord.NotFound:
+        # Interaction expired or message not found, send DM instead
+        if user is None:
+            user = interaction.user
+        if user and content:
+            try:
+                await user.send(content)
+            except Exception as e:
+                print(f"Failed to send DM to user {user.id}: {e}")
+    except Exception as e:
+        # Other errors - try DM as fallback
+        print(f"Error editing interaction message: {e}")
+        if user is None:
+            user = interaction.user
+        if user and content:
+            try:
+                await user.send(content)
+            except Exception:
+                pass
+
+
 # temporary way to update the bot
 def stockePID():
     import pickle
@@ -424,7 +449,7 @@ class SubmissionConfirmView(discord.ui.View):
             if isinstance(item, discord.ui.Button):
                 item.disabled = True
         
-        await interaction.response.edit_message(view=self)
+        await edit_interaction_or_dm(interaction, view=self)
     
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.danger, emoji="❌")
     async def cancel_button(self, button: discord.ui.Button, interaction: discord.Interaction):
@@ -855,12 +880,14 @@ class JuryConfirmView(discord.ui.View):
             contest.save("photo_contest/contest2026.yaml")
             logger.info(f"Jury vote saved: user={save_vid}, channel={self.channel_id}, thread={self.thread_id}")
 
-            await interaction.response.edit_message(
+            await edit_interaction_or_dm(
+                interaction,
                 content=f"{self.ranking_text}\n\n✅ Your vote has been saved successfully!",
                 view=None
             )
         except ValueError as e:
-            await interaction.response.edit_message(
+            await edit_interaction_or_dm(
+                interaction,
                 content=f"{self.ranking_text}\n\n❌ Error saving vote: {e}",
                 view=None
             )
@@ -873,7 +900,8 @@ class JuryConfirmView(discord.ui.View):
             await interaction.response.send_message("This vote is not yours!", ephemeral=True)
             return
         
-        await interaction.response.edit_message(
+        await edit_interaction_or_dm(
+            interaction,
             content=f"{self.ranking_text}\n\n❌ Vote cancelled.",
             view=None
         )
@@ -929,14 +957,16 @@ class JuryVotingView(discord.ui.View):
             )
             
             if len(self.ranking) < self.ranking_length:
-                await interaction.response.edit_message(
+                await edit_interaction_or_dm(
+                    interaction,
                     content=f"**Your current ranking ({len(self.ranking)}/{self.ranking_length}):**\n{ranking_text}\n\nClick buttons to continue building your top {self.ranking_length}.",
                     view=self
                 )
             else:
                 # Ranking is complete, show confirmation
                 confirm_view = JuryConfirmView(self.ranking, ranking_text, self.user_id, self.channel_id, self.thread_id, self.contest, voter_id_for_save=self.voter_id_for_save, period=self.period)
-                await interaction.response.edit_message(
+                await edit_interaction_or_dm(
+                    interaction,
                     content=f"**Your final ranking:**\n{ranking_text}\n\nPlease confirm your vote.",
                     view=confirm_view
                 )
