@@ -1123,6 +1123,12 @@ async def handle_jury_vote_request(contest: Contest, message: discord.Message, u
     # Get channel and thread
     channel_id, thread_id = get_channel_and_thread(message)
     
+    # Check if this is a valid competition channel/thread
+    res = contest.competition_from_channel_thread(channel_id, thread_id, prefer_type=current_period.value)
+    if not res:
+        # Not a competition channel/thread - ignore the vote request silently
+        return
+    
     # Find the competition and get votable submissions
     voter_id_for_lookup = as_voter_id if as_voter_id is not None else user.id
     votable_submissions, submission_numbers = contest.get_votable_submissions(
@@ -1595,6 +1601,122 @@ async def announce_semis_results(bot: discord.Client):
     await announce_stage_results(bot, contest, "final", "Finalists", "Grand Final")
 
 
+async def announce_individual_vote_boards(bot: discord.Client):
+    """Add individual vote details boards to submission embeds after the final.
+    
+    For each qualif and semis submission, generates an individual vote board showing
+    how each jury member voted for that specific photo, uploads it to the save channel,
+    and updates the submission embed to include the board as a thumbnail.
+    """
+    global contest
+    
+    print("Generating individual vote boards...")
+    
+    # Build id2name mapping
+    id2name = await build_id2name_mapping(bot, contest)
+    
+    # Get jury voter authors for bonus display
+    qualif_jury_voter_authors = contest.get_jury_voter_authors("qualif")
+    semis_jury_voter_authors = contest.get_jury_voter_authors("semis")
+    
+    # Process qualif competitions - post in threads
+    for comp in contest.qualif_competitions:
+        category_channel = bot.get_channel(comp.channel_id)
+        category_name = getattr(category_channel, "name", f"Category {comp.channel_id}")
+        
+        # Determine target channel (thread or category channel)
+        if comp.thread_id:
+            target_channel = await bot.fetch_channel(comp.thread_id)
+            thread_name = target_channel.name if isinstance(target_channel, discord.Thread) else None
+        else:
+            target_channel = category_channel
+            thread_name = None
+        
+        assert isinstance(target_channel, (discord.TextChannel, discord.Thread)), "Target channel must be a text channel or thread"
+        
+        # Generate individual vote board for each submission
+        for i, submission in enumerate(comp.competing_entries):
+            # Generate the individual vote board
+            board_path = gen_photo_vote_details(submission, comp, category_name, id2name, thread_name, jury_voter_authors=qualif_jury_voter_authors)
+            
+            # Upload to save channel for permanent URL
+            try:
+                board_url = await upload_to_save_channel(
+                    target_channel.guild,
+                    board_path,
+                    f"Vote details - {category_name}" + (f" - {thread_name}" if thread_name else "") + f" - Photo #{i+1}"
+                )
+            except RuntimeError as e:
+                print(f"Could not upload individual vote board: {e}")
+                continue
+            
+            # Update the submission message to add the individual vote board
+            message_id = None
+            for msg_id, sub_idx in comp.msg_to_sub.items():
+                if sub_idx == i:
+                    message_id = msg_id
+                    break
+            
+            if message_id and target_channel and isinstance(target_channel, (discord.TextChannel, discord.Thread)):
+                try:
+                    message = await target_channel.fetch_message(message_id)
+                    # Update embed to include individual vote board as thumbnail
+                    embed = discord.Embed()
+                    embed.set_image(url=submission.discord_save_path)
+                    embed.set_thumbnail(url=board_url)
+                    await message.edit(
+                        content=f"Submission #{i+1}",
+                        embed=embed
+                    )
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
+                    print(f"Could not update message {message_id}: {e}")
+    
+    # Process semis competitions - post in category channels
+    for comp in contest.semis_competitions:
+        category_channel = await bot.fetch_channel(comp.channel_id)
+        assert isinstance(category_channel, (discord.TextChannel, discord.Thread)), "Category channel must be a text channel or thread"
+        category_name = category_channel.name
+        
+        # Generate individual vote board for each submission
+        for i, submission in enumerate(comp.competing_entries):
+            # Generate the individual vote board
+            board_path = gen_photo_vote_details(submission, comp, category_name, id2name, None, jury_voter_authors=semis_jury_voter_authors)
+            
+            # Upload to save channel for permanent URL
+            try:
+                board_url = await upload_to_save_channel(
+                    category_channel.guild,
+                    board_path,
+                    f"Vote details - {category_name} - Photo #{i+1}"
+                )
+            except RuntimeError as e:
+                print(f"Could not upload individual vote board: {e}")
+                continue
+            
+            # Update the submission message to add the individual vote board
+            message_id = None
+            for msg_id, sub_idx in comp.msg_to_sub.items():
+                if sub_idx == i:
+                    message_id = msg_id
+                    break
+            
+            if message_id and category_channel and isinstance(category_channel, (discord.TextChannel, discord.Thread)):
+                try:
+                    message = await category_channel.fetch_message(message_id)
+                    # Update embed to include individual vote board as thumbnail
+                    embed = discord.Embed()
+                    embed.set_image(url=submission.discord_save_path)
+                    embed.set_thumbnail(url=board_url)
+                    await message.edit(
+                        content=f"Submission #{i+1}",
+                        embed=embed
+                    )
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
+                    print(f"Could not update message {message_id}: {e}")
+    
+    print("Individual vote boards complete!")
+
+
 async def announce_final_results(bot: discord.Client, reveal_delay: int = 15):
     """Announce final results with Eurovision-style voting reveal with live boards.
     
@@ -1706,118 +1828,6 @@ async def announce_final_results(bot: discord.Client, reveal_delay: int = 15):
     
     # Add individual vote boards to all submission embeds (after final winner announcement)
     await announce_individual_vote_boards(bot)
-
-
-async def announce_individual_vote_boards(bot: discord.Client):
-    """Add individual vote details boards to submission embeds after the final.
-    
-    For each qualif and semis submission, generates an individual vote board showing
-    how each jury member voted for that specific photo, uploads it to the save channel,
-    and updates the submission embed to include the board as a thumbnail.
-    """
-    global contest
-    
-    print("Generating individual vote boards...")
-    
-    # Build id2name mapping
-    id2name = await build_id2name_mapping(bot, contest)
-    
-    # Process qualif competitions - post in threads
-    for comp in contest.qualif_competitions:
-        category_channel = bot.get_channel(comp.channel_id)
-        category_name = getattr(category_channel, "name", f"Category {comp.channel_id}")
-        
-        # Determine target channel (thread or category channel)
-        if comp.thread_id:
-            target_channel = await bot.fetch_channel(comp.thread_id)
-            thread_name = target_channel.name if isinstance(target_channel, discord.Thread) else None
-        else:
-            target_channel = category_channel
-            thread_name = None
-        
-        assert isinstance(target_channel, (discord.TextChannel, discord.Thread)), "Target channel must be a text channel or thread"
-        
-        # Generate individual vote board for each submission
-        for i, submission in enumerate(comp.competing_entries):
-            # Generate the individual vote board
-            board_path = gen_photo_vote_details(submission, comp, category_name, id2name, thread_name)
-            
-            # Upload to save channel for permanent URL
-            try:
-                board_url = await upload_to_save_channel(
-                    target_channel.guild,
-                    board_path,
-                    f"Vote details - {category_name}" + (f" - {thread_name}" if thread_name else "") + f" - Photo #{i+1}"
-                )
-            except RuntimeError as e:
-                print(f"Could not upload individual vote board: {e}")
-                continue
-            
-            # Update the submission message to add the individual vote board
-            message_id = None
-            for msg_id, sub_idx in comp.msg_to_sub.items():
-                if sub_idx == i:
-                    message_id = msg_id
-                    break
-            
-            if message_id and target_channel and isinstance(target_channel, (discord.TextChannel, discord.Thread)):
-                try:
-                    message = await target_channel.fetch_message(message_id)
-                    # Update embed to include individual vote board as thumbnail
-                    embed = discord.Embed()
-                    embed.set_image(url=submission.discord_save_path)
-                    embed.set_thumbnail(url=board_url)
-                    await message.edit(
-                        content=f"Submission #{i+1}",
-                        embed=embed
-                    )
-                except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
-                    print(f"Could not update message {message_id}: {e}")
-    
-    # Process semis competitions - post in category channels
-    for comp in contest.semis_competitions:
-        category_channel = await bot.fetch_channel(comp.channel_id)
-        assert isinstance(category_channel, (discord.TextChannel, discord.Thread)), "Category channel must be a text channel or thread"
-        category_name = category_channel.name
-        
-        # Generate individual vote board for each submission
-        for i, submission in enumerate(comp.competing_entries):
-            # Generate the individual vote board
-            board_path = gen_photo_vote_details(submission, comp, category_name, id2name, None)
-            
-            # Upload to save channel for permanent URL
-            try:
-                board_url = await upload_to_save_channel(
-                    category_channel.guild,
-                    board_path,
-                    f"Vote details - {category_name} - Photo #{i+1}"
-                )
-            except RuntimeError as e:
-                print(f"Could not upload individual vote board: {e}")
-                continue
-            
-            # Update the submission message to add the individual vote board
-            message_id = None
-            for msg_id, sub_idx in comp.msg_to_sub.items():
-                if sub_idx == i:
-                    message_id = msg_id
-                    break
-            
-            if message_id and category_channel and isinstance(category_channel, (discord.TextChannel, discord.Thread)):
-                try:
-                    message = await category_channel.fetch_message(message_id)
-                    # Update embed to include individual vote board as thumbnail
-                    embed = discord.Embed()
-                    embed.set_image(url=submission.discord_save_path)
-                    embed.set_thumbnail(url=board_url)
-                    await message.edit(
-                        content=f"Submission #{i+1}",
-                        embed=embed
-                    )
-                except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
-                    print(f"Could not update message {message_id}: {e}")
-    
-    print("Individual vote boards complete!")
 
 
 async def announce_final_boards(bot: discord.Client):
@@ -2149,58 +2159,10 @@ async def close_qualif_period(bot: discord.Client):
     
     print("Closing qualification period...")
     
-    # Build id2name mapping
-    id2name = await build_id2name_mapping(bot, contest)
-    
-    # Get jury voter authors for bonus display
-    qualif_jury_voter_authors = contest.get_jury_voter_authors("qualif")
-    
     for comp in contest.qualif_competitions:
         if comp.thread_id:
             thread = await bot.fetch_channel(comp.thread_id)
             if thread and isinstance(thread, discord.Thread):
-                # Get category name
-                category_channel = bot.get_channel(comp.channel_id)
-                category_name = getattr(category_channel, "name", f"Category {comp.channel_id}")
-                
-                # Generate the results board
-                board_path = gen_competition_board(comp, category_name, id2name, thread.name, qualif_jury_voter_authors)
-                
-                # Upload the board to save channel for permanent URL
-                try:
-                    board_url = await upload_to_save_channel(
-                        thread.guild,
-                        board_path,
-                        f"Results board for {category_name} - {thread.name}"
-                    )
-                except RuntimeError as e:
-                    print(f"Could not upload board: {e}")
-                    await notify_organizer_error(bot, f"Failed to upload qualification results board for {category_name} - {thread.name}: {e}")
-                    continue
-                
-                # Update each submission message to add the results board
-                for i, submission in enumerate(comp.competing_entries):
-                    # Find the message ID for this submission
-                    message_id = None
-                    for msg_id, sub_idx in comp.msg_to_sub.items():
-                        if sub_idx == i:
-                            message_id = msg_id
-                            break
-                    
-                    if message_id:
-                        try:
-                            message = await thread.fetch_message(message_id)
-                            # Update embed to show both submission and results board
-                            embed = discord.Embed()
-                            embed.set_image(url=submission.discord_save_path)
-                            embed.set_thumbnail(url=board_url)
-                            await message.edit(
-                                content=f"Submission #{i+1}",
-                                embed=embed
-                            )
-                        except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
-                            print(f"Could not update message {message_id}: {e}")
-                
                 try:
                     # Archive the thread
                     await thread.edit(archived=True, locked=True)
@@ -2214,56 +2176,9 @@ async def close_semis_period(bot: discord.Client):
     
     print("Closing semi-finals period...")
     
-    # Build id2name mapping
-    id2name = await build_id2name_mapping(bot, contest)
-    
-    # Get jury voter authors for bonus display
-    semis_jury_voter_authors = contest.get_jury_voter_authors("semis")
-    
     for comp in contest.semis_competitions:
         channel = await bot.fetch_channel(comp.channel_id)
         if channel and isinstance(channel, discord.TextChannel):
-            # Get category name
-            category_name = getattr(channel, "name", f"Category {comp.channel_id}")
-            
-            # Generate the results board
-            board_path = gen_competition_board(comp, category_name, id2name, None, semis_jury_voter_authors)
-            
-            # Upload the board to save channel for permanent URL
-            try:
-                board_url = await upload_to_save_channel(
-                    channel.guild,
-                    board_path,
-                    f"Results board for {category_name}"
-                )
-            except RuntimeError as e:
-                print(f"Could not upload board: {e}")
-                await notify_organizer_error(bot, f"Failed to upload semi-final results board for {category_name}: {e}")
-                continue
-            
-            # Update each submission message to add the results board
-            for i, submission in enumerate(comp.competing_entries):
-                # Find the message ID for this submission
-                message_id = None
-                for msg_id, sub_idx in comp.msg_to_sub.items():
-                    if sub_idx == i:
-                        message_id = msg_id
-                        break
-                
-                if message_id:
-                    try:
-                        message = await channel.fetch_message(message_id)
-                        # Update embed to show both submission and results board
-                        embed = discord.Embed()
-                        embed.set_image(url=submission.discord_save_path)
-                        embed.set_thumbnail(url=board_url)
-                        await message.edit(
-                            content=f"Submission #{i+1}",
-                            embed=embed
-                        )
-                    except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
-                        print(f"Could not update message {message_id}: {e}")
-            
             try:
                 # Send closing message
                 await channel.send("🔒 **Semi-Finals voting has ended!** Results will be announced soon.")

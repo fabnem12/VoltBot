@@ -27,6 +27,13 @@ def strip_emoji(text: str) -> str:
     )
     return emoji_pattern.sub(r'', text)
 
+
+def truncate_name(name: str, max_length: int = 18) -> str:
+    """Truncate a name to max_length characters, adding ellipsis if needed."""
+    if len(name) <= max_length:
+        return name
+    return name[: max_length - 3] + "..."
+
 fnt_light = ImageFont.truetype("resource/Ubuntu-Light.ttf", 15)
 fnt_italic = ImageFont.truetype("resource/Ubuntu-LightItalic.ttf", 15)
 fnt_regular = ImageFont.truetype("resource/Ubuntu-Regular.ttf", 20)
@@ -101,9 +108,9 @@ def draw_column_headers(d: ImageDraw.ImageDraw, y: int, mode: str = "qualif"):
         d.text((800, y), "Jury", anchor="mm", font=fnt_bold_small, fill="white")
         d.text((860, y), "Public", anchor="mm", font=fnt_bold_small, fill="white")
     else:  # semis
-        # Left column headers
-        d.text((335, y), "Jury", anchor="mm", font=fnt_bold_small, fill="white")
-        d.text((395, y), "Public", anchor="mm", font=fnt_bold_small, fill="white")
+        # Left column headers (aligned with point positions)
+        d.text((355, y), "Jury", anchor="mm", font=fnt_bold_small, fill="white")
+        d.text((415, y), "Public", anchor="mm", font=fnt_bold_small, fill="white")
         # Right column headers
         d.text((805, y), "Jury", anchor="mm", font=fnt_bold_small, fill="white")
         d.text((865, y), "Public", anchor="mm", font=fnt_bold_small, fill="white")
@@ -150,6 +157,16 @@ def gen_competition_board(
     # Count votes
     jury_votes = competition.count_votes_jury()
     public_votes = competition.count_votes_public()
+    
+    # Calculate adjusted jury scores with +3 bonus for submissions from jury voters
+    def get_adjusted_jury_score(submission: Submission) -> int:
+        base_score = jury_votes.get(submission, 0)
+        if jury_voter_authors and submission.author_id in jury_voter_authors:
+            return base_score + 3
+        return base_score
+    
+    def get_adjusted_total_score(submission: Submission) -> tuple[int, int, int]:
+        return (get_adjusted_jury_score(submission), public_votes.get(submission, 0), -submission.submission_time)
 
     # Use original submission order (not sorted by score)
     submissions_to_display = competition.competing_entries
@@ -187,14 +204,15 @@ def gen_competition_board(
     draw_column_headers(d, 70)
 
     # Determine qualifiers: top 2 by public, then top 6 by jury from remaining
+    # Determine qualifiers: top 2 by public, then top 6 by jury from remaining (with +3 bonus)
     top_public = sorted(
         competition.competing_entries,
-        key=lambda x: (public_votes.get(x, 0), jury_votes.get(x, 0), -x.submission_time),
+        key=lambda x: (public_votes.get(x, 0), get_adjusted_jury_score(x), -x.submission_time),
         reverse=True,
     )[:2]
     top_jury = sorted(
         [x for x in competition.competing_entries if x not in top_public],
-        key=lambda x: (jury_votes.get(x, 0), public_votes.get(x, 0), -x.submission_time),
+        key=lambda x: (get_adjusted_jury_score(x), public_votes.get(x, 0), -x.submission_time),
         reverse=True,
     )[:6]
     qualifiers = set(top_public + top_jury)
@@ -244,12 +262,9 @@ def gen_competition_board(
 
         # Points - show jury and public in separate columns
         jury_points = jury_votes.get(submission, 0)
-        public_points = public_votes.get(submission, 0)
-        
-        # Add bonus display for submissions from jury voters
-        bonus_text = ""
         if jury_voter_authors and submission.author_id in jury_voter_authors:
-            bonus_text = " (+3)"
+            jury_points += 3
+        public_points = public_votes.get(submission, 0)
         
         # Calculate x positions based on column
         jury_x = 335 if col == 0 else 800
@@ -257,7 +272,7 @@ def gen_competition_board(
 
         d.text(
             (jury_x, y_pos + 10),
-            str(jury_points) + bonus_text,
+            str(jury_points),
             anchor="mm",
             font=font_regular_choice,
             fill=color,
@@ -539,6 +554,13 @@ def gen_semifinals_boards(
         # Count votes
         jury_votes = semifinal.count_votes_jury()
         public_votes = semifinal.count_votes_public()
+        
+        # Calculate adjusted jury scores with +3 bonus for submissions from jury voters
+        def get_adjusted_jury_score(submission: Submission) -> int:
+            base_score = jury_votes.get(submission, 0)
+            if jury_voter_authors and submission.author_id in jury_voter_authors:
+                return base_score + 3
+            return base_score
 
         # Use original submission order (not sorted by score)
         submissions_to_display = semifinal.competing_entries
@@ -572,15 +594,15 @@ def gen_semifinals_boards(
         # Add column headers for Jury and Public points
         draw_column_headers(d, 80, "semis")
         
-        # Determine qualifiers: top 2 by public, then top 3 by jury from remaining = 5 total
+        # Determine qualifiers: top 2 by public, then top 3 by jury from remaining = 5 total (with +3 bonus)
         top_public = sorted(
             semifinal.competing_entries,
-            key=lambda x: (public_votes.get(x, 0), jury_votes.get(x, 0), -x.submission_time),
+            key=lambda x: (public_votes.get(x, 0), get_adjusted_jury_score(x), -x.submission_time),
             reverse=True,
         )[:2]
         top_jury = sorted(
             [x for x in semifinal.competing_entries if x not in top_public],
-            key=lambda x: (jury_votes.get(x, 0), public_votes.get(x, 0), -x.submission_time),
+            key=lambda x: (get_adjusted_jury_score(x), public_votes.get(x, 0), -x.submission_time),
             reverse=True,
         )[:3]
         qualifiers = set(top_public + top_jury)
@@ -607,6 +629,8 @@ def gen_semifinals_boards(
             
             # Qualification status
             jury_points = jury_votes.get(submission, 0)
+            if jury_voter_authors and submission.author_id in jury_voter_authors:
+                jury_points += 3
             public_points = public_votes.get(submission, 0)
             
             qualifies = submission in qualifiers
@@ -632,18 +656,13 @@ def gen_semifinals_boards(
             )
             
             # Points - show jury and public in separate columns
-            # Add bonus display for submissions from jury voters
-            bonus_text = ""
-            if jury_voter_authors and submission.author_id in jury_voter_authors:
-                bonus_text = " (+3)"
-            
             # Calculate x positions based on column
             jury_x = 355 if col == 0 else 805
             public_x = 415 if col == 0 else 865
             
             d.text(
                 (jury_x, y_pos + 10),
-                str(jury_points) + bonus_text,
+                str(jury_points),
                 anchor="mm",
                 font=font_regular_choice,
                 fill=color,
@@ -672,6 +691,7 @@ def gen_photo_vote_details(
     id2name: Dict[int, str],
     thread_name: Optional[str] = None,
     photo_num: Optional[int] = None,
+    jury_voter_authors: Optional[set[int]] = None,
 ) -> str:
     """Generate detailed vote board for a specific photo with snippet, similar to genSemiThread."""
     
@@ -715,11 +735,16 @@ def gen_photo_vote_details(
         strip_emoji(id2name.get(voter_id, f"User {voter_id}")): points
         for voter_id, points in jury_votes_by_id.items()
     }
-    total_jury_points = sum(jury_points_per_juror.values())
+    base_jury_points = sum(jury_points_per_juror.values())
+    has_bonus = jury_voter_authors and submission.author_id in jury_voter_authors
+    total_jury_points = base_jury_points + 3 if has_bonus else base_jury_points
+    
+    bonus_text = " (+3)" if has_bonus else ""
+    points_str = f"{base_jury_points}{bonus_text} point{'s' if base_jury_points != 1 else ''}"
 
     d.text(
         (50, 365),
-        f"{total_jury_points} point{'s' if total_jury_points != 1 else ''} from the jury",
+        f"{points_str} from the jury",
         anchor="lt",
         font=fnt_bold_small,
         fill="white",
@@ -756,7 +781,11 @@ def gen_photo_vote_details(
             # Build lines by adding voters one at a time
             lines = []
             current_line = prefix
-            for j, voter in enumerate(voters):
+            
+            # First try with truncated names
+            truncated_voters = [truncate_name(v, 18) for v in voters]
+            
+            for j, voter in enumerate(truncated_voters):
                 test_text = current_line + (voter if j == 0 else ", " + voter)
                 bbox = d.textbbox((0, 0), test_text, font=fnt)
                 text_width = bbox[2] - bbox[0]
@@ -771,6 +800,14 @@ def gen_photo_vote_details(
             if current_line:
                 lines.append(current_line)
             
+            # If still too wide, use smaller font
+            final_fnt = fnt
+            for line in lines:
+                bbox = d.textbbox((0, 0), line, font=fnt)
+                if bbox[2] - bbox[0] > max_width:
+                    final_fnt = fnt_light
+                    break
+            
             # Draw all lines
             for line in lines:
                 d.text(
@@ -778,7 +815,7 @@ def gen_photo_vote_details(
                     line,
                     anchor="lt",
                     fill="white",
-                    font=fnt,
+                    font=final_fnt,
                 )
                 y_left += 25
         
@@ -799,7 +836,11 @@ def gen_photo_vote_details(
             # Build lines by adding voters one at a time
             lines = []
             current_line = prefix
-            for j, voter in enumerate(voters):
+            
+            # First try with truncated names
+            truncated_voters = [truncate_name(v, 18) for v in voters]
+            
+            for j, voter in enumerate(truncated_voters):
                 test_text = current_line + (voter if j == 0 else ", " + voter)
                 bbox = d.textbbox((0, 0), test_text, font=fnt)
                 text_width = bbox[2] - bbox[0]
@@ -814,6 +855,14 @@ def gen_photo_vote_details(
             if current_line:
                 lines.append(current_line)
             
+            # If still too wide, use smaller font
+            final_fnt = fnt
+            for line in lines:
+                bbox = d.textbbox((0, 0), line, font=fnt)
+                if bbox[2] - bbox[0] > max_width:
+                    final_fnt = fnt_light
+                    break
+            
             # Draw all lines
             for line in lines:
                 d.text(
@@ -821,7 +870,7 @@ def gen_photo_vote_details(
                     line,
                     anchor="lt",
                     fill="white",
-                    font=fnt,
+                    font=final_fnt,
                 )
                 y_right += 25
     else:
@@ -841,7 +890,11 @@ def gen_photo_vote_details(
             # Build lines by adding voters one at a time
             lines = []
             current_line = prefix
-            for i, voter in enumerate(voters):
+            
+            # First try with truncated names
+            truncated_voters = [truncate_name(v, 25) for v in voters]
+            
+            for i, voter in enumerate(truncated_voters):
                 test_text = current_line + (voter if i == 0 else ", " + voter)
                 bbox = d.textbbox((0, 0), test_text, font=fnt)
                 text_width = bbox[2] - bbox[0]
@@ -856,6 +909,14 @@ def gen_photo_vote_details(
             if current_line:
                 lines.append(current_line)
             
+            # If still too wide, use smaller font
+            final_fnt = fnt
+            for line in lines:
+                bbox = d.textbbox((0, 0), line, font=fnt)
+                if bbox[2] - bbox[0] > max_width:
+                    final_fnt = fnt_regular
+                    break
+            
             # Draw all lines
             for line in lines:
                 d.text(
@@ -863,7 +924,7 @@ def gen_photo_vote_details(
                     line,
                     anchor="lt",
                     fill="white",
-                    font=fnt,
+                    font=final_fnt,
                 )
                 y_offset += 25
 
@@ -906,7 +967,11 @@ def gen_photo_vote_details(
         # Build lines by adding voters one at a time
         lines = []
         current_line = prefix
-        for i, voter in enumerate(voters):
+        
+        # First try with truncated names
+        truncated_voters = [truncate_name(v, 25) for v in voters]
+        
+        for i, voter in enumerate(truncated_voters):
             test_text = current_line + (voter if i == 0 else ", " + voter)
             bbox = d.textbbox((0, 0), test_text, font=fnt)
             text_width = bbox[2] - bbox[0]
@@ -921,6 +986,14 @@ def gen_photo_vote_details(
         if current_line:
             lines.append(current_line)
         
+        # If still too wide, use smaller font
+        final_fnt = fnt
+        for line in lines:
+            bbox = d.textbbox((0, 0), line, font=fnt)
+            if bbox[2] - bbox[0] > max_width:
+                final_fnt = fnt_regular
+                break
+        
         # Draw all lines
         for line in lines:
             d.text(
@@ -928,7 +1001,7 @@ def gen_photo_vote_details(
                 line,
                 anchor="lt",
                 fill="white",
-                font=fnt,
+                font=final_fnt,
             )
             y_offset += 25
         
