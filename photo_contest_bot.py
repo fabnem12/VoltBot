@@ -993,12 +993,10 @@ async def send_vote_reminder(user: discord.User | discord.Member, contest: Conte
             if comp.channel_id == channel_id:
                 prev_comp = comp
                 break
-        stage_name = "semi-final"
     elif current_period == ContestPeriod.SEMIS:
         # Look at qualif votes (find the thread that fed into this semis)
         # Since multiple qualif threads feed into one semis, we need to check all qualif comps
         prev_comp = None
-        stage_name = "qualification"
     else:
         return  # No reminder for qualif period
     
@@ -1023,77 +1021,81 @@ async def send_vote_reminder(user: discord.User | discord.Member, contest: Conte
                     if vote.voter_id == (voter_id if voter_id is not None else user.id) and vote.submission in current_submissions:
                         all_qualif_public_votes[vote.submission] = vote.nb_points
         
-        # Send jury vote reminder
+        # Also check if user already voted in semis
+        semis_comp = None
+        for comp in contest.semis_competitions:
+            if comp.channel_id == channel_id:
+                semis_comp = comp
+                break
+        if semis_comp:
+            for vote in semis_comp.votes_public:
+                if vote.voter_id == (voter_id if voter_id is not None else user.id) and vote.submission in current_submissions:
+                    all_qualif_public_votes[vote.submission] = vote.nb_points
+        
+        # Send jury vote reminder - one line per thread
         if all_qualif_jury_votes:
             for thread_id, jury_vote in all_qualif_jury_votes.items():
-                recap: list[tuple[Submission, None | int]] = []
-                for i, sub in enumerate(jury_vote.ranking):
+                ranked_nums = []
+                for sub in jury_vote.ranking:
                     if sub in current_submissions:
-                        recap.append((sub, i + 1))
-                
-                if recap:
-                    reminder_lines: list[str] = []
-                    for sub, order in recap:
                         photo_num = submission_numbers.get(sub, "?")
-                        reminder_lines.append(f"Submission #{photo_num} was **your #{order}** in {stage_name} / <#{thread_id}>")
-                    
-                    if reminder_lines:
-                        await user.send("\n".join(reminder_lines))
+                        ranked_nums.append(f"#{photo_num}")
+                
+                if ranked_nums:
+                    ranking_str = " > ".join(ranked_nums)
+                    await user.send(f"🗳️ **Your ranking in qualification thread / <#{thread_id}>:**\n{ranking_str}")
         
-        # Send public vote reminder
+        # Send public vote reminder - show most recent votes (semis over qualif)
         if all_qualif_public_votes:
             reminder_lines = []
             for submission, nb_points in sorted(all_qualif_public_votes.items(), key=lambda x: x[1], reverse=True):
                 photo_num = submission_numbers.get(submission, "?")
                 plural = "s" if nb_points != 1 else ""
-                reminder_lines.append(f"You gave Submission #{photo_num} **{nb_points} point{plural}** in {stage_name}")
+                reminder_lines.append(f"Submission #{photo_num}: **{nb_points} point{plural}**")
             
-            await user.send("\n".join(reminder_lines))
+            await user.send("📝 **Your public votes:**\n" + "\n".join(reminder_lines))
     
     # For FINAL, check previous semis votes
     elif current_period == ContestPeriod.FINAL and prev_comp:
-        # Check if voter had a jury vote in semis
+        # Check if voter had a jury vote in semis - one line format
         vid = voter_id if voter_id is not None else user.id
         if vid in prev_comp.votes_jury:
             jury_vote = prev_comp.votes_jury[vid]
-            recap = []
+            ranked_nums = []
             
-            # Find which submissions from the current final were in their semis ranking
-            for i, sub in enumerate(jury_vote.ranking):
+            for sub in jury_vote.ranking:
                 if sub in current_submissions:
-                    recap.append((sub, i + 1))
-            
-            # Find submissions in current final that weren't in their semis top 10
-            for sub in current_submissions:
-                if sub not in jury_vote.ranking:
-                    recap.append((sub, None))
-            
-            # Send the reminder
-            if recap:
-                reminder_lines: list[str] = []
-                for sub, order in recap:
                     photo_num = submission_numbers.get(sub, "?")
-                    if order:
-                        reminder_lines.append(f"Submission #{photo_num} was **your #{order}** in the {stage_name}")
-                    else:
-                        reminder_lines.append(f"Submission #{photo_num} was **not in your top 10** in the {stage_name}")
-                
-                await user.send("\n".join(reminder_lines))
+                    ranked_nums.append(f"#{photo_num}")
+            
+            if ranked_nums:
+                ranking_str = " > ".join(ranked_nums)
+                await user.send(f"🗳️ **Your ranking in semi-final:**\n{ranking_str}")
         
-        # Check if user had public votes in semis
+        # Check if user had public votes - get most recent (semis over qualif)
         public_vote_counts: dict[Submission, int] = {}
+        
+        # First get semis votes (more recent)
         for vote in prev_comp.votes_public:
             if vote.voter_id == user.id and vote.submission in current_submissions:
-                public_vote_counts[vote.submission] = public_vote_counts.get(vote.submission, 0) + vote.nb_points
+                public_vote_counts[vote.submission] = vote.nb_points
+        
+        # Then check qualif votes - only keep if no semis vote exists
+        for comp in contest.qualif_competitions:
+            if comp.channel_id == channel_id:
+                for vote in comp.votes_public:
+                    if vote.voter_id == user.id and vote.submission in current_submissions:
+                        if vote.submission not in public_vote_counts:
+                            public_vote_counts[vote.submission] = vote.nb_points
         
         if public_vote_counts:
             reminder_lines: list[str] = []
             for submission, nb_points in sorted(public_vote_counts.items(), key=lambda x: x[1], reverse=True):
                 photo_num = submission_numbers.get(submission, "?")
                 plural = "s" if nb_points != 1 else ""
-                reminder_lines.append(f"You gave Submission #{photo_num} **{nb_points} point{plural}** in the {stage_name}")
+                reminder_lines.append(f"Submission #{photo_num}: **{nb_points} point{plural}**")
             
-            await user.send("\n".join(reminder_lines))
+            await user.send("📝 **Your public votes:**\n" + "\n".join(reminder_lines))
 
 
 async def handle_jury_vote_request(contest: Contest, message: discord.Message, user: discord.Member | discord.User, bot: discord.Client, current_period: ContestPeriod, as_voter_id: Optional[int] = None):
@@ -2548,6 +2550,7 @@ async def prep_semis_period(bot: discord.Client):
             continue
         
         if thread:
+            assert isinstance(thread, discord.Thread), "Thread ID does not correspond to a thread channel"
             await thread.send("🏆 **Qualification Results** 🏆\nThe following photos have qualified for the Semi-Finals (in no particular order):")
             
             for i, sub in enumerate(qualifiers):
