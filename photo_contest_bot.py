@@ -1455,17 +1455,33 @@ async def handle_commentary_request(contest: Contest, message: discord.Message, 
                 
                 add_qualif = "\n\n💡 Summaries of all commentaries will be revealed during the Semi-Finals." if current_period == ContestPeriod.QUALIF else ""
                 
-                await interaction.response.send_message(
-                    "✅ Your commentary has been recorded! Thank you for your feedback." + add_qualif,
-                    ephemeral=True
-                )
+                try:
+                    await interaction.response.send_message(
+                        "✅ Your commentary has been recorded! Thank you for your feedback." + add_qualif,
+                        ephemeral=True
+                    )
+                except discord.NotFound:
+                    # Interaction expired/unknown, try DM fallback
+                    try:
+                        await interaction.user.send(
+                            "✅ Your commentary has been recorded! Thank you for your feedback." + add_qualif
+                        )
+                    except Exception as e:
+                        print(f"Failed to send DM to user {interaction.user.id}: {e}")
                 
             except ValueError as e:
                 # Validation failed
-                await interaction.response.send_message(
-                    f"❌ {str(e)}",
-                    ephemeral=True
-                )
+                try:
+                    await interaction.response.send_message(
+                        f"❌ {str(e)}",
+                        ephemeral=True
+                    )
+                except discord.NotFound:
+                    # Interaction expired/unknown, try DM fallback
+                    try:
+                        await interaction.user.send(f"❌ {str(e)}")
+                    except Exception as e:
+                        print(f"Failed to send DM to user {interaction.user.id}: {e}")
     
     # Since we can't directly trigger a modal from a reaction, we need to use an interaction
     # Create a view with a button that opens the modal
