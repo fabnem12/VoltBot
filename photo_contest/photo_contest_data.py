@@ -1063,14 +1063,16 @@ class Contest:
         )
         
         prompt = (
-            f"You are a photo competition commentator. Summarize the jury critiques for a photo in 2-3 sentences.\n\n"
-            f"Focus on: What's working well (technique, composition, storytelling), what could be improved, "
-            f"and the overall impression. Keep it conversational and helpful, like you'd tell a friend "
-            f"about the photo. Skip generic phrases like 'overall' or 'in conclusion'.\n\n"
+            f"You are a photo competition judge providing objective technical feedback. "
+            f"Summarize the jury critiques for a photo in 1-2 concise sentences.\n\n"
+            f"Focus on technical observations: what's effective in composition, lighting, and technique, "
+            f"and what specific improvements could be made. Be objective and matter-of-fact - "
+            f"avoid dramatic, exaggerated, or overly casual language. "
+            f"Stick to factual analysis of the photo.\n\n"
             f"Critiques:\n{commentary_texts}"
         )
         
-        summary = _call_mistral_api(prompt, temperature=0.3, max_tokens=100, timeout=15)
+        summary = _call_mistral_api(prompt, temperature=0.2, max_tokens=80, timeout=15)
         
         return summary if summary else commentary_texts
 
