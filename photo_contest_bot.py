@@ -837,28 +837,16 @@ class JuryConfirmView(discord.ui.View):
             await interaction.response.send_message("This vote is not yours!", ephemeral=True)
             return
         
-        # Save the vote
         global contest
         try:
-            # Reload contest to avoid race condition with concurrent votes
             contest = reload_contest()
-            # Save using the explicit voter id when provided (for 'vote as')
             save_vid = self.voter_id_for_save
             contest = contest.save_jury_vote(self.channel_id, self.thread_id, save_vid, self.ranking, period=self.period)
             contest.save("photo_contest/contest2026.yaml")
             logger.info(f"Jury vote saved: user={save_vid}, channel={self.channel_id}, thread={self.thread_id}")
-
-            await edit_interaction_or_dm(
-                interaction,
-                content=f"{self.ranking_text}\n\n✅ Your vote has been saved successfully!",
-                view=None
-            )
+            await interaction.user.send(f"{self.ranking_text}\n\n✅ Your vote has been saved successfully!")
         except ValueError as e:
-            await edit_interaction_or_dm(
-                interaction,
-                content=f"{self.ranking_text}\n\n❌ Error saving vote: {e}",
-                view=None
-            )
+            await interaction.user.send(f"{self.ranking_text}\n\n❌ Error saving vote: {e}")
     
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.danger)
     async def cancel_button(self, button: discord.ui.Button, interaction: discord.Interaction):
@@ -868,11 +856,7 @@ class JuryConfirmView(discord.ui.View):
             await interaction.response.send_message("This vote is not yours!", ephemeral=True)
             return
         
-        await edit_interaction_or_dm(
-            interaction,
-            content=f"{self.ranking_text}\n\n❌ Vote cancelled.",
-            view=None
-        )
+        await interaction.user.send(f"{self.ranking_text}\n\n❌ Vote cancelled.")
 
 
 class JuryVotingView(discord.ui.View):
