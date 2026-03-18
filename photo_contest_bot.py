@@ -34,28 +34,10 @@ class ContestPeriod(Enum):
 
 
 async def edit_interaction_or_dm(interaction: discord.Interaction, content: Optional[str] = None, view: Optional[discord.ui.View] = None, user: Optional[discord.User | discord.Member] = None):
-    """Try to edit the interaction message, if it fails (e.g., NotFound), send a DM to the user instead."""
-    try:
-        await interaction.response.edit_message(content=content, view=view)
-    except discord.NotFound:
-        # Interaction expired or message not found, send DM instead
-        if user is None:
-            user = interaction.user
-        if user and content:
-            try:
-                await user.send(content)
-            except Exception as e:
-                print(f"Failed to send DM to user {user.id}: {e}")
-    except Exception as e:
-        # Other errors - try DM as fallback
-        print(f"Error editing interaction message: {e}")
-        if user is None:
-            user = interaction.user
-        if user and content:
-            try:
-                await user.send(content)
-            except Exception:
-                pass
+    """Send a DM to the user with the given content and view."""
+    target_user = user if user is not None else interaction.user
+    if target_user and content:
+        await target_user.send(content, view=view)
 
 
 # Setup logging
