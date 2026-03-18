@@ -1,6 +1,5 @@
 from copy import deepcopy
-from dataclasses import asdict, dataclass, field, is_dataclass, fields
-from itertools import groupby
+from dataclasses import dataclass, field, is_dataclass, fields
 from random import shuffle
 from time import time
 from typing import Any, Literal, Optional, Union
@@ -53,10 +52,7 @@ def _call_mistral_api(
         res = response.choices[0].message.content
         if res is None:
             return None
-        elif isinstance(res, str):
-            return res.strip()
-        else:
-            return str(res).strip()
+        return res.strip() if isinstance(res, str) else str(res).strip()
     except Exception as e:
         print(f"Warning: Mistral API call failed: {e}")
         return None
@@ -1021,10 +1017,6 @@ class Contest:
             return votable_submissions, submission_numbers
         return [], {}
 
-    def _submission_key(self, submission: Submission) -> str:
-        """Returns submission.discord_save_path as the unique key."""
-        return submission.discord_save_path
-
     def _make_submission_post(self, message_id: int, channel_id: int, thread_id: Optional[int], is_summary: bool = False) -> dict[str, Any]:
         """Create a dict for storage."""
         return {
@@ -1113,7 +1105,7 @@ class Contest:
             )
         
         copy = deepcopy(self)
-        key = self._submission_key(submission)
+        key = submission.discord_save_path
         
         if key not in copy.commentaries:
             copy.commentaries[key] = {}
@@ -1154,7 +1146,7 @@ class Contest:
         result = []
         for comp in self.competitions:
             for submission in comp.competing_entries:
-                key = self._submission_key(submission)
+                key = submission.discord_save_path
                 if key in self.commentary_summaries:
                     result.append((submission, self.commentary_summaries[key]))
         return result

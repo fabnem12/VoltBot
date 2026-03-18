@@ -163,5 +163,7 @@ constantes.py
 fichierPID.p
 *.json
 data_contest/*
+photo_contest/pictures/*
+photo_contest/generated_tables/*
 resource/*
 *.yaml

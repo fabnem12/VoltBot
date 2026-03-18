@@ -58,23 +58,6 @@ async def edit_interaction_or_dm(interaction: discord.Interaction, content: Opti
                 pass
 
 
-# temporary way to update the bot
-def stockePID():
-    import pickle
-    from os.path import abspath, dirname, join
-
-    fichierPID = join(dirname(abspath(__file__)), "fichierPID.p")
-    if not os.path.exists(fichierPID):
-        pickle.dump(set(), open(fichierPID, "wb"))
-
-    pids = pickle.load(open(fichierPID, "rb"))
-    pids.add(os.getpid())
-
-    pickle.dump(pids, open(fichierPID, "wb"))
-
-
-stockePID()
-
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -87,7 +70,6 @@ logging.basicConfig(
 logger = logging.getLogger('photo_contest_bot')
 
 # constants
-TEST_MODE = False  # Set to False for production
 voltServer = 567021913210355745
 organizer_id = 619574125622722560
 discord_team_role_id = 674583505446895616
@@ -307,6 +289,24 @@ async def send_dm_safe(user: discord.User | discord.Member, content: str = "", e
         return False
 
 
+def _create_reference(message: discord.Message) -> discord.MessageReference:
+    """Create a MessageReference for replying to a message."""
+    return discord.MessageReference(message_id=message.id, channel_id=message.channel.id)
+
+
+async def _safe_delete(message: discord.Message) -> None:
+    """Safely delete a message, ignoring if already deleted or no permission."""
+    try:
+        await message.delete()
+    except (discord.NotFound, discord.Forbidden):
+        pass
+
+
+async def _send_error(message: discord.Message, error_text: str) -> None:
+    """Send an error message to a channel with proper reference."""
+    await message.channel.send(error_text, delete_after=30, reference=_create_reference(message))
+
+
 async def download_missing_pictures():
     """Download pictures from Discord CDN for submissions that don't have local copies.
     
@@ -489,12 +489,6 @@ async def submit(message: discord.Message, bot: discord.Client) -> Contest:
     """
     global contest
     
-    # TEST_MODE: Allow organizer to submit on behalf of other users by mentioning them
-    actual_author_id = message.author.id
-    if TEST_MODE and message.author.id == organizer_id and message.mentions:
-        actual_author_id = message.mentions[0].id
-        logger.info(f"TEST_MODE: Submission from {message.author.id} on behalf of {actual_author_id}")
-    
     # Check the channel and thread to see if they are valid for submissions
     channel_id, thread_id = get_channel_and_thread(message)
     
@@ -515,21 +509,18 @@ async def submit(message: discord.Message, bot: discord.Client) -> Contest:
         return contest
     
     # Enforce photo limit: maximum 6 photos per author per category
-    if not contest.can_user_submit(channel_id, thread_id, actual_author_id):
+    if not contest.can_user_submit(channel_id, thread_id, message.author.id):
         ref = discord.MessageReference(
             message_id=message.id, channel_id=message.channel.id
         )
         await message.channel.send(
-            f"❌ {'That user has' if TEST_MODE and message.author.id != actual_author_id else 'You have'} reached the maximum limit of **{contest.MAX_SUBMISSIONS_PER_CATEGORY} photos per category**.\n\n"
+            f"❌ You have reached the maximum limit of **{contest.MAX_SUBMISSIONS_PER_CATEGORY} photos per category**.\n\n"
             f"💡 **Tip:** You can withdraw a previous submission by reacting with ❌ to it, then submit a new photo.",
             delete_after=30,
             reference=ref,
         )
         # Delete the attempted submission message
-        try:
-            await message.delete()
-        except (discord.errors.NotFound, discord.errors.Forbidden):
-            pass
+        await _safe_delete(message)
         return contest
     
     # Define allowed static image formats
@@ -558,14 +549,7 @@ async def submit(message: discord.Message, bot: discord.Client) -> Contest:
             # Try to extract extension from URL
             file_extension = os.path.splitext(url.split('?')[0])[1].lower()
             if not file_extension or file_extension not in allowed_extensions:
-                ref = discord.MessageReference(
-                    message_id=message.id, channel_id=message.channel.id
-                )
-                await message.channel.send(
-                    f"Invalid image format. Only static images in JPG, JPEG, PNG, or WebP formats are accepted. Animated images (GIF) are not allowed.",
-                    delete_after=30,
-                    reference=ref,
-                )
+                await _send_error(message, "Invalid image format. Only static images in JPG, JPEG, PNG, or WebP formats are accepted. Animated images (GIF) are not allowed.")
                 return contest
     else:
         attachment = message.attachments[0]
@@ -573,14 +557,7 @@ async def submit(message: discord.Message, bot: discord.Client) -> Contest:
         # Get extension from attachment filename
         file_extension = os.path.splitext(attachment.filename)[1].lower()
         if not file_extension or file_extension not in allowed_extensions:
-            ref = discord.MessageReference(
-                message_id=message.id, channel_id=message.channel.id
-            )
-            await message.channel.send(
-                f"Invalid image format. Only static images in JPG, JPEG, PNG, or WebP formats are accepted. Animated images (GIF) are not allowed.",
-                delete_after=30,
-                reference=ref,
-            )
+            await _send_error(message, "Invalid image format. Only static images in JPG, JPEG, PNG, or WebP formats are accepted. Animated images (GIF) are not allowed.")
             return contest
     
     # Ask for confirmation that the submission complies with the rules
@@ -610,10 +587,7 @@ async def submit(message: discord.Message, bot: discord.Client) -> Contest:
     
     if not confirmation_view.confirmed:
         # User cancelled or timed out - delete the original message
-        try:
-            await message.delete()
-        except (discord.errors.NotFound, discord.errors.Forbidden):
-            pass  # Message already deleted or no permission to delete
+        await _safe_delete(message)
         # Note: confirmation_msg has delete_after=60, so it will auto-delete. Don't try to delete it manually.
         return contest
     
@@ -657,11 +631,11 @@ async def submit(message: discord.Message, bot: discord.Client) -> Contest:
             ),
         )
         # Notify organizer
-        await notify_organizer_error(bot, f"Failed to upload submission from user <@{actual_author_id}> in <#{channel_id}>. Error: {e}")
+        await notify_organizer_error(bot, f"Failed to upload submission from user <@{message.author.id}> in <#{channel_id}>. Error: {e}")
         return contest
     
     # Create the submission object
-    submission = Submission(author_id=actual_author_id, submission_time=round(utcnow().timestamp()), local_save_path=local_filename, discord_save_path=uploaded_url)
+    submission = Submission(author_id=message.author.id, submission_time=round(utcnow().timestamp()), local_save_path=local_filename, discord_save_path=uploaded_url)
     
     # Add submission with placeholder message_id to reserve its index
     # Using global contest variable - asyncio event loop ensures atomic execution
@@ -704,10 +678,7 @@ async def submit(message: discord.Message, bot: discord.Client) -> Contest:
     contest.save("photo_contest/contest2026.yaml")
     
     # Delete the original message to maintain anonymity
-    try:
-        await message.delete()
-    except (discord.errors.NotFound, discord.errors.Forbidden):
-        pass  # Message already deleted or no permission to delete
+    await _safe_delete(message)
     
     return contest
 
@@ -838,10 +809,7 @@ async def withdraw(contest: Contest, message: discord.Message, user: discord.Mem
     contest = await _perform_withdrawal(contest, message, channel_id, thread_id)
     
     # Delete the original submission message
-    try:
-        await message.delete()
-    except (discord.NotFound, discord.Forbidden):
-        pass
+    await _safe_delete(message)
     
     return contest
 
@@ -1293,25 +1261,17 @@ async def handle_public_vote(contest: Contest, message: discord.Message, user: d
     # Get channel and thread
     channel_id, thread_id = get_channel_and_thread(message)
     
-    # DEBUG
-    print(f"[DEBUG] Public vote - channel={channel_id}, thread={thread_id}, emoji={emoji}, user={user.id}, period={current_period}")
-    
     # Find the competition, preferring the current period type
     period_type = current_period.value if current_period != ContestPeriod.IDLE else None
     res = contest.competition_from_channel_thread(channel_id, thread_id, prefer_type=period_type)
     
-    # DEBUG
     if not res:
-        print(f"[DEBUG] No competition found for channel={channel_id}, thread={thread_id}, prefer_type={period_type}")
-        print(f"[DEBUG] Available competitions: {[(c.type, c.channel_id, c.thread_id) for c in contest.competitions]}")
         return contest
     
     _, competition = res
-    print(f"[DEBUG] Found competition: type={competition.type}, channel={competition.channel_id}, msg_to_sub count={len(competition.msg_to_sub)}")
     
     # Check if this message is a submission
     if message.id not in competition.msg_to_sub:
-        print(f"[DEBUG] Message {message.id} not in msg_to_sub. Keys: {list(competition.msg_to_sub.keys())[:10]}")
         return contest
     
     # Get the submission
@@ -1378,7 +1338,7 @@ async def handle_commentary_request(contest: Contest, message: discord.Message, 
     
     # Find the competition, preferring the semis competition when available
     # to avoid matching the original submission competition (which can
-    # share the same channel/thread) unless we're in TEST_MODE.
+    # share the same channel/thread).
     # Fall back to qualif if semis not available
     res = contest.competition_from_channel_thread(channel_id, thread_id, prefer_type="semis")
     if not res:
@@ -1742,11 +1702,6 @@ async def announce_final_results(bot: discord.Client, reveal_delay: int = 15):
     """
     global contest
     
-    # Use shorter delay in test mode
-    if TEST_MODE:
-        reveal_delay = 2
-        logger.info("TEST_MODE: Using 2 second reveal delay")
-    
     # Get the announcement channel
     announcement_channel = bot.get_channel(announcement_channel_id)
     if not announcement_channel or not isinstance(announcement_channel, discord.TextChannel):
@@ -1915,6 +1870,45 @@ async def announce_final_boards(bot: discord.Client):
         await announcement_channel.send("\n✨ **Contest complete! See you next year!** ✨")
 
 
+async def _send_final_vote_reminder_dms(bot: discord.Client, contest: Contest):
+    """Send DMs to all users who voted earlier in the contest about the final voting."""
+    
+    final_channel = bot.get_channel(final_channel_id)
+    if not final_channel or not isinstance(final_channel, discord.TextChannel):
+        return
+    
+    vote_msg_id = None
+    async for msg in final_channel.history(limit=20):
+        if "Final Voting opens soon" in msg.content and msg.author == bot.user:
+            vote_msg_id = msg.id
+            break
+    
+    voter_ids: set[int] = set()
+    
+    for comp in contest.qualif_competitions:
+        voter_ids.update(comp.votes_jury.keys())
+        voter_ids.update(v.voter_id for v in comp.votes_public)
+    
+    for comp in contest.semis_competitions:
+        voter_ids.update(comp.votes_jury.keys())
+        voter_ids.update(v.voter_id for v in comp.votes_public)
+    
+    deadline = contest.schedule.final_period.end
+    vote_link = f"{final_channel.jump_url}" + (f"/{vote_msg_id}" if vote_msg_id else "")
+    
+    for voter_id in voter_ids:
+        try:
+            user = await bot.fetch_user(voter_id)
+            await user.send(
+                f"🏆 **Grand Final voting is now open!**\n\n"
+                f"Rank your top 5 out of the 15 finalists.\n"
+                f"Vote here: {vote_link}\n\n"
+                f"Voting deadline: <t:{int(deadline)}:F>"
+            )
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+            pass
+
+
 async def notify_period_start(bot: discord.Client, period: ContestPeriod):
     """Send announcement when a new period begins."""
     announcement_channel = bot.get_channel(announcement_channel_id)
@@ -1981,10 +1975,14 @@ async def notify_period_start(bot: discord.Client, period: ContestPeriod):
         )
     elif period == ContestPeriod.FINAL:
         await announcement_channel.send(
-            "🏆 **GRAND FINAL HAS BEGUN!** 🏆\n\n"
-            "All categories compete together! Cast your votes!\n"
-            f"Deadline: <t:{int(contest.schedule.final_period.end)}:F>"
+            f"<@&727613272756453407>\n\n"
+            "🏆 **THE GRAND FINAL OF VOLT'S PHOTO CONTEST HAS BEGUN!** 🏆\n\n"
+            "15 finalists from all categories compete together!\n"
+            "Vote for your top 5 out of 15 finalists! 🎉\n\n"
+            f"Voting ends: <t:{int(contest.schedule.final_period.end)}:F>"
         )
+        
+        await _send_final_vote_reminder_dms(bot, contest)
 
 
 async def notify_qualifiers(bot: discord.Client, contest: Contest, competition_type: Literal["semis", "final"], stage_name: str):
@@ -2590,9 +2588,6 @@ async def prep_final_period(bot):
         print("Warning: No final competition found")
         return
     
-    # Announce semi-final results (random order, no authors)
-    await announce_semis_results(bot)
-    
     # Send DM notifications to finalists
     await notify_qualifiers(bot, contest, "final", "Grand Final")
     
@@ -2682,11 +2677,6 @@ def main():
 
     @tasks.loop(minutes=1.0)
     async def autoplanner():
-        # Don't run automatic period transitions in TEST_MODE
-        # This allows manual testing with T.contest_goto without the planner interfering
-        if TEST_MODE:
-            return
-        
         now = utcnow().to("Europe/Brussels")
         await planner(now, bot)
 
@@ -2793,7 +2783,6 @@ def main():
         elif current_period == ContestPeriod.QUALIF or current_period == ContestPeriod.SEMIS:
             # Handle public votes (0-3 points)
             if payload.emoji.name in ["0️⃣", "1️⃣", "2️⃣", "3️⃣"]:
-                print(f"[DEBUG] Public vote reaction detected: emoji={payload.emoji.name}, period={current_period}, channel={payload.channel_id}, msg={payload.message_id}")
                 contest = await handle_public_vote(contest, message, user, payload.emoji.name, current_period)
             # Handle jury vote requests
             elif payload.emoji.name == "🗳️":
@@ -2854,11 +2843,6 @@ def main():
         
         # Perform the withdrawal (message is already deleted, so pass None for message)
         contest = await _perform_withdrawal(contest, message=None, channel_id=channel_id, thread_id=thread_id, bot=bot)
-
-    @bot.command(name="setup")
-    async def command_setup(ctx: commands.Context, *channels: discord.TextChannel):
-        if ctx.author.id == organizer_id:
-            pass  # await setup(*channels)
 
     # Admin Commands for Testing #############################################
     
@@ -3153,9 +3137,6 @@ def main():
             return
         
         # Close the previous period
-        #if old_period:
-        #    await close_period(old_period, bot)
-        
         current_period = next_period
         
         # Setup the new period
@@ -3225,10 +3206,6 @@ def main():
         Usage: {constantes.prefixVolt}jury_vote_as @user
         This will send the jury voting interface to YOUR DMs, where you'll vote as the mentioned user.
         """
-        if not TEST_MODE:
-            await ctx.send("❌ This command is only available in TEST_MODE.", delete_after=5)
-            return
-        
         if not is_admin(ctx.author.id):
             await ctx.send("❌ This command is only available to admins.", delete_after=5)
             return
@@ -3264,11 +3241,7 @@ def main():
         This will cast a vote giving <points> (0-3) to submission #<submission_number> as if <user> voted.
         """
         global contest
-        
-        if not TEST_MODE:
-            await ctx.send("❌ This command is only available in TEST_MODE.", delete_after=5)
-            return
-        
+      
         if not is_admin(ctx.author.id):
             await ctx.send("❌ This command is only available to admins.", delete_after=5)
             return
@@ -3318,7 +3291,7 @@ def main():
             period_type = current_period.value if current_period != ContestPeriod.IDLE else None
             contest = contest.save_public_vote(channel_id, thread_id, user.id, points_literal, submission, period=period_type)
             contest.save("photo_contest/contest2026.yaml")
-            logger.info(f"TEST_MODE: Public vote saved by admin for user={user.id}, points={points}, submission={submission_number}")
+            logger.info(f"Public vote saved by admin for user={user.id}, points={points}, submission={submission_number}")
             await ctx.send(f"✅ Vote cast! {user.mention} gave **{points} point{'s' if points != 1 else ''}** to Submission #{submission_number}", delete_after=10)
         except ValueError as e:
             await ctx.send(f"❌ Error: {e}", delete_after=10)
@@ -3341,17 +3314,6 @@ def main():
             f"**`{constantes.prefixVolt}contest_reset CONFIRM`** - Reset all contest data (requires CONFIRM)\n\n"
         )
         
-        if TEST_MODE:
-            help_text += (
-                "**🧪 Test Mode Commands**\n\n"
-                f"**`{constantes.prefixVolt}jury_vote_as @user`** - Vote in jury as another user (sends you the voting UI)\n"
-                f"**`{constantes.prefixVolt}public_vote_as @user <num> <pts>`** - Cast public vote as another user\n\n"
-                "**Test Mode Tips:**\n"
-                "• Submit photos by mentioning a user: post image + mention @user\n"
-                "• The mentioned user will be recorded as the author\n"
-                "• Use jury_vote_as to test different voting patterns\n\n"
-            )
-        
         help_text += (
             "**Examples:**\n"
             f"`{constantes.prefixVolt}contest_next` - Move from submission to qualif\n"
@@ -3359,12 +3321,6 @@ def main():
             f"`{constantes.prefixVolt}contest_clear_votes CONFIRM` - Clear all votes for re-testing\n"
             f"`{constantes.prefixVolt}contest_goto idle` - Return to idle state"
         )
-        
-        if TEST_MODE:
-            help_text += (
-                f"\n`{constantes.prefixVolt}jury_vote_as @Alice` - Vote in jury as Alice\n"
-                f"`{constantes.prefixVolt}public_vote_as @Bob 5 3` - Bob gives 3 points to submission #5"
-            )
         
         await ctx.send(help_text)
 
