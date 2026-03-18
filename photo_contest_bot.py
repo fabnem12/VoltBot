@@ -1133,12 +1133,6 @@ async def handle_jury_vote_request(contest: Contest, message: discord.Message, u
             embed = discord.Embed()
             embed.set_image(url=submission.discord_save_path)
             
-            # Add commentary summary for semis/final periods
-            if current_period in (ContestPeriod.SEMIS, ContestPeriod.FINAL):
-                summary = contest.get_commentary_summary(submission.discord_save_path)
-                if summary:
-                    embed.add_field(name="📝 Jury Commentary", value=summary, inline=False)
-            
             await user.send(
                 content=f"Submission #{submission_numbers[submission]}",
                 embed=embed
@@ -1930,7 +1924,7 @@ async def notify_period_start(bot: discord.Client, period: ContestPeriod):
                         "Vote for your favorite photos in this thread to help them advance to the Semi-Finals!\n\n"
                         "**How to vote:**\n"
                         "• React with 0️⃣, 1️⃣, 2️⃣, or 3️⃣ on any photo to give it 0-3 public points\n"
-                        "• React with 💬 on any photo to add commentary about composition, lighting, and artistic merit. A summary of commentaries will be shown under each photo in the semi-finals.\n"
+                        "• React with 💬 on any photo to add commentary about composition, lighting, and artistic merit.\n"
                         "• React with 🗳️ to this message to cast your jury vote (top 10 ranking)\n\n"
                         f"Deadline: <t:{int(contest.schedule.qualif_period.end)}:F>\n"
                         + contestant_mentions
@@ -2502,19 +2496,6 @@ async def prep_semis_period(bot: discord.Client):
             # Add commentary reaction
             await msg.add_reaction("💬")
             
-            # Check if there's an existing summary from qualification round
-            existing_summary = contest.get_commentary_summary(submission.discord_save_path)
-            
-            if not existing_summary:
-                existing_summary = "_No commentaries yet_"
-            
-            # Post commentary summary message below the photo
-            summary_msg = await channel.send(
-                f"📝 **Commentary Summary**\n"
-                f"{existing_summary}\n\n"
-                f"💬 React above to add your commentary"
-            )
-            
             # Update the contest with the message_id mapping
             contest = contest.set_message_id(comp.channel_id, comp.thread_id, i, msg.id)
             
@@ -2525,15 +2506,6 @@ async def prep_semis_period(bot: discord.Client):
                 comp.channel_id,
                 None,
                 is_summary=False
-            )
-            
-            # Track the summary post
-            contest = contest.add_submission_post(
-                submission.discord_save_path,
-                summary_msg.id,
-                comp.channel_id,
-                comp.thread_id,
-                is_summary=True
             )
 
         # Send voting instruction message
