@@ -111,9 +111,6 @@ class JuryVote:
                 f"The length ({len(ranking)}) of the ranking is not valid."
             )
 
-        if any(self.voter_id == submission.author_id for submission in ranking):
-            raise ValueError(f"A juror cannot vote for their own submissions.")
-
 
     def points_to_submissions(self):
         ranking = self.ranking
