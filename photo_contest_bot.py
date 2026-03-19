@@ -1083,8 +1083,9 @@ async def handle_jury_vote_request(contest: Contest, message: discord.Message, u
     
     # Find the competition and get votable submissions
     voter_id_for_lookup = as_voter_id if as_voter_id is not None else user.id
+    allow_own = (current_period == ContestPeriod.FINAL)
     votable_submissions, submission_numbers = contest.get_votable_submissions(
-        channel_id, thread_id, voter_id_for_lookup, period=current_period.value
+        channel_id, thread_id, voter_id_for_lookup, period=current_period.value, include_own=allow_own
     )
     
     # Determine ranking length based on period and number of votable submissions

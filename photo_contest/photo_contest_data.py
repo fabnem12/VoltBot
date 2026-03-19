@@ -987,9 +987,9 @@ class Contest:
         return copy
 
     def get_votable_submissions(
-        self, channel_id: int, thread_id: Optional[int], user_id: int, period: Optional[str] = None
+        self, channel_id: int, thread_id: Optional[int], user_id: int, period: Optional[str] = None, include_own: bool = False
     ) -> tuple[list[Submission], dict[Submission, int]]:
-        """Get submissions that a user can vote on (excludes their own submissions).
+        """Get submissions that a user can vote on.
         
         Args:
             channel_id: The channel ID
@@ -997,6 +997,7 @@ class Contest:
             user_id: The user ID
             period: The current contest period name ("submission", "qualif", "semis", "final").
                    If provided, will prefer competitions of this type.
+            include_own: If True, include the user's own submissions (for final voting).
             
         Returns:
             Tuple of (votable_submissions, submission_numbers_dict)
@@ -1011,7 +1012,7 @@ class Contest:
             votable_submissions = []
             submission_numbers = {}
             for i, sub in enumerate(comp.competing_entries):
-                if sub.author_id != user_id:
+                if sub.author_id != user_id or include_own:
                     votable_submissions.append(sub)
                     submission_numbers[sub] = i + 1
             return votable_submissions, submission_numbers
