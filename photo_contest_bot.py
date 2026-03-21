@@ -22,6 +22,7 @@ from photo_contest.board_gen import (
     gen_final_results_board,
     gen_live_final_reveal,
     gen_photo_vote_details,
+    gen_final_photo_vote_details,
     gen_winner_announcement_board,
 )
 
@@ -263,7 +264,7 @@ def reload_contest() -> Contest:
     return Contest.from_file("photo_contest/contest2026.yaml")
 
 
-async def send_dm_safe(user: discord.User | discord.Member, content: str = "", embed: Optional[discord.Embed] = None, view: Optional[discord.ui.View] = None) -> bool:
+async def send_dm_safe(user: discord.User | discord.Member, content: str = "", embed: Optional[discord.Embed] = None, view: Optional[discord.ui.View] = None, file: Optional[discord.File] = None) -> bool:
     """Safely send a DM to a user, handling Forbidden and NotFound errors.
     
     Args:
@@ -271,6 +272,7 @@ async def send_dm_safe(user: discord.User | discord.Member, content: str = "", e
         content: Text content to send (optional)
         embed: Embed to send (optional)
         view: View with buttons/components (optional)
+        file: File to attach (optional)
     
     Returns:
         True if message was sent successfully, False otherwise
@@ -283,6 +285,8 @@ async def send_dm_safe(user: discord.User | discord.Member, content: str = "", e
             kwargs["embed"] = embed
         if view:
             kwargs["view"] = view
+        if file:
+            kwargs["file"] = file
         await user.send(**kwargs)
         return True
     except (discord.Forbidden, discord.NotFound):
@@ -416,6 +420,7 @@ async def setup_period(new_period: ContestPeriod, old_period: Optional[ContestPe
         await announce_final_results(bot)
         await announce_final_boards(bot)
         await notify_final_results(bot, contest)
+        await announce_individual_vote_boards(bot)
     
     logger.info(f"Period setup complete: {new_period.value}")
 
@@ -1669,15 +1674,49 @@ async def announce_individual_vote_boards(bot: discord.Client):
                 except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
                     print(f"Could not update message {message_id}: {e}")
     
+    # Process final competition
+    final_comp = contest.final_competition
+    if final_comp:
+        final_channel = bot.get_channel(final_channel_id)
+        if final_channel and isinstance(final_channel, discord.TextChannel):
+            for i, submission in enumerate(final_comp.competing_entries):
+                board_path = gen_final_photo_vote_details(
+                    submission, final_comp, id2name
+                )
+                
+                try:
+                    board_url = await upload_to_save_channel(
+                        final_channel.guild,
+                        board_path,
+                        f"Vote details - Grand Final - Photo #{i+1}"
+                    )
+                except RuntimeError as e:
+                    print(f"Could not upload final vote board: {e}")
+                    continue
+                
+                message_id = final_comp.msg_to_sub.get(i)
+                if message_id:
+                    try:
+                        message = await final_channel.fetch_message(message_id)
+                        embed = discord.Embed()
+                        embed.set_image(url=submission.discord_save_path)
+                        embed.set_thumbnail(url=board_url)
+                        await message.edit(
+                            content=f"Submission #{i+1}",
+                            embed=embed
+                        )
+                    except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
+                        print(f"Could not update final message {message_id}: {e}")
+    
     print("Individual vote boards complete!")
 
 
-async def announce_final_results(bot: discord.Client, reveal_delay: int = 15):
+async def announce_final_results(bot: discord.Client, reveal_delay: int = 30):
     """Announce final results with Eurovision-style voting reveal with live boards.
     
     Args:
         bot: Discord client
-        reveal_delay: Seconds to wait between revealing each voter's results (default: 15)
+        reveal_delay: Seconds to wait between revealing each voter's results (default: 30)
     """
     global contest
     
@@ -2025,7 +2064,7 @@ async def notify_qualifiers(bot: discord.Client, contest: Contest, competition_t
 
 
 async def notify_final_results(bot: discord.Client, contest: Contest):
-    """Send DM notifications to finalists with their final placement.
+    """Send DM notifications to finalists with their final placement and individual boards.
     
     Args:
         bot: The Discord bot client
@@ -2044,6 +2083,9 @@ async def notify_final_results(bot: discord.Client, contest: Contest):
     if not comp:
         return
     
+    # Build id2name mapping for individual boards
+    id2name = await build_id2name_mapping(bot, contest, include_voters=True)
+    
     # Calculate total points for each submission (finals only have jury votes)
     jury_votes = comp.count_votes_jury()
     
@@ -2058,7 +2100,7 @@ async def notify_final_results(bot: discord.Client, contest: Contest):
         reverse=True,
     )
     
-    # Send DM to each finalist with their placement
+    # Send DM to each finalist with their placement and individual board
     for i, submission in enumerate(ranked_submissions):
         placement = i + 1
         points = total_points[submission]
@@ -2098,7 +2140,15 @@ async def notify_final_results(bot: discord.Client, contest: Contest):
                     color=color
                 )
                 embed.set_image(url=submission.discord_save_path)
-                await send_dm_safe(user, embed=embed)
+                
+                # Generate individual result board
+                board_path = gen_final_photo_vote_details(submission, comp, id2name)
+                
+                await send_dm_safe(
+                    user,
+                    embed=embed,
+                    file=discord.File(board_path)
+                )
         except Exception:
             # User not found, skip
             pass

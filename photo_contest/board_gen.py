@@ -741,10 +741,24 @@ def gen_photo_vote_details(
     
     bonus_text = " (+3)" if has_bonus else ""
     points_str = f"{base_jury_points}{bonus_text} point{'s' if base_jury_points != 1 else ''}"
+    
+    # Calculate overall rank based on total jury points
+    all_jury_totals = []
+    for sub in competition.competing_entries:
+        sub_jury = competition.get_jury_votes_per_juror(sub)
+        sub_points = sum(sub_jury.values())
+        if sub.author_id in (jury_voter_authors or set()):
+            sub_points += 3
+        all_jury_totals.append((sub, sub_points))
+    
+    all_jury_totals.sort(key=lambda x: -x[1])
+    jury_rank = next((i + 1 for i, (s, _) in enumerate(all_jury_totals) if s == submission), None)
+    total_entries = len(competition.competing_entries)
+    jury_rank_str = f" (#{jury_rank}/{total_entries})" if jury_rank else ""
 
     d.text(
         (50, 365),
-        f"{points_str} from the jury",
+        f"{points_str} from the jury{jury_rank_str}",
         anchor="lt",
         font=fnt_bold_small,
         fill="white",
@@ -935,10 +949,21 @@ def gen_photo_vote_details(
         for voter_id, points in public_votes_by_id.items()
     }
     total_public_points = sum(public_points_per_voter.values())
+    
+    # Calculate public vote rank
+    public_totals = []
+    for sub in competition.competing_entries:
+        sub_public = competition.get_public_votes_per_voter(sub)
+        sub_points = sum(sub_public.values())
+        public_totals.append((sub, sub_points))
+    
+    public_totals.sort(key=lambda x: -x[1])
+    public_rank = next((i + 1 for i, (s, _) in enumerate(public_totals) if s == submission), None)
+    public_rank_str = f" (#{public_rank}/{total_entries})" if public_rank else ""
 
     d.text(
         (400, 100),
-        f"{total_public_points} point{'s' if total_public_points != 1 else ''} from the global vote",
+        f"{total_public_points} point{'s' if total_public_points != 1 else ''} in the public vote{public_rank_str}",
         anchor="lt",
         font=fnt_bold_small,
         fill="white",
@@ -1023,6 +1048,231 @@ def gen_photo_vote_details(
             f"photo_contest/generated_tables/"
             f"photo_{competition.type}_{safe_category}_{photo_num}.png"
         )
+    img.save(filename)
+    return filename
+
+
+def gen_final_photo_vote_details(
+    submission: Submission,
+    competition: CompetitionInfo,
+    id2name: Dict[int, str],
+    photo_num: Optional[int] = None,
+) -> str:
+    """Generate detailed vote board for a specific final submission with Eurovision-style voting."""
+    
+    img = Image.new("RGB", (750, 600), color=BG_COLOR)
+    d = ImageDraw.Draw(img)
+
+    if photo_num is None:
+        photo_num = competition.competing_entries.index(submission) + 1
+
+    title = f"Photo #{photo_num} in Grand Final"
+    d.text(
+        (375, 20),
+        title,
+        anchor="mt",
+        font=fnt_bold if len(title) < 46 else fnt_bold_small,
+        fill="white",
+    )
+    d.text(
+        (375, 50),
+        f"submitted by {strip_emoji(id2name.get(submission.author_id, f'User {submission.author_id}'))}",
+        anchor="mt",
+        font=fnt_italic,
+        fill="white",
+    )
+
+    logo = Image.open("resource/logo_volt.png")
+    img.paste(logo.resize((150, 150)), (585, 435))
+
+    snippet = create_thumbnail(submission.local_save_path, (360, 250))
+    img.paste(snippet, (20, 100))
+
+    # Calculate Eurovision points for all submissions
+    eurovision_points = [7, 5, 3, 2, 1]
+    
+    # Helper to get discord_save_path from a submission
+    def get_sub_key(sub) -> str:
+        if hasattr(sub, 'discord_save_path'):
+            return sub.discord_save_path
+        elif isinstance(sub, dict):
+            return sub.get('discord_save_path', '')
+        return ''
+    
+    # Get each voter's ranking and calculate points for this submission
+    eurovision_points_per_juror: Dict[str, int] = {}
+    for voter_id, vote_data in competition.votes_jury.items():
+        ranking = getattr(vote_data, 'ranking', [])
+        voter_name = strip_emoji(id2name.get(voter_id, f"User {voter_id}"))
+        for rank, sub in enumerate(ranking[:5]):
+            if get_sub_key(sub) == submission.discord_save_path:
+                eurovision_points_per_juror[voter_name] = eurovision_points[rank]
+                break
+    
+    total_eurovision_points = sum(eurovision_points_per_juror.values())
+    
+    # Calculate overall rank based on Eurovision points
+    all_final_totals = []
+    for sub in competition.competing_entries:
+        sub_points = 0
+        for voter_id, vote_data in competition.votes_jury.items():
+            ranking = getattr(vote_data, 'ranking', [])
+            for rank, s in enumerate(ranking[:5]):
+                if get_sub_key(s) == sub.discord_save_path:
+                    sub_points += eurovision_points[rank]
+                    break
+        all_final_totals.append((sub, sub_points))
+    
+    all_final_totals.sort(key=lambda x: -x[1])
+    final_rank = next((i + 1 for i, (s, _) in enumerate(all_final_totals) if s == submission), None)
+    total_entries = len(competition.competing_entries)
+    rank_str = f" (#{final_rank}/{total_entries})" if final_rank else ""
+
+    points_str = f"{total_eurovision_points} point{'s' if total_eurovision_points != 1 else ''}"
+    d.text(
+        (50, 365),
+        f"{points_str} {rank_str}",
+        anchor="lt",
+        font=fnt_bold_small,
+        fill="white",
+    )
+    
+    # Group jurors by points
+    jury_by_points = {}
+    for juror, points in eurovision_points_per_juror.items():
+        if points not in jury_by_points:
+            jury_by_points[points] = []
+        jury_by_points[points].append(juror)
+    
+    y_offset = 395
+    point_groups = sorted(jury_by_points.keys(), reverse=True)
+    
+    if len(point_groups) > 5:
+        mid_point = (len(point_groups) + 1) // 2
+        
+        y_left = y_offset
+        for points in point_groups[:mid_point]:
+            voters = jury_by_points[points]
+            fnt = (
+                fnt_bold_small
+                if points == 7
+                else (fnt_regular if points >= 3 else fnt_light)
+            )
+            
+            prefix = f"{points} pt: "
+            max_width = 170
+            
+            lines = []
+            current_line = prefix
+            truncated_voters = [truncate_name(v, 18) for v in voters]
+            
+            for j, voter in enumerate(truncated_voters):
+                test_text = current_line + (voter if j == 0 else ", " + voter)
+                bbox = d.textbbox((0, 0), test_text, font=fnt)
+                text_width = bbox[2] - bbox[0]
+                
+                if text_width > max_width and current_line != prefix:
+                    lines.append(current_line)
+                    current_line = "  " + voter
+                else:
+                    current_line = test_text
+            
+            if current_line:
+                lines.append(current_line)
+            
+            final_fnt = fnt
+            for line in lines:
+                bbox = d.textbbox((0, 0), line, font=fnt)
+                if bbox[2] - bbox[0] > max_width:
+                    final_fnt = fnt_light
+                    break
+            
+            for line in lines:
+                d.text((50, y_left), line, anchor="lt", fill="white", font=final_fnt)
+                y_left += 25
+        
+        y_right = y_offset
+        for points in point_groups[mid_point:]:
+            voters = jury_by_points[points]
+            fnt = (
+                fnt_bold_small
+                if points == 7
+                else (fnt_regular if points >= 3 else fnt_light)
+            )
+            
+            prefix = f"{points} pt: "
+            max_width = 170
+            
+            lines = []
+            current_line = prefix
+            truncated_voters = [truncate_name(v, 18) for v in voters]
+            
+            for j, voter in enumerate(truncated_voters):
+                test_text = current_line + (voter if j == 0 else ", " + voter)
+                bbox = d.textbbox((0, 0), test_text, font=fnt)
+                text_width = bbox[2] - bbox[0]
+                
+                if text_width > max_width and current_line != prefix:
+                    lines.append(current_line)
+                    current_line = "  " + voter
+                else:
+                    current_line = test_text
+            
+            if current_line:
+                lines.append(current_line)
+            
+            final_fnt = fnt
+            for line in lines:
+                bbox = d.textbbox((0, 0), line, font=fnt)
+                if bbox[2] - bbox[0] > max_width:
+                    final_fnt = fnt_light
+                    break
+            
+            for line in lines:
+                d.text((230, y_right), line, anchor="lt", fill="white", font=final_fnt)
+                y_right += 25
+    else:
+        for points in point_groups:
+            voters = jury_by_points[points]
+            fnt = (
+                fnt_bold_small
+                if points == 7
+                else (fnt_regular if points >= 3 else fnt_light)
+            )
+            
+            prefix = f"{points} pt: "
+            max_width = 350
+            
+            lines = []
+            current_line = prefix
+            truncated_voters = [truncate_name(v, 25) for v in voters]
+            
+            for i, voter in enumerate(truncated_voters):
+                test_text = current_line + (voter if i == 0 else ", " + voter)
+                bbox = d.textbbox((0, 0), test_text, font=fnt)
+                text_width = bbox[2] - bbox[0]
+                
+                if text_width > max_width and current_line != prefix:
+                    lines.append(current_line)
+                    current_line = "    " + voter
+                else:
+                    current_line = test_text
+            
+            if current_line:
+                lines.append(current_line)
+            
+            final_fnt = fnt
+            for line in lines:
+                bbox = d.textbbox((0, 0), line, font=fnt)
+                if bbox[2] - bbox[0] > max_width:
+                    final_fnt = fnt_regular
+                    break
+            
+            for line in lines:
+                d.text((50, y_offset), line, anchor="lt", fill="white", font=final_fnt)
+                y_offset += 25
+
+    filename = f"photo_contest/generated_tables/photo_final_GrandFinal_{photo_num}.png"
     img.save(filename)
     return filename
 
