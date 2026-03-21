@@ -1681,7 +1681,7 @@ async def announce_individual_vote_boards(bot: discord.Client):
         if final_channel and isinstance(final_channel, discord.TextChannel):
             for i, submission in enumerate(final_comp.competing_entries):
                 board_path = gen_final_photo_vote_details(
-                    submission, final_comp, id2name
+                    submission, final_comp, id2name, contest=contest
                 )
                 
                 try:
@@ -2142,7 +2142,7 @@ async def notify_final_results(bot: discord.Client, contest: Contest):
                 embed.set_image(url=submission.discord_save_path)
                 
                 # Generate individual result board
-                board_path = gen_final_photo_vote_details(submission, comp, id2name)
+                board_path = gen_final_photo_vote_details(submission, comp, id2name, contest=contest)
                 
                 await send_dm_safe(
                     user,

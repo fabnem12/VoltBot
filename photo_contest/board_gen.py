@@ -595,6 +595,7 @@ def gen_semifinals_boards(
         draw_column_headers(d, 80, "semis")
         
         # Determine qualifiers: top 2 by public, then top 3 by jury from remaining = 5 total (with +3 bonus)
+        # Use same sorting as solve_semis: tiebreaker uses adjusted jury score (with +3 bonus)
         top_public = sorted(
             semifinal.competing_entries,
             key=lambda x: (public_votes.get(x, 0), get_adjusted_jury_score(x), -x.submission_time),
@@ -1057,6 +1058,7 @@ def gen_final_photo_vote_details(
     competition: CompetitionInfo,
     id2name: Dict[int, str],
     photo_num: Optional[int] = None,
+    contest: Optional[Contest] = None,
 ) -> str:
     """Generate detailed vote board for a specific final submission with Eurovision-style voting."""
     
@@ -1271,6 +1273,123 @@ def gen_final_photo_vote_details(
             for line in lines:
                 d.text((50, y_offset), line, anchor="lt", fill="white", font=final_fnt)
                 y_offset += 25
+    
+    # Draw qualif and semis rankings on the right side if contest is provided
+    if contest:
+        y_right = 100
+        x_right = 400
+        x_right2 = 480  # For second column if needed
+        
+        # Find qualif rankings (jury + public, with +3 bonus for submissions from jury voters)
+        qualif_jury_rank = None
+        qualif_jury_pts = None
+        qualif_pub_rank = None
+        qualif_pub_pts = None
+        qualif_total = None
+        for comp in contest.qualif_competitions:
+            if submission in comp.competing_entries:
+                jury_scores = comp.count_votes_jury()
+                public_scores = comp.count_votes_public()
+                
+                # Get authors who voted as jury in qualif
+                qualif_jury_voter_authors = contest.get_jury_voter_authors("qualif")
+                
+                # Calculate adjusted jury scores with +3 bonus
+                def get_adjusted_qualif_jury_score(sub: Submission) -> int:
+                    base = jury_scores.get(sub, 0)
+                    if sub.author_id in qualif_jury_voter_authors:
+                        return base + 3
+                    return base
+                
+                # Use adjusted score for ranking display
+                qualif_jury_pts = get_adjusted_qualif_jury_score(submission)
+                qualif_pub_pts = public_scores.get(submission, 0)
+                qualif_total = len(comp.competing_entries)
+                
+                # Rank by adjusted jury score
+                jury_ranked = sorted(
+                    comp.competing_entries,
+                    key=lambda x: (get_adjusted_qualif_jury_score(x), -x.submission_time),
+                    reverse=True
+                )
+                if submission in jury_ranked:
+                    qualif_jury_rank = jury_ranked.index(submission) + 1
+                
+                # Rank by public
+                pub_ranked = sorted(
+                    comp.competing_entries,
+                    key=lambda x: (public_scores.get(x, 0), -x.submission_time),
+                    reverse=True
+                )
+                if submission in pub_ranked:
+                    qualif_pub_rank = pub_ranked.index(submission) + 1
+                break
+        
+        # Find semis rankings (jury + public, with +3 bonus for submissions from jury voters)
+        semis_jury_rank = None
+        semis_jury_pts = None
+        semis_pub_rank = None
+        semis_pub_pts = None
+        semis_total = None
+        for comp in contest.semis_competitions:
+            if submission in comp.competing_entries:
+                jury_scores = comp.count_votes_jury()
+                public_scores = comp.count_votes_public()
+                
+                # Get authors who voted as jury in semis
+                semis_jury_voter_authors = contest.get_jury_voter_authors("semis")
+                
+                # Calculate adjusted jury scores with +3 bonus
+                def get_adjusted_jury_score(sub: Submission) -> int:
+                    base = jury_scores.get(sub, 0)
+                    if sub.author_id in semis_jury_voter_authors:
+                        return base + 3
+                    return base
+                
+                # Use adjusted score for ranking display
+                semis_jury_pts = get_adjusted_jury_score(submission)
+                semis_pub_pts = public_scores.get(submission, 0)
+                semis_total = len(comp.competing_entries)
+                
+                # Rank by adjusted jury score
+                jury_ranked = sorted(
+                    comp.competing_entries,
+                    key=lambda x: (get_adjusted_jury_score(x), -x.submission_time),
+                    reverse=True
+                )
+                if submission in jury_ranked:
+                    semis_jury_rank = jury_ranked.index(submission) + 1
+                
+                # Rank by public
+                pub_ranked = sorted(
+                    comp.competing_entries,
+                    key=lambda x: (public_scores.get(x, 0), -x.submission_time),
+                    reverse=True
+                )
+                if submission in pub_ranked:
+                    semis_pub_rank = pub_ranked.index(submission) + 1
+                break
+        
+        # Draw qualif rankings (two columns: label | value)
+        x_label = x_right
+        x_value = x_right + 200
+        if qualif_jury_rank is not None:
+            d.text((x_label, y_right), "Qualification Jury:", anchor="lt", font=fnt_bold_small, fill="white")
+            d.text((x_value, y_right), f"#{qualif_jury_rank}/{qualif_total} ({qualif_jury_pts}pts)", anchor="lt", font=fnt_regular, fill="white")
+            y_right += 22
+            
+            d.text((x_label, y_right), "Qualification Public:", anchor="lt", font=fnt_bold_small, fill="white")
+            d.text((x_value, y_right), f"#{qualif_pub_rank}/{qualif_total} ({qualif_pub_pts}pts)", anchor="lt", font=fnt_regular, fill="white")
+            y_right += 30
+        
+        # Draw semis rankings (two columns: label | value)
+        if semis_jury_rank is not None:
+            d.text((x_label, y_right), "Semi final Jury:", anchor="lt", font=fnt_bold_small, fill="white")
+            d.text((x_value, y_right), f"#{semis_jury_rank}/{semis_total} ({semis_jury_pts}pts)", anchor="lt", font=fnt_regular, fill="white")
+            y_right += 22
+            
+            d.text((x_label, y_right), "Semi final Public:", anchor="lt", font=fnt_bold_small, fill="white")
+            d.text((x_value, y_right), f"#{semis_pub_rank}/{semis_total} ({semis_pub_pts}pts)", anchor="lt", font=fnt_regular, fill="white")
 
     filename = f"photo_contest/generated_tables/photo_final_GrandFinal_{photo_num}.png"
     img.save(filename)
