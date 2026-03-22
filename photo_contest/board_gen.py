@@ -197,8 +197,9 @@ def gen_competition_board(
 
     # volt logo - position at bottom right
     logo = Image.open("resource/logo_volt.png")
-    logo_y = img_height - 165
-    img.paste(logo.resize((150, 150)), (785, logo_y))
+    logo_size = 100
+    logo_y = img_height - logo_size - 20
+    img.paste(logo.resize((logo_size, logo_size)), (img.size[0] - logo_size - 20, logo_y))
     
     # Add column headers for Jury and Public points
     draw_column_headers(d, 70)
@@ -388,8 +389,9 @@ def gen_final_results_board(
 
     # volt logo - position at bottom right
     logo = Image.open("resource/logo_volt.png")
-    logo_y = img_height - 155
-    img.paste(logo.resize((150, 150)), (785, logo_y))
+    logo_size = 100
+    logo_y = img_height - logo_size - 20
+    img.paste(logo.resize((logo_size, logo_size)), (img.size[0] - logo_size - 20, logo_y))
     
     # Add column headers
     if latest_voter_points:
@@ -588,8 +590,9 @@ def gen_semifinals_boards(
 
         # volt logo - position at bottom right
         logo = Image.open("resource/logo_volt.png")
-        logo_y = img_height - 165
-        img.paste(logo.resize((150, 150)), (785, logo_y))
+        logo_size = 100
+        logo_y = img_height - logo_size - 20
+        img.paste(logo.resize((logo_size, logo_size)), (img.size[0] - logo_size - 20, logo_y))
         
         # Add column headers for Jury and Public points
         draw_column_headers(d, 80, "semis")
@@ -722,9 +725,10 @@ def gen_photo_vote_details(
         fill="white",
     )
 
-    # volt logo
+    # volt logo - position at bottom right
     logo = Image.open("resource/logo_volt.png")
-    img.paste(logo.resize((150, 150)), (585, 435))
+    logo_size = 100
+    img.paste(logo.resize((logo_size, logo_size)), (img.size[0] - logo_size - 20, img.size[1] - logo_size - 20))
 
     # snippet of the photo (preserve aspect ratio with letterbox)
     snippet = create_thumbnail(submission.local_save_path, (360, 250))
@@ -775,19 +779,15 @@ def gen_photo_vote_details(
     y_offset = 395
     point_groups = sorted(jury_by_points.keys(), reverse=True)
     
-    # Use two columns only if there are more than 5 different point values
-    if len(point_groups) > 5:
+    # Use two columns only if there are more than 3 different point values
+    if len(point_groups) > 3:
         mid_point = (len(point_groups) + 1) // 2  # Split into two columns
         
         # Left column
         y_left = y_offset
         for i, points in enumerate(point_groups[:mid_point]):
             voters = jury_by_points[points]
-            fnt = (
-                fnt_bold_small
-                if points >= 12
-                else (fnt_regular if points >= 8 else fnt_light)
-            )
+            fnt = fnt_light
             
             # Wrap text to fit within available width (170 pixels for left column)
             prefix = f"{points} pt: "
@@ -838,11 +838,7 @@ def gen_photo_vote_details(
         y_right = y_offset
         for i, points in enumerate(point_groups[mid_point:]):
             voters = jury_by_points[points]
-            fnt = (
-                fnt_bold_small
-                if points >= 12
-                else (fnt_regular if points >= 8 else fnt_light)
-            )
+            fnt = fnt_light
             
             # Wrap text to fit within available width (170 pixels for right column)
             prefix = f"{points} pt: "
@@ -892,11 +888,7 @@ def gen_photo_vote_details(
         # Single column for 5 or fewer point groups
         for points in point_groups:
             voters = jury_by_points[points]
-            fnt = (
-                fnt_bold_small
-                if points >= 12
-                else (fnt_regular if points >= 8 else fnt_light)
-            )
+            fnt = fnt_light
             
             # Wrap text to fit within available width (350 pixels from x=50)
             prefix = f"{points} pt: "
@@ -980,11 +972,7 @@ def gen_photo_vote_details(
     y_offset = 135
     for points in sorted(public_by_points.keys(), reverse=True):
         voters = public_by_points[points]
-        fnt = (
-            fnt_bold_small
-            if points == 3
-            else (fnt_regular if points == 2 else fnt_light)
-        )
+        fnt = fnt_light
         
         # Wrap text to fit within available width (330 pixels from x=400)
         prefix = f"{points} pt: "
@@ -1085,7 +1073,8 @@ def gen_final_photo_vote_details(
     )
 
     logo = Image.open("resource/logo_volt.png")
-    img.paste(logo.resize((150, 150)), (585, 435))
+    logo_size = 100
+    img.paste(logo.resize((logo_size, logo_size)), (img.size[0] - logo_size - 20, img.size[1] - logo_size - 20))
 
     snippet = create_thumbnail(submission.local_save_path, (360, 250))
     img.paste(snippet, (20, 100))
@@ -1149,17 +1138,13 @@ def gen_final_photo_vote_details(
     y_offset = 395
     point_groups = sorted(jury_by_points.keys(), reverse=True)
     
-    if len(point_groups) > 5:
+    if len(point_groups) > 3:
         mid_point = (len(point_groups) + 1) // 2
         
         y_left = y_offset
         for points in point_groups[:mid_point]:
             voters = jury_by_points[points]
-            fnt = (
-                fnt_bold_small
-                if points == 7
-                else (fnt_regular if points >= 3 else fnt_light)
-            )
+            fnt = fnt_light
             
             prefix = f"{points} pt: "
             max_width = 170
@@ -1196,11 +1181,7 @@ def gen_final_photo_vote_details(
         y_right = y_offset
         for points in point_groups[mid_point:]:
             voters = jury_by_points[points]
-            fnt = (
-                fnt_bold_small
-                if points == 7
-                else (fnt_regular if points >= 3 else fnt_light)
-            )
+            fnt = fnt_light
             
             prefix = f"{points} pt: "
             max_width = 170
@@ -1236,11 +1217,7 @@ def gen_final_photo_vote_details(
     else:
         for points in point_groups:
             voters = jury_by_points[points]
-            fnt = (
-                fnt_bold_small
-                if points == 7
-                else (fnt_regular if points >= 3 else fnt_light)
-            )
+            fnt = fnt_light
             
             prefix = f"{points} pt: "
             max_width = 350
@@ -1628,9 +1605,10 @@ def gen_winner_announcement_board(
                     d.text((545, y_offset + 10), photo_label, anchor="lt", font=fnt_regular, fill="white")
                     d.text((545, y_offset + 32), juror_name, anchor="lt", font=fnt_regular, fill="white")
 
-    # Volt logo
+    # Volt logo - position at bottom right
     logo = Image.open("resource/logo_volt.png")
-    img.paste(logo.resize((100, 100)), (780, 385))
+    logo_size = 100
+    img.paste(logo.resize((logo_size, logo_size)), (img.size[0] - logo_size - 20, img.size[1] - logo_size - 20))
 
     # Save
     safe_name = category_name.replace(" ", "_").replace("-", "_")
@@ -1695,9 +1673,10 @@ def gen_live_final_reveal(
         title = f"Winner for {category_name}"
         d.text((375, 20), title, anchor="mt", font=fnt_bold, fill="white")
         
-        # Volt logo
+        # Volt logo - position at bottom right
         logo = Image.open("resource/logo_volt.png")
-        img.paste(logo.resize((150, 150)), (585, 435))
+        logo_size = 100
+        img.paste(logo.resize((logo_size, logo_size)), (img.size[0] - logo_size - 20, img.size[1] - logo_size - 20))
         
         return img, d
     
