@@ -987,7 +987,7 @@ def main():
 
         confirmation = (
             f"Saved! Your birthday is set as {day:02d}/{month:02d}"
-            f"/{year}" if year else ""
+            + (f"/{year}" if year else "")
         )
 
         await interaction.response.send_message(confirmation, ephemeral=True)
