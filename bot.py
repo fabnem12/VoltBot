@@ -961,8 +961,8 @@ def main():
     @bot.slash_command(name="birthday", description="Register your birthday for a server shoutout")
     async def register_birthday(
         interaction: discord.Interaction,
-        month: int,
         day: int,
+        month: int,
         year: Optional[int] = None,
     ):
         today = get_paris_now().date()
