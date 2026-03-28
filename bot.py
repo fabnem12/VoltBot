@@ -274,7 +274,7 @@ async def verif_news_source(message):
         pattern = regex.compile(r"(?:^|\s|https?://(?:www\.)?)" + regex.escape(link) + r"(?:/|\s|$)")
         
         if pattern.search(msg_low):
-            await message.channel.send(f":warning: This message contains a link to an untrusted news source ({source}) - local bot", reference = ref)
+            await message.channel.send(f":warning: This message contains a link to an untrusted news source ({source})", reference = ref)
             return
 
 async def verif_word_train(message):
@@ -465,7 +465,7 @@ async def kekw_board(message: discord.Message, bot: discord.BotIntegration):
         save()
 
 async def remove_recycle(message: discord.Message):
-    if message.channel.id != memes:
+    if message.channel.id not in (memes, european_memes):
         return
     
     for reaction in message.reactions:
