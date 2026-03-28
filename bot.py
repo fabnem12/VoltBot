@@ -2,6 +2,7 @@ import asyncio
 import json
 import nextcord as discord
 from langdetect import detect
+from nextcord import SlashOption
 from nextcord.ext import commands, tasks
 from typing import Optional, Union
 from unidecode import unidecode
@@ -958,12 +959,12 @@ def main():
         else:
             await interaction.send("No", ephemeral=True)
         
-    @bot.slash_command(name="birthday", description="Register your birthday for a server shoutout")
+    @bot.slash_command(name="birthday", description="Register your birthday; add a year if you want your age announced")
     async def register_birthday(
         interaction: discord.Interaction,
-        day: int,
-        month: int,
-        year: Optional[int] = None,
+        day: int = SlashOption(description="Day of month (1-31)"),
+        month: int = SlashOption(description="Month number (1-12)"),
+        year: Optional[int] = SlashOption(description="Year (optional, announced as age)", required=False),
     ):
         today = get_paris_now().date()
 
