@@ -437,6 +437,40 @@ async def ensure_poll_thread(message: discord.Message):
         pass
 
 
+async def handle_report_reaction_color(channel: Optional[discord.abc.Messageable], message_id: int, emoji_hash: Union[int, str], user: discord.abc.User):
+    """Update report embed color based on moderator reactions."""
+    if user.bot or channel is None:
+        return
+
+    if not isinstance(channel, discord.TextChannel) or channel.id != reportChannelId:
+        return
+
+    colors = {
+        "❌": discord.Color.red(),
+        "⚠️": discord.Color.gold(),
+        "🔨": discord.Color.green(),
+    }
+
+    if emoji_hash not in colors:
+        return
+
+    try:
+        msg = await channel.fetch_message(message_id)
+    except Exception:
+        return
+
+    if not msg.embeds:
+        return
+
+    embed = msg.embeds[0]
+    embed.color = colors.get(emoji_hash, embed.color)
+
+    try:
+        await msg.edit(embed=embed)
+    except Exception:
+        pass
+
+
 async def count_banned_words(guild: discord.Guild, author: discord.Member, msg_txt: str, channel: Optional[discord.TextChannel] = None):
     banned_words = constantes.banned_words
     
@@ -604,6 +638,7 @@ def main():
             
             if await isWelcome(guild, user.id) or await isMod(guild, user.id):
                 await introreact(messageId, guild, emojiHash, channel, user)
+            await handle_report_reaction_color(channel, messageId, emojiHash, user)
 
     @bot.command(name = "ayo")
     async def ayo(ctx):
