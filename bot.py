@@ -2,7 +2,7 @@ import asyncio
 import json
 import nextcord as discord
 from langdetect import detect
-from nextcord.ext import commands
+from nextcord.ext import commands, tasks
 from typing import Optional, Union
 from unidecode import unidecode
 import datetime
@@ -12,6 +12,7 @@ import requests
 import time
 import emojis
 import regex
+import arrow
 
 import constantes
 
@@ -44,6 +45,7 @@ introChannel = 567024817128210433
 european_memes = 731895134639095909
 memes = 656609693912793100
 channelKewkId = 1419775038806163666
+casualChannel = 800171310940291103
 
 #-roles
 voltDiscordTeam = 674583505446895616
@@ -68,6 +70,16 @@ else:
 def save():
     with open("bot_info.json", "w") as f:
         json.dump(info, f)
+
+
+def get_birthdays_storage():
+    if "birthdays" not in info or not isinstance(info["birthdays"], dict):
+        info["birthdays"] = {}
+    return info["birthdays"]
+
+
+def get_paris_now() -> arrow.Arrow:
+    return arrow.now("Europe/Paris")
 
 async def dmChannelUser(user):
     if user.dm_channel is None:
@@ -836,6 +848,65 @@ def main():
     async def reportcommand(ctx, *, param = ""):
         await report(ctx.message.id, ctx.guild, ctx.channel, ctx.author, param)
         #await report(ctx, param)
+
+    @tasks.loop(minutes=1)
+    async def birthday_announcer():
+        now_paris = get_paris_now()
+        if not (now_paris.hour == 9 and now_paris.minute == 0):
+            return
+        
+        def build_age_text(record: dict, today: datetime.date) -> str:
+            """Return (age_text, age_int) for a record with year/month/day; empty text if year missing/invalid."""
+            if "year" in record:
+                year = int(record["year"])
+                month = int(record["month"])
+                day = int(record["day"])
+                birthday_this_year = datetime.date(today.year, month, day)
+                next_birthday_year = today.year if today <= birthday_this_year else today.year + 1
+                age = next_birthday_year - year
+                return f" They turn **{age}** today!"
+            else:
+                return ""
+        
+        guild = bot.get_guild(voltServer)
+        assert guild is not None
+        
+        channel = bot.get_channel(casualChannel)
+        if channel is None:
+            try:
+                channel = await bot.fetch_channel(casualChannel)
+                assert isinstance(channel, discord.TextChannel)
+            except Exception:
+                return
+
+        today = now_paris.date()
+
+        birthdays = get_birthdays_storage().copy()
+
+        for user_id, record in birthdays.items():
+            try:
+                month = int(record.get("month"))
+                day = int(record.get("day"))
+            except (TypeError, ValueError):
+                continue
+
+            if month != today.month or day != today.day:
+                continue
+
+            try:
+                user = guild.get_member(int(user_id)) or await guild.fetch_member(int(user_id))
+            except Exception:
+                continue
+
+            age_text = build_age_text(record, today)
+
+            await channel.send(f"🎉 Happy birthday {user.mention}!{age_text}")
+
+
+    @bot.event
+    async def on_ready():
+        if not birthday_announcer.is_running():
+            birthday_announcer.start()
     
     @bot.slash_command(name = "roll")
     async def roll_dice(interaction: discord.Interaction, option: Optional[str] = "d6"):
@@ -886,7 +957,41 @@ def main():
                 await interaction.send("Invalid message id", ephemeral=True)
         else:
             await interaction.send("No", ephemeral=True)
+        
+    @bot.slash_command(name="birthday", description="Register your birthday for a server shoutout")
+    async def register_birthday(
+        interaction: discord.Interaction,
+        month: int,
+        day: int,
+        year: Optional[int] = None,
+    ):
+        today = get_paris_now().date()
 
+        if year is not None and year > today.year - 13:
+            await interaction.response.send_message("Year cannot be less than 13 years ago", ephemeral=True)
+        
+        try:
+            datetime.date(year if year else 2000, month, day)
+        except ValueError:
+            await interaction.response.send_message("That date is not valid. Please check the day and month.", ephemeral=True)
+            return
+
+        birthdays = get_birthdays_storage()
+        record = {"month": month, "day": day}
+        if year is not None:
+            record["year"] = year
+
+        assert interaction.user is not None
+        birthdays[str(interaction.user.id)] = record
+        save()
+
+        confirmation = (
+            f"Saved! Your birthday is set as {day:02d}/{month:02d}"
+            f"/{year}" if year else ""
+        )
+
+        await interaction.response.send_message(confirmation, ephemeral=True)
+        
     @bot.command(name = "resend")
     async def resend(ctx, channel: Union[discord.TextChannel, discord.VoiceChannel, discord.StageChannel, discord.GroupChannel, discord.Thread], message_rep: Optional[int] = None, *, txt: str = ""):
         msg = ctx.message if hasattr(ctx, "message") else None
