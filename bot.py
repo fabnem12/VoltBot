@@ -47,6 +47,7 @@ european_memes = 731895134639095909
 memes = 656609693912793100
 channelKewkId = 1419775038806163666
 casualChannel = 800171310940291103
+pollingStation = 806213028034510859
 
 #-roles
 voltDiscordTeam = 674583505446895616
@@ -415,7 +416,27 @@ async def reminder_meme(message: discord.Message, bot: discord.BotIntegration):
         await prevMsg.delete()
 
     await channel.send(":warning: **This channel is only for memes, not for regular messages.**\nIf you want to react to a meme with text, please make a thread.")
-    
+
+
+async def ensure_poll_thread(message: discord.Message):
+    """Create a public discussion thread under pollingStation posts that lack one."""
+    if message.channel.id != pollingStation or message.author.bot:
+        return
+    assert isinstance(message.channel, discord.TextChannel)
+
+    has_thread = bool(getattr(message, "thread", None)) or bool(getattr(message, "has_thread", False))
+    if has_thread:
+        return
+
+    title_src = message.content.strip() or "Poll discussion"
+    title = (title_src[:90] + "…") if len(title_src) > 95 else title_src
+
+    try:
+        await message.channel.create_thread(name=title or "Poll discussion", message=message, auto_archive_duration=10080)
+    except Exception:
+        pass
+
+
 async def count_banned_words(guild: discord.Guild, author: discord.Member, msg_txt: str, channel: Optional[discord.TextChannel] = None):
     banned_words = constantes.banned_words
     
@@ -502,6 +523,7 @@ def main():
         await smart_tweet(message)
         await reminder_meme(message, bot)
         await anonymize_instagram_links(message)
+        await ensure_poll_thread(message)
 
         if message.content.startswith(".ban"):
             await ban(message, banAppealOk = False)
