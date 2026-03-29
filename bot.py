@@ -428,6 +428,14 @@ async def ensure_poll_thread(message: discord.Message):
     if has_thread:
         return
  
+    try:
+        await message.channel.create_thread(name="Poll discussion", message=message, auto_archive_duration=10080)
+    except Exception:
+        pass
+    return
+ 
+    #for when the bot will be using discord.py
+    """
     poll = getattr(message, "poll", None)
     if poll:
         question = getattr(poll, "question", None)
@@ -439,6 +447,7 @@ async def ensure_poll_thread(message: discord.Message):
             await message.channel.create_thread(name=title or "Poll discussion", message=message, auto_archive_duration=10080)
         except Exception:
             pass
+    """
 
 
 async def handle_report_reaction_color(channel: Optional[discord.abc.Messageable], message_id: int, emoji_hash: Union[int, str], user: discord.abc.User):
