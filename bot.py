@@ -427,14 +427,18 @@ async def ensure_poll_thread(message: discord.Message):
     has_thread = bool(getattr(message, "thread", None)) or bool(getattr(message, "has_thread", False))
     if has_thread:
         return
+ 
+    poll = getattr(message, "poll", None)
+    if poll:
+        question = getattr(poll, "question", None)
 
-    title_src = message.content.strip() or "Poll discussion"
-    title = (title_src[:90] + "…") if len(title_src) > 95 else title_src
+        title_src = (question or message.content.strip() or "Poll discussion")
+        title = (title_src[:90] + "…") if len(title_src) > 95 else title_src
 
-    try:
-        await message.channel.create_thread(name=title or "Poll discussion", message=message, auto_archive_duration=10080)
-    except Exception:
-        pass
+        try:
+            await message.channel.create_thread(name=title or "Poll discussion", message=message, auto_archive_duration=10080)
+        except Exception:
+            pass
 
 
 async def handle_report_reaction_color(channel: Optional[discord.abc.Messageable], message_id: int, emoji_hash: Union[int, str], user: discord.abc.User):
