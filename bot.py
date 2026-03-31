@@ -48,6 +48,7 @@ memes = 656609693912793100
 channelKewkId = 1419775038806163666
 casualChannel = 800171310940291103
 pollingStation = 806213028034510859
+longTimeMembers = 1488637307224326245
 
 #-roles
 voltDiscordTeam = 674583505446895616
@@ -973,11 +974,48 @@ def main():
 
             await channel.send(f"🎉 Happy birthday {user.mention}!{age_text}")
 
+    async def celebrations():
+        now_paris = get_paris_now()
+        if not (now_paris.hour == 8 and now_paris.minute == 0):
+            return
+        
+        # recover the channel object
+        guild = bot.get_guild(voltServer)
+        assert guild is not None
+        
+        channel = bot.get_channel(longTimeMembers)
+        if channel is None:
+            try:
+                channel = await bot.fetch_channel(longTimeMembers)
+                assert isinstance(channel, discord.TextChannel)
+            except Exception:
+                return
+
+        # recover the list of celebrated users
+        with open("celebration.txt", "r") as f:
+            celebrated_users = [int(x.strip()) for x in f.readlines()[0].split()]
+
+        # check that we are in April
+        date = now_paris.date()
+        day, month = date.day, date.month
+        if month != 4:
+            return
+
+        celebrated_user_id = celebrated_users[day-1]
+        
+        # send a message in the channel to celebrate the user of the day, with a mention and a public thread on it to let people congratulate them
+        member = await guild.fetch_member(celebrated_user_id)
+        msg = await channel.send(f"🎉 Today it's {member.mention}'s day!" if day != 1 else f"🎉 Aujourd'hui on rend hommage à {member.mention}")
+        await msg.create_thread(name=member.display_name, auto_archive_duration=1440, type=discord.ChannelType.public_thread)
+        
 
     @bot.event
     async def on_ready():
         if not birthday_announcer.is_running():
             birthday_announcer.start()
+        
+        if not celebrations.is_running():
+            celebrations.start()
     
     @bot.slash_command(name = "roll")
     async def roll_dice(interaction: discord.Interaction, option: Optional[str] = "d6"):
