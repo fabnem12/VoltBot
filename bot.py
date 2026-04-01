@@ -974,6 +974,7 @@ def main():
 
             await channel.send(f"🎉 Happy birthday {user.mention}!{age_text}")
 
+    @tasks.loop(minutes=1)
     async def celebrations():
         now_paris = get_paris_now()
         if not (now_paris.hour == 8 and now_paris.minute == 0):
@@ -1005,8 +1006,8 @@ def main():
         
         # send a message in the channel to celebrate the user of the day, with a mention and a public thread on it to let people congratulate them
         member = await guild.fetch_member(celebrated_user_id)
-        msg = await channel.send(f"🎉 Today it's {member.mention}'s day!" if day != 1 else f"🎉 Aujourd'hui on rend hommage à {member.mention}")
-        await msg.create_thread(name=member.display_name, auto_archive_duration=1440, type=discord.ChannelType.public_thread)
+        msg = await channel.send(f"🎉 Today it's {member.mention}'s day!")
+        await msg.create_thread(name=member.display_name, auto_archive_duration=1440)
         
 
     @bot.event
