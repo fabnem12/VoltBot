@@ -1010,7 +1010,14 @@ def main():
         
         # send a message in the channel to celebrate the user of the day, with a mention and a public thread on it to let people congratulate them
         member = await guild.fetch_member(celebrated_user_id)
-        msg = await channel.send(f"🎉 Today it's {member.mention}'s day!")
+        celebration_phrasings = [
+            f"🥳 Big shoutout to {member.mention} today!",
+            f"🎊 Let's celebrate {member.mention} today!",
+            f"✨ Today we celebrate {member.mention}!",
+            f"🎈 It's {member.mention} appreciation day!",
+            f"🙌 Sending good vibes to {member.mention} today!",
+        ]
+        msg = await channel.send(random.choice(celebration_phrasings))
         await msg.create_thread(name=member.display_name, auto_archive_duration=1440)
         
 
