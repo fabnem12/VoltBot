@@ -1,9 +1,9 @@
 import asyncio
 import json
-import nextcord as discord
+import discord
 from langdetect import detect
-from nextcord import SlashOption
-from nextcord.ext import commands, tasks
+from discord import app_commands
+from discord.ext import commands, tasks
 from typing import Optional, Union
 from unidecode import unidecode
 import datetime
@@ -395,7 +395,7 @@ async def anonymize_instagram_links(msg: discord.Message):
         ref = discord.MessageReference(channel_id = msg.channel.id, message_id = msg.id)
         await msg.channel.send("\n".join(instagramLinks), reference = ref)
 
-async def reminder_meme(message: discord.Message, bot: discord.BotIntegration):
+async def reminder_meme(message: discord.Message, bot: commands.Bot):
     #check the message got sent in #european-memes and is not a bot message
     if message.channel.id not in (european_memes, ) or message.author.bot:
         return 
@@ -428,27 +428,18 @@ async def ensure_poll_thread(message: discord.Message):
     has_thread = bool(getattr(message, "thread", None)) or bool(getattr(message, "has_thread", False))
     if has_thread:
         return
- 
-    try:
-        await message.channel.create_thread(name="Poll discussion", message=message, auto_archive_duration=10080)
-    except Exception:
-        pass
-    return
- 
-    #for when the bot will be using discord.py
-    """
+
     poll = getattr(message, "poll", None)
     if poll:
-        question = getattr(poll, "question", None)
-
+        assert isinstance(poll, discord.Poll)
+        question = poll.question
         title_src = (question or message.content.strip() or "Poll discussion")
-        title = (title_src[:90] + "…") if len(title_src) > 95 else title_src
+        title = (title_src[:97] + "...") if len(title_src) > 100 else title_src
 
         try:
-            await message.channel.create_thread(name=title or "Poll discussion", message=message, auto_archive_duration=10080)
+            await message.channel.create_thread(name=title, message=message, auto_archive_duration=10080)
         except Exception:
             pass
-    """
 
 
 async def handle_report_reaction_color(channel: Optional[discord.abc.Messageable], message_id: int, emoji_hash: Union[int, str], user: discord.abc.User):
@@ -527,7 +518,7 @@ async def count_banned_words(guild: discord.Guild, author: discord.Member, msg_t
         
         await reportChannel.send(embed = e)
 
-async def kekw_board(message: discord.Message, bot: discord.BotIntegration):
+async def kekw_board(message: discord.Message, bot: commands.Bot):
     if message.channel.id == channelKewkId: return
     
     if hasattr(message.channel, "category_id") and message.channel.category_id == 820703128503451708:
@@ -1028,8 +1019,13 @@ def main():
         
         if not celebrations.is_running():
             celebrations.start()
+        
+        if not getattr(bot, "_guild_synced", False):
+            await bot.tree.sync(guild=discord.Object(id=voltServer))
+            bot._guild_synced = True
     
-    @bot.slash_command(name = "roll")
+    @bot.tree.command(name="roll", description="Roll one or more dice")
+    @app_commands.guilds(discord.Object(id=voltServer))
     async def roll_dice(interaction: discord.Interaction, option: Optional[str] = "d6"):
         accepted = {"d4": 4, "d6": 6, "d8": 8, "d10": 10, "d12": 12, "d20": 20, "d100": 100}
 
@@ -1065,26 +1061,37 @@ def main():
         vals = [random.randint(1, accepted[base])+add for _ in range(nb_dice)]
         await interaction.response.send_message(f"🎲 You rolled {', '.join(map(str, vals))} ({option})")
     
-    @bot.slash_command(name = "skibidi")
+    @bot.tree.command(name="skibidi", description="Resend a message as the bot")
+    @app_commands.guilds(discord.Object(id=voltServer))
     async def resend_slash(interaction: discord.Interaction, taratata: Optional[str] = None, glbtskf: str = "", apzoeiruty: Optional[discord.Attachment] = None):
+        if interaction.guild is None or not isinstance(interaction.user, discord.Member):
+            await interaction.response.send_message("No", ephemeral=True)
+            return
+
         role = discord.utils.get(interaction.guild.roles, name="Volt Discord Team")
 
         if role in interaction.user.roles:
             if taratata is None or taratata.isdigit():
                 if taratata: taratata = int(taratata)
                 await resend([apzoeiruty] if apzoeiruty else [], interaction.channel, taratata, txt=glbtskf)
-                await interaction.send("Ok", ephemeral=True, delete_after=10)
+                await interaction.response.send_message("Ok", ephemeral=True, delete_after=10)
             else:
-                await interaction.send("Invalid message id", ephemeral=True)
+                await interaction.response.send_message("Invalid message id", ephemeral=True)
         else:
-            await interaction.send("No", ephemeral=True)
+            await interaction.response.send_message("No", ephemeral=True)
         
-    @bot.slash_command(name="birthday", description="Register your birthday; add a year if you want your age announced")
+    @bot.tree.command(name="birthday", description="Register your birthday; add a year if you want your age announced")
+    @app_commands.guilds(discord.Object(id=voltServer))
+    @app_commands.describe(
+        day="Day of month (1-31)",
+        month="Month number (1-12)",
+        year="Year (optional, announced as age)",
+    )
     async def register_birthday(
         interaction: discord.Interaction,
-        day: int = SlashOption(description="Day of month (1-31)"),
-        month: int = SlashOption(description="Month number (1-12)"),
-        year: Optional[int] = SlashOption(description="Year (optional, announced as age)", required=False),
+        day: int,
+        month: int,
+        year: Optional[int] = None,
     ):
         today = get_paris_now().date()
 
@@ -1342,7 +1349,7 @@ def main():
 
 if __name__ == "__main__": #pour lancer le bot
     bot, token = main()
-
-    loop = asyncio.get_event_loop()
-    loop.create_task(bot.start(token))
-    loop.run_forever()
+    try:
+        asyncio.run(bot.start(token))
+    except KeyboardInterrupt:
+        pass
