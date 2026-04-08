@@ -530,7 +530,11 @@ async def count_banned_words(guild: discord.Guild, author: discord.Member, msg_t
 async def kekw_board(message: discord.Message, bot: discord.BotIntegration):
     if message.channel.id == channelKewkId: return
     
-    if any(reaction.count == 8 for reaction in message.reactions if reaction.is_custom_emoji() and int(reaction.emoji.id) == 732674441577889994): #kekw emoji
+    if hasattr(message.channel, "category_id") and message.channel.category_id == 820703128503451708:
+        return
+        #ignore internal channels
+
+    if any(reaction.count == 10 for reaction in message.reactions if reaction.is_custom_emoji() and int(reaction.emoji.id) == 732674441577889994): #kekw emoji
         guild = bot.get_guild(voltServer)
         channelKewk = guild.get_channel(channelKewkId) #kekw-board channel
         assert isinstance(channelKewk, discord.TextChannel)
