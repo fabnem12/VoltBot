@@ -20,19 +20,18 @@ def load_semi(semi: str):
     elif semi == "2":
         songs = load_songs_from_file(os.path.join(base, "acts_sf2.csv"))
     elif semi == "F":
-        songs = (load_songs_from_file(os.path.join(base, "acts_sf1.csv"))
-               + load_songs_from_file(os.path.join(base, "acts_sf2.csv")))
+        songs = load_songs_from_file(os.path.join(base, "acts.csv"))
 
 def _beginning_svg() -> str:
     h = 100 + 57 * ceil(len(songs) / 2)
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="700" height="{h}" viewBox="0 0 700 {h}">
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="710" height="{h}" viewBox="0 0 710 {h}">
     <style type="text/css">
         @import url('https://fonts.googleapis.com/css2?family=Ubuntu+Sans:ital,wght@0,100..800;1,100..800');
         text{{font-family:'Ubuntu Sans';}} 
     </style>
-    <rect x="0" y="0" width="700" height="{h}" style="fill: #502379;" />
+    <rect x="0" y="0" width="710" height="{h}" style="fill: #502379;" />
 
-    <text x="350" y="20" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="30">"""
+    <text x="355" y="20" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="30">"""
 
 def readVotes():
     voters = set()
@@ -45,11 +44,22 @@ def readVotes():
         f.readline() #first line is useless
         return list(map(extractVote, f.readlines())), list(voters)
 
+import re
+
 def seekFlag(countryName, x, y):
     with open(os.path.join(os.path.dirname(__file__), countryName.replace(" ", "_") + ".svg"), "r") as f:
-        code = "".join(f.readlines())
-    
-    return code[:4] + f' height="55" width="55" x="{x}" y="{y}" preserveAspectRatio="none"' + code[4:]
+        code = f.read()
+
+    tag_start = code.find("<svg")
+    tag_end = code.find(">", tag_start)
+    if tag_start == -1 or tag_end == -1:
+        return code
+
+    old_tag = code[tag_start:tag_end+1]
+    new_tag = re.sub(r'\s+(?:width|height|x|y|preserveAspectRatio)="[^"]*"', '', old_tag)
+    new_tag = new_tag[:-1] + f' height="55" width="55" x="{x}" y="{y}" preserveAspectRatio="none"' + new_tag[-1]
+
+    return code[:tag_start] + new_tag + code[tag_end+1:]
 
 def svgCountry(countryName, x, y, currentPointsCountry, newPointsCountry, highlight = False) -> str:
     codeCountry = f"""    <rect x="{10+x*350}" y="{50+y*57}" width="340" height="57" style="fill: #502379; stroke-width:2;stroke:white;" />
@@ -72,7 +82,7 @@ def xyFromI(i):
     nbCountriesLeft = ceil(len(songs) / 2)
     return i // nbCountriesLeft , i % nbCountriesLeft
 
-def genSvgUser(votes, currentPoints, username, changePoints = True) -> str:
+def genSvgUser(votes, currentPoints, username, changePoints = True, highlight_song = None) -> str:
     votesUser = {country: points for country, voter, points in votes if voter == username}
     if changePoints:
         for country, points in votesUser.items():
@@ -87,7 +97,8 @@ def genSvgUser(votes, currentPoints, username, changePoints = True) -> str:
 
     for i, (country, points) in enumerate(sorted(currentPoints.items(), key=lambda x: (x[1], -votesUser.get("public", 0), -songs.index(x[0])), reverse=True)):
         pointsFromUser = votesUser.get(country, None)
-        printF(svgCountry(country, *xyFromI(i), points, pointsFromUser, pointsFromUser == 12 and username != "public"))
+        highlighted = (country == highlight_song) or (pointsFromUser == 12 and username != "public")
+        printF(svgCountry(country, *xyFromI(i), points, pointsFromUser, highlighted))
     
     printF("</svg>")
 
@@ -120,7 +131,7 @@ def generateSvgs(semi: str):
         currentPoints[song] += votesPublicSong
         countedPublicVotes.append((song, "public", votesPublicSong))
 
-        svg2png(bytestring = genSvgUser(countedPublicVotes, currentPoints, "public", False), write_to = pathPng)
+        svg2png(bytestring = genSvgUser(countedPublicVotes, currentPoints, "public", False, highlight_song = song), write_to = pathPng)
         yield pathPng, "public", (song, votesPublicSong, jury_points)
 
     svg2png(bytestring = genSvgUser(votes, currentPoints, "the server"), write_to = pathPng)
