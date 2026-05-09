@@ -20,7 +20,6 @@ from photo_contest.board_gen import (
     gen_competition_board,
     gen_semifinals_boards,
     gen_final_results_board,
-    gen_live_final_reveal,
     gen_photo_vote_details,
     gen_final_photo_vote_details,
     gen_winner_announcement_board,
@@ -1738,24 +1737,61 @@ async def announce_final_results(bot: discord.Client, reveal_delay: int = 30):
     await announcement_channel.send(f"\n\n🎤 **LIVE VOTING REVEAL - GRAND FINAL** 🎤\n")
     await announcement_channel.send(f"**{len(final_comp.votes_jury)} jury votes have been cast. Let's reveal them!**\n")
     
-    # Generate and post boards using live reveal
-    for board_path, voter_id, is_initial, is_final in gen_live_final_reveal(final_comp, "Grand Final", id2name):
-        if is_initial:
-            # Initial board with all zeros
+    # Get jury votes and randomize order for suspense
+    from random import shuffle
+    jury_votes_list = list(final_comp.votes_jury.items())
+    shuffle(jury_votes_list)
+    
+    # Create a temporary final competition to accumulate votes
+    from photo_contest.photo_contest_data import CompetitionInfo
+    temp_final = CompetitionInfo(
+        type="final",
+        channel_id=final_comp.channel_id,
+        start_time=final_comp.start_time,
+        end_time=final_comp.end_time,
+        competing_entries=final_comp.competing_entries
+    )
+    
+    total_voters = len(jury_votes_list)
+    
+    # Generate and post boards progressively
+    for i, (voter_id, jury_vote) in enumerate(jury_votes_list, start=1):
+        voter_name = id2name.get(voter_id, f"Juror {voter_id}")
+        
+        # Add voter's vote to temporary competition
+        temp_final = temp_final.add_jury_vote(jury_vote)
+        
+        # Calculate points from this voter for display
+        voter_points = jury_vote.points_to_submissions()
+        
+        # Create temporary contest with updated final
+        temp_contest = Contest(
+            competitions=[temp_final],
+            schedule=contest.schedule
+        )
+        
+        # Generate board with latest voter info
+        board_path = gen_final_results_board(
+            temp_contest,
+            id2name,
+            latest_voter_points=voter_points,
+            latest_voter_name=voter_name,
+            latest_voter_index=i,
+            total_voters=total_voters,
+        )
+        
+        if i == 1:
             await announcement_channel.send(
                 "📊 **Starting scoreboard:**",
                 file=discord.File(board_path)
             )
-        elif is_final:
-            # Skip the final board from live reveal - we'll show the clean one below
-            pass
-        elif voter_id is not None:
-            # Individual voter's contribution
+        else:
             await announcement_channel.send(
                 f"Thank you <@{voter_id}> 🎖️ for your votes!",
                 file=discord.File(board_path)
             )
-            await asyncio.sleep(reveal_delay)
+        
+        await asyncio.sleep(reveal_delay)
     
     # Generate and post the final clean results board (without "+New" column)
     final_board_path = gen_final_results_board(contest, id2name)
