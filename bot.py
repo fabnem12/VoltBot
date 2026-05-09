@@ -395,6 +395,22 @@ async def anonymize_instagram_links(msg: discord.Message):
         ref = discord.MessageReference(channel_id = msg.channel.id, message_id = msg.id)
         await msg.channel.send("\n".join(instagramLinks), reference = ref)
 
+async def clean_youtube_links(msg: discord.Message):
+    if msg.author.bot: return
+
+    links = regex.findall(r"https:\/\/([\w_-]+(?:(?:\.[\w_-]+)+))([\w.,@?^=%&:\/~+#-]*[\w@?^=%&\/~+#-])", msg.content)
+
+    clean_links = []
+    for domain, path in links:
+        if any(domain.lower().startswith(d) for d in ("youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be")):
+            cleaned_path = regex.sub(r"[?&]si=[^&]*", "", path)
+            if cleaned_path != path:
+                clean_links.append(f"https://{domain}{cleaned_path}")
+
+    if clean_links:
+        ref = discord.MessageReference(channel_id=msg.channel.id, message_id=msg.id)
+        await msg.channel.send("\n".join(clean_links), reference=ref)
+
 async def reminder_meme(message: discord.Message, bot: commands.Bot):
     #check the message got sent in #european-memes and is not a bot message
     if message.channel.id not in (european_memes, ) or message.author.bot:
@@ -566,6 +582,7 @@ def main():
         await smart_tweet(message)
         await reminder_meme(message, bot)
         await anonymize_instagram_links(message)
+        await clean_youtube_links(message)
         await ensure_poll_thread(message)
 
         if message.content.startswith(".ban"):
