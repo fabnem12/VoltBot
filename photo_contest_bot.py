@@ -878,21 +878,24 @@ class JuryVotingView(discord.ui.View):
         self.submission_numbers = submission_numbers or {}
         self.voter_id_for_save = voter_id_for_save if voter_id_for_save is not None else self.user_id
         self.period = period
-        
-        # Create buttons for each submission (label with original submission number)
-        for i in range(len(submissions)):
-            sub = submissions[i]
+        self.other_msg: discord.Message | None = None
+        self._build()
+    
+    def _build(self):
+        self.clear_items()
+        for i, sub in enumerate(self.submissions):
             display_num = self.submission_numbers.get(sub, i + 1)
-            button = discord.ui.Button(
+            picked = sub in self.ranking
+            btn = discord.ui.Button(
                 label=f"Submission #{display_num}",
                 custom_id=f"vote_{i}",
-                style=discord.ButtonStyle.primary
+                style=discord.ButtonStyle.success if picked else discord.ButtonStyle.primary,
+                disabled=picked,
             )
-            button.callback = self.make_callback(i, button)
-            self.add_item(button)
+            btn.callback = self._make_callback(i, sub)
+            self.add_item(btn)
     
-    def make_callback(self, submission_index: int, button: discord.ui.Button):
-        """Create a callback function for a specific submission button."""
+    def _make_callback(self, submission_index: int, sub: Submission):
         async def callback(interaction: discord.Interaction):
             if not interaction.user:
                 return
@@ -900,16 +903,17 @@ class JuryVotingView(discord.ui.View):
                 await interaction.response.send_message("This vote is not yours!", ephemeral=True)
                 return
             
-            submission = self.submissions[submission_index]
-            self.ranking.append(submission)
+            if sub in self.ranking:
+                self._build()
+                await edit_interaction_or_dm(interaction, view=self)
+                return
             
-            # Disable the button that was just clicked
-            button.disabled = True
+            self.ranking.append(sub)
+            self._build()
             
-            # Update the message to show current ranking
             ranking_text = "\n".join(
-                f"#{i+1} Submission #{self.submission_numbers.get(sub, self.submissions.index(sub)+1)}"
-                for i, sub in enumerate(self.ranking)
+                f"#{i+1} Submission #{self.submission_numbers.get(s, self.submissions.index(s)+1)}"
+                for i, s in enumerate(self.ranking)
             )
             
             if len(self.ranking) < self.ranking_length:
@@ -919,13 +923,16 @@ class JuryVotingView(discord.ui.View):
                     view=self
                 )
             else:
-                # Ranking is complete, show confirmation
+                self.clear_items()
                 confirm_view = JuryConfirmView(self.ranking, ranking_text, self.user_id, self.channel_id, self.thread_id, self.contest, voter_id_for_save=self.voter_id_for_save, period=self.period)
                 await edit_interaction_or_dm(
                     interaction,
                     content=f"**Your final ranking:**\n{ranking_text}\n\nPlease confirm your vote.",
                     view=confirm_view
                 )
+                if self.other_msg:
+                    empty_view = discord.ui.View()
+                    await self.other_msg.edit(view=empty_view)
         
         return callback
 
@@ -1188,11 +1195,22 @@ async def handle_jury_vote_request(contest: Contest, message: discord.Message, u
 
         # Send the voting interface
         # DM recipient is `user`; use `voter_id_for_lookup` for saving when voting-as
-        view = JuryVotingView(votable_submissions, user.id, channel_id, thread_id, contest, ranking_length, submission_numbers, voter_id_for_save=voter_id_for_lookup, period=current_period.value)
-        await user.send(
-            content=f"**Click the buttons below to build your top {ranking_length} ranking.**\nSelect submissions in order from your most preferred to your {ranking_length}th preferred.",
-            view=view
-        )
+        if len(votable_submissions) > 25:
+            view1 = JuryVotingView(votable_submissions[:25], user.id, channel_id, thread_id, contest, ranking_length, submission_numbers, voter_id_for_save=voter_id_for_lookup, period=current_period.value)
+            view2 = JuryVotingView(votable_submissions[25:], user.id, channel_id, thread_id, contest, ranking_length, submission_numbers, voter_id_for_save=voter_id_for_lookup, period=current_period.value)
+            msg1 = await user.send(
+                content=f"**Click the buttons below to build your top {ranking_length} ranking.**\nSelect submissions in order from your most preferred to your {ranking_length}th preferred. (Page 1/2)",
+                view=view1
+            )
+            msg2 = await user.send("(Page 2/2)", view=view2)
+            view1.other_msg = msg2
+            view2.other_msg = msg1
+        else:
+            view = JuryVotingView(votable_submissions, user.id, channel_id, thread_id, contest, ranking_length, submission_numbers, voter_id_for_save=voter_id_for_lookup, period=current_period.value)
+            await user.send(
+                content=f"**Click the buttons below to build your top {ranking_length} ranking.**\nSelect submissions in order from your most preferred to your {ranking_length}th preferred.",
+                view=view
+            )
         
     except discord.Forbidden:
         # User has DMs disabled
