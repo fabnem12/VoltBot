@@ -30,6 +30,7 @@ except:
 timeClickVote = dict()
 vote_status_dms: dict[int, discord.Message] = {}
 voting_closed = False
+live_count_msg: discord.Message | None = None
 
 ALL_COUNTRY_CODES = {
     "Albania": "AL", "Armenia": "AM", "Australia": "AU", "Austria": "AT",
@@ -218,6 +219,20 @@ class JuryConfirmView(discord.ui.View):
         save()
         await interaction.response.edit_message(content="Vote cancelled.", view=None)
 
+async def update_live_count(channel: discord.abc.Messageable | None):
+    global live_count_msg
+    if channel is None:
+        return
+    count = len([v for v in votes if not v[1] and v[2] in songs])
+    content = f"📊 **Live Televote:** {count} vote{'s' if count != 1 else ''} cast"
+    if live_count_msg is not None:
+        try:
+            await live_count_msg.edit(content=content)
+        except:
+            live_count_msg = await channel.send(content)
+    else:
+        live_count_msg = await channel.send(content)
+
 class PublicVoteView(discord.ui.View):
     def __init__(self, songs_slice):
         super().__init__(timeout=3600)
@@ -258,6 +273,8 @@ class PublicVoteView(discord.ui.View):
 
             votes.append((user.name, False, song))
             save()
+            assert isinstance(interaction.channel, discord.abc.Messageable)
+            await update_live_count(interaction.channel)
 
             from collections import Counter
             all_user_votes = user_votes + [song]
@@ -319,8 +336,9 @@ async def react_vote(messageId, user, guild, emojiHash, channel):
             await vote(user)
 
 async def startVote(channel):
-    global voting_closed
+    global voting_closed, live_count_msg
     voting_closed = False
+    live_count_msg = None
     vote_status_dms.clear()
 
     view1 = PublicVoteView(songs[:25])
@@ -334,6 +352,9 @@ async def startVote(channel):
         msg1 = await channel.send(f"**__Televote__**\nClick on the countries you want to vote for!\n-# There is a limit of {numberMaxVotesPublic} votes per user and {maxVotesPerSong} votes per song", view=view1)
 
     jury_msg = await channel.send("(Jury voting will also be available tonight, but only after the end of the last performance)")
+    
+    await update_live_count(channel)
+    
     msgVote[0] = msg1.id
     msgVote[1] = jury_msg.id
     msgVote[2] = channel.id
