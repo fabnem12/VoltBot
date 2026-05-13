@@ -31,6 +31,7 @@ timeClickVote = dict()
 vote_status_dms: dict[int, discord.Message] = {}
 voting_closed = False
 live_count_msg: discord.Message | None = None
+jury_voters_in_progress: set[int] = set()
 
 ALL_COUNTRY_CODES = {
     "Albania": "AL", "Armenia": "AM", "Australia": "AU", "Austria": "AT",
@@ -152,12 +153,13 @@ def countVotes():
             printF(f"{idSong(song)};public;{points}")
 
 class JuryVotingView(discord.ui.View):
-    def __init__(self, user_id, remaining, songs_slice):
+    def __init__(self, user_id, remaining, songs_slice, voting_channel=None):
         super().__init__(timeout = 3600)
         self.user_id = user_id
         self.remaining = remaining
         self.songs_slice = songs_slice
         self.other_msg: discord.Message | None = None
+        self.voting_channel = voting_channel
         self._build()
 
     def _build(self):
@@ -187,6 +189,9 @@ class JuryVotingView(discord.ui.View):
 
             self._build()
 
+            if self.voting_channel is not None:
+                await update_live_count(self.voting_channel)
+
             text = "\n".join(f"**#{i+1}** {c}" for i, c in enumerate(ranking))
             if len(ranking) < self.remaining:
                 await interaction.response.edit_message(content=f"**Your ranking so far:**\n{text}\n\nSelect **#{len(ranking)+1}**:", view=self)
@@ -196,27 +201,34 @@ class JuryVotingView(discord.ui.View):
                 if self.other_msg:
                     empty_view = discord.ui.View()
                     await self.other_msg.edit(view=empty_view)
-                await interaction.followup.send("Submit or cancel your vote?", view=JuryConfirmView(self.user_id, ranking))
+                await interaction.followup.send("Submit or cancel your vote?", view=JuryConfirmView(self.user_id, ranking, self.voting_channel))
 
         return callback
 
 class JuryConfirmView(discord.ui.View):
-    def __init__(self, user_id, ranking):
+    def __init__(self, user_id, ranking, voting_channel=None):
         super().__init__(timeout = 300)
         self.user_id = user_id
         self.ranking = ranking
+        self.voting_channel = voting_channel
 
     @discord.ui.button(label="Submit vote", style=discord.ButtonStyle.success, emoji="✅")
     async def submit(self, interaction: discord.Interaction, button: discord.ui.Button):
         votes.append((interaction.user.name, True, tuple(self.ranking)))
         infoVote[self.user_id] = []
+        jury_voters_in_progress.discard(self.user_id)
         save()
+        if self.voting_channel is not None:
+            await update_live_count(self.voting_channel)
         await interaction.response.edit_message(content="**Thanks!** Your jury vote has been saved.", view=None)
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.danger, emoji="❌")
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         infoVote[self.user_id] = []
+        jury_voters_in_progress.discard(self.user_id)
         save()
+        if self.voting_channel is not None:
+            await update_live_count(self.voting_channel)
         await interaction.response.edit_message(content="Vote cancelled.", view=None)
 
 async def update_live_count(channel: discord.abc.Messageable | None):
@@ -224,7 +236,14 @@ async def update_live_count(channel: discord.abc.Messageable | None):
     if channel is None:
         return
     count = len([v for v in votes if not v[1] and v[2] in songs])
-    content = f"📊 **Live Televote:** {count} vote{'s' if count != 1 else ''} cast"
+    lines = [f"📊 **Live Televote:** {count} vote{'s' if count != 1 else ''} cast"]
+    if jury_voters_in_progress:
+        lines.append("")
+        lines.append("**🗳️ Jury voting in progress:**")
+        for uid in sorted(jury_voters_in_progress):
+            ranked = len(infoVote.get(uid, []))
+            lines.append(f"<@{uid}> — {ranked}/{numberVotesJury} ranked")
+    content = "\n".join(lines)
     if live_count_msg is not None:
         try:
             await live_count_msg.edit(content=content)
@@ -302,26 +321,30 @@ class PublicVoteView(discord.ui.View):
 
         return callback
 
-async def vote(user):
+async def vote(user, voting_channel=None):
     channel = await dmChannelUser(user)
 
     if voting_closed:
         await channel.send("Voting is closed.")
         return
 
+    jury_voters_in_progress.add(user.id)
+    if voting_channel is not None:
+        await update_live_count(voting_channel)
+
     infoVote[user.id] = []
     song_list = "\n".join(f"{str(i+1).zfill(2)} {flags.get(c, '')} **{c}**" for i, c in enumerate(songs))
     await channel.send(f"**__Jury voting__**\n\nSongs:\n{song_list}")
 
     if len(songs) > 25:
-        view1 = JuryVotingView(user.id, numberVotesJury, songs[:25])
-        view2 = JuryVotingView(user.id, numberVotesJury, songs[25:])
+        view1 = JuryVotingView(user.id, numberVotesJury, songs[:25], voting_channel)
+        view2 = JuryVotingView(user.id, numberVotesJury, songs[25:], voting_channel)
         msg1 = await channel.send(f"Click the buttons in order of preference to build your top {numberVotesJury}.\n**Your jury vote will be counted only if you provide a full top 10.** (Page 1/2)", view=view1)
         msg2 = await channel.send("(Page 2/2)", view=view2)
         view1.other_msg = msg2
         view2.other_msg = msg1
     else:
-        await channel.send(f"Click the buttons in order of preference to build your top {numberVotesJury}.\n**Your jury vote will be counted only if you provide a full top 10.**", view=JuryVotingView(user.id, numberVotesJury, songs))
+        await channel.send(f"Click the buttons in order of preference to build your top {numberVotesJury}.\n**Your jury vote will be counted only if you provide a full top 10.**", view=JuryVotingView(user.id, numberVotesJury, songs, voting_channel))
 
 
 async def react_vote(messageId, user, guild, emojiHash, channel):
@@ -333,12 +356,13 @@ async def react_vote(messageId, user, guild, emojiHash, channel):
     if messageId in msgVote:
         timeClickVote[user.id] = time.time()
         if emojiHash == "🗳️" and infoVote[user.id] == []:
-            await vote(user)
+            await vote(user, channel)
 
 async def startVote(channel):
     global voting_closed, live_count_msg
     voting_closed = False
     live_count_msg = None
+    jury_voters_in_progress.clear()
     vote_status_dms.clear()
 
     view1 = PublicVoteView(songs[:25])
