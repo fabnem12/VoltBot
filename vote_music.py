@@ -247,12 +247,12 @@ class PublicVoteView(discord.ui.View):
 
             if same_song >= maxVotesPerSong:
                 await interaction.response.send_message(
-                    f"You reached the limit of {maxVotesPerSong} votes for **{song}**.", ephemeral=True
+                    f"You reached the limit of {maxVotesPerSong} votes for **{song}**.", ephemeral=True, delete_after=5
                 )
                 return
             if nb_votes >= numberMaxVotesPublic:
                 await interaction.response.send_message(
-                    f"You reached the limit of {numberMaxVotesPublic} votes.", ephemeral=True
+                    f"You reached the limit of {numberMaxVotesPublic} votes.", ephemeral=True, delete_after=5
                 )
                 return
 
@@ -270,7 +270,7 @@ class PublicVoteView(discord.ui.View):
             content = (
                 f"**Voted for {flags.get(song, '')} {song}!**\n\n"
                 f"**Your votes ({nb_votes + 1}/{numberMaxVotesPublic}):**\n{summary}\n\n"
-                f"*{remaining} vote{'s' if remaining != 1 else ''} remaining*"
+                f"*You can still cast {remaining} vote{'s' if remaining != 1 else ''}*"
             )
 
             await interaction.response.send_message(content, ephemeral=True, delete_after=5)
@@ -326,12 +326,12 @@ async def startVote(channel):
     view1 = PublicVoteView(songs[:25])
     if len(songs) > 25:
         view2 = PublicVoteView(songs[25:])
-        msg1 = await channel.send("**__Televote__**\nClick on the countries you want to vote for!", view=view1)
+        msg1 = await channel.send(f"**__Televote__**\nClick on the countries you want to vote for!\n-# There is a limit of {numberMaxVotesPublic} votes per user and {maxVotesPerSong} votes per song", view=view1)
         msg2 = await channel.send("(Page 2/2)", view=view2)
         view1.other_msg = msg2
         view2.other_msg = msg1
     else:
-        msg1 = await channel.send("**__Televote__**\nClick on the countries you want to vote for!", view=view1)
+        msg1 = await channel.send(f"**__Televote__**\nClick on the countries you want to vote for!\n-# There is a limit of {numberMaxVotesPublic} votes per user and {maxVotesPerSong} votes per song", view=view1)
 
     jury_msg = await channel.send("(Jury voting will also be available tonight, but only after the end of the last performance)")
     msgVote[0] = msg1.id
