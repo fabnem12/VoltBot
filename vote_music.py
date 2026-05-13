@@ -29,6 +29,7 @@ except:
 
 timeClickVote = dict()
 vote_status_dms: dict[int, discord.Message] = {}
+voting_closed = False
 
 ALL_COUNTRY_CODES = {
     "Albania": "AL", "Armenia": "AM", "Australia": "AU", "Austria": "AT",
@@ -109,7 +110,8 @@ def countVotes():
             else:
                 nbVotesNonContestant[username] += 1
                 if nbVotesNonContestant[username] > numberMaxVotesPublic:
-                    del votesLoc[i]
+                    if i in votesLoc:
+                        del votesLoc[i]
 
     for (username, isJury, top) in votesLoc.values():
         if isJury:
@@ -235,6 +237,10 @@ class PublicVoteView(discord.ui.View):
             user = interaction.user
             song = country
 
+            if voting_closed:
+                await interaction.response.send_message("Voting is closed.", ephemeral=True, delete_after=5)
+                return
+
             user_votes = [s for (u, is_jury, s) in votes if u == user.name and not is_jury and s in songs]
             nb_votes = len(user_votes)
             same_song = sum(1 for s in user_votes if s == song)
@@ -267,7 +273,7 @@ class PublicVoteView(discord.ui.View):
                 f"*{remaining} vote{'s' if remaining != 1 else ''} remaining*"
             )
 
-            await interaction.response.send_message(content, ephemeral=True, delete_after=10)
+            await interaction.response.send_message(content, ephemeral=True, delete_after=5)
 
             try:
                 if user.id in vote_status_dms:
@@ -281,6 +287,11 @@ class PublicVoteView(discord.ui.View):
 
 async def vote(user):
     channel = await dmChannelUser(user)
+
+    if voting_closed:
+        await channel.send("Voting is closed.")
+        return
+
     infoVote[user.id] = []
     song_list = "\n".join(f"{str(i+1).zfill(2)} {flags.get(c, '')} **{c}**" for i, c in enumerate(songs))
     await channel.send(f"**__Jury voting__**\n\nSongs:\n{song_list}")
@@ -308,6 +319,8 @@ async def react_vote(messageId, user, guild, emojiHash, channel):
             await vote(user)
 
 async def startVote(channel):
+    global voting_closed
+    voting_closed = False
     vote_status_dms.clear()
 
     view1 = PublicVoteView(songs[:25])
@@ -344,7 +357,7 @@ async def showResults(channel, semi):
                 await channel.send(f"{flags[winner]} **{winner}** wins the Grand Final with **{winner_points}** points!")
             else:
                 top10 = [c for c, _ in nextVoter[:10]]
-                await channel.send("The following countries **qualified for the Grand Final:**\n" + ", ".join(f"{c} {flags[c]}" for c in top10))
+                await channel.send("According to the server's vote, the following countries **qualified for the Grand Final:**\n" + "\n".join(f"{flags[c]} {c}" for c in top10))
         elif currentVoter != "public":
             await channel.send(f"Thank you **{currentVoter}** for your votes <:meowhuggies_left:780807943704412241>", file=discord.File(filePath, filename="viewvotes.png"))
         
@@ -361,20 +374,17 @@ async def showResults(channel, semi):
         else:
             i += 1
             assert isinstance(nextVoter, tuple)
-            country, points, jury_points = nextVoter
-            await channel.send(f"**{points}** for **{country}** {flags[country]}", file=discord.File(filePath, filename="viewvotes.png"))
+            country, points, _ = nextVoter
 
             total = len(songs)
             remaining = total - i
 
-            if remaining == 1:
-                await asyncio.sleep(40)
-            elif remaining < 5:
-                await asyncio.sleep(20)
-            elif remaining < 10:
-                await asyncio.sleep(12)
-            else:
-                await asyncio.sleep(4)
+            if remaining == 0:
+                await asyncio.sleep(30)
+
+            await channel.send(f"**{points}** for **{country}** {flags[country]}", file=discord.File(filePath, filename="viewvotes.png"))
+
+            await asyncio.sleep(4)
 
 #MAIN ##########################################################################
 def main():
@@ -439,13 +449,26 @@ def main():
 
     @bot.command(name = "count")
     async def countCommand(ctx, semi: str):
+        global voting_closed
         if ctx.author.id == ADMIN_ID:
             if semi not in ("1", "2", "F"):
                 await ctx.send("Invalid semi. Use 1, 2, or F.")
                 return
+            voting_closed = True
             load_semi(semi)
             countVotes()
             await ctx.message.add_reaction("🗳️")
+
+            channel_id = msgVote[2]
+            message_id = msgVote[0]
+            if channel_id is not None and message_id is not None:
+                channel = bot.get_channel(channel_id)
+                if channel and isinstance(channel, (discord.TextChannel, discord.Thread, discord.DMChannel, discord.VoiceChannel)):
+                    try:
+                        msg = await channel.fetch_message(message_id)
+                        await msg.edit(view=None)
+                    except:
+                        pass
     
     @bot.command(name = "stop")
     async def stopCommand(ctx):
