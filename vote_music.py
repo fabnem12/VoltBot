@@ -32,6 +32,7 @@ vote_status_dms: dict[int, discord.Message] = {}
 voting_closed = False
 live_count_msg: discord.Message | None = None
 jury_voters_in_progress: set[int] = set()
+save_lock = asyncio.Lock()
 
 ALL_COUNTRY_CODES = {
     "Albania": "AL", "Armenia": "AM", "Australia": "AU", "Austria": "AT",
@@ -85,8 +86,9 @@ async def dmChannelUser(user):
     assert user.dm_channel is not None
     return user.dm_channel
 
-def save():
-    pickle.dump((JURY, infoVote, votes, msgVote), open("data_contest/vote_music.p", "wb"))
+async def save():
+    async with save_lock:
+        pickle.dump((JURY, infoVote, votes, msgVote), open("data_contest/vote_music.p", "wb"))
 
 def countVotes():
     jury = dict()
@@ -185,7 +187,7 @@ class JuryVotingView(discord.ui.View):
 
             ranking.append(country)
             infoVote[self.user_id] = ranking
-            save()
+            await save()
 
             self._build()
 
@@ -217,7 +219,7 @@ class JuryConfirmView(discord.ui.View):
         votes.append((interaction.user.name, True, tuple(self.ranking)))
         infoVote[self.user_id] = []
         jury_voters_in_progress.discard(self.user_id)
-        save()
+        await save()
         if self.voting_channel is not None:
             await update_live_count(self.voting_channel)
         await interaction.response.edit_message(content="**Thanks!** Your jury vote has been saved.", view=None)
@@ -226,7 +228,7 @@ class JuryConfirmView(discord.ui.View):
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         infoVote[self.user_id] = []
         jury_voters_in_progress.discard(self.user_id)
-        save()
+        await save()
         if self.voting_channel is not None:
             await update_live_count(self.voting_channel)
         await interaction.response.edit_message(content="Vote cancelled.", view=None)
@@ -290,10 +292,10 @@ class PublicVoteView(discord.ui.View):
                 )
                 return
 
+            await interaction.response.defer(ephemeral=True)
+
             votes.append((user.name, False, song))
-            save()
-            assert isinstance(interaction.channel, discord.abc.Messageable)
-            await update_live_count(interaction.channel)
+            await save()
 
             from collections import Counter
             all_user_votes = user_votes + [song]
@@ -309,7 +311,7 @@ class PublicVoteView(discord.ui.View):
                 f"*You can still cast {remaining} vote{'s' if remaining != 1 else ''}*"
             )
 
-            await interaction.response.send_message(content, ephemeral=True, delete_after=5)
+            await interaction.followup.send(content, ephemeral=True, delete_after=5)
 
             try:
                 if user.id in vote_status_dms:
@@ -318,6 +320,9 @@ class PublicVoteView(discord.ui.View):
                     vote_status_dms[user.id] = await user.send(content)
             except discord.Forbidden:
                 pass
+
+            assert isinstance(interaction.channel, discord.abc.Messageable)
+            await update_live_count(interaction.channel)
 
         return callback
 
@@ -382,7 +387,7 @@ async def startVote(channel):
     msgVote[0] = msg1.id
     msgVote[1] = jury_msg.id
     msgVote[2] = channel.id
-    save()
+    await save()
 
 async def showResults(channel, semi):
     semi_text = "First Semi-Final" if semi == "1" else "Second Semi-Final" if semi == "2" else "Grand Final"
