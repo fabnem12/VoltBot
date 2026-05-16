@@ -33,6 +33,7 @@ voting_closed = False
 live_count_msg: discord.Message | None = None
 jury_voters_in_progress: set[int] = set()
 save_lock = asyncio.Lock()
+user_vote_locks: dict[int, asyncio.Lock] = {}
 
 ALL_COUNTRY_CODES = {
     "Albania": "AL", "Armenia": "AM", "Australia": "AU", "Austria": "AT",
@@ -277,41 +278,41 @@ class PublicVoteView(discord.ui.View):
                 await interaction.response.send_message("Voting is closed.", ephemeral=True, delete_after=5)
                 return
 
-            user_votes = [s for (u, is_jury, s) in votes if u == user.name and not is_jury and s in songs]
-            nb_votes = len(user_votes)
-            same_song = sum(1 for s in user_votes if s == song)
+            lock = user_vote_locks.setdefault(user.id, asyncio.Lock())
+            async with lock:
+                user_votes = [s for (u, is_jury, s) in votes if u == user.name and not is_jury and s in songs]
+                nb_votes = len(user_votes)
+                same_song = sum(1 for s in user_votes if s == song)
 
-            if same_song >= maxVotesPerSong:
-                await interaction.response.send_message(
-                    f"You reached the limit of {maxVotesPerSong} votes for **{song}**.", ephemeral=True, delete_after=5
+                if same_song >= maxVotesPerSong:
+                    await interaction.response.send_message(
+                        f"You reached the limit of {maxVotesPerSong} votes for **{song}**.", ephemeral=True, delete_after=5
+                    )
+                    return
+                if nb_votes >= numberMaxVotesPublic:
+                    await interaction.response.send_message(
+                        f"You reached the limit of {numberMaxVotesPublic} votes.", ephemeral=True, delete_after=5
+                    )
+                    return
+
+                votes.append((user.name, False, song))
+                await save()
+
+                from collections import Counter
+                all_user_votes = user_votes + [song]
+                counts = Counter(all_user_votes)
+                summary = "\n".join(
+                    f"{flags.get(c, '')} **{c}**: {n}/{maxVotesPerSong}"
+                    for c, n in counts.most_common()
                 )
-                return
-            if nb_votes >= numberMaxVotesPublic:
-                await interaction.response.send_message(
-                    f"You reached the limit of {numberMaxVotesPublic} votes.", ephemeral=True, delete_after=5
+                remaining = numberMaxVotesPublic - nb_votes - 1
+                content = (
+                    f"**Voted for {flags.get(song, '')} {song}!**\n\n"
+                    f"**Your votes ({nb_votes + 1}/{numberMaxVotesPublic}):**\n{summary}\n\n"
+                    f"*You can still cast {remaining} vote{'s' if remaining != 1 else ''}*"
                 )
-                return
 
-            await interaction.response.defer(ephemeral=True)
-
-            votes.append((user.name, False, song))
-            await save()
-
-            from collections import Counter
-            all_user_votes = user_votes + [song]
-            counts = Counter(all_user_votes)
-            summary = "\n".join(
-                f"{flags.get(c, '')} **{c}**: {n}/{maxVotesPerSong}"
-                for c, n in counts.most_common()
-            )
-            remaining = numberMaxVotesPublic - nb_votes - 1
-            content = (
-                f"**Voted for {flags.get(song, '')} {song}!**\n\n"
-                f"**Your votes ({nb_votes + 1}/{numberMaxVotesPublic}):**\n{summary}\n\n"
-                f"*You can still cast {remaining} vote{'s' if remaining != 1 else ''}*"
-            )
-
-            await interaction.followup.send(content, ephemeral=True, delete_after=5)
+                await interaction.response.send_message(content, ephemeral=True, delete_after=5)
 
             try:
                 if user.id in vote_status_dms:
@@ -367,8 +368,11 @@ async def startVote(channel):
     global voting_closed, live_count_msg
     voting_closed = False
     live_count_msg = None
+    votes.clear()
+    infoVote.clear()
     jury_voters_in_progress.clear()
     vote_status_dms.clear()
+    user_vote_locks.clear()
 
     view1 = PublicVoteView(songs[:25])
     if len(songs) > 25:
