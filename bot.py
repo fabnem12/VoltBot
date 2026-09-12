@@ -497,28 +497,44 @@ async def sanitize_social_links(msg: discord.Message, delete: bool = False):
             del infoSanitizedLinks[msgId]
             save()
 
-async def reminder_meme(message: discord.Message, bot: commands.Bot):
-    #check the message got sent in #european-memes and is not a bot message
-    if message.channel.id not in (european_memes, ) or message.author.bot:
-        return 
+def has_meme_content(message: discord.Message) -> bool:
+    thread_created_type = getattr(discord.MessageType, "thread_created", None)
+    return (
+        bool(message.embeds)
+        or bool(message.attachments)
+        or bool(getattr(message, "thread", None))
+        or bool(getattr(message, "has_thread", False))
+        or (thread_created_type is not None and message.type == thread_created_type)
+    )
 
-    assert bot.user is not None
-    me = bot.user.id
-    
-    i = 0
-    channel = message.channel
-    prevMsg = None
-    async for msg in channel.history(limit=10):
-        if i > 0 and msg.author.id == me and msg.content.startswith(":warning:"):
-            prevMsg = msg
-            break
-        
-        i += 1
-    
-    if prevMsg:
-        await prevMsg.delete()
 
-    await channel.send(":warning: **This channel is only for memes, not for regular messages.**\nIf you want to react to a meme with text, please make a thread.")
+async def reminder_meme(message: discord.Message):
+    # Check the message got sent in #european-memes and is not a bot message.
+    if message.channel.id != european_memes or message.author.bot:
+        return
+
+    if has_meme_content(message):
+        return
+
+    try:
+        await asyncio.sleep(5)
+        message = await message.channel.fetch_message(message.id)
+    except (discord.NotFound, discord.Forbidden):
+        return
+
+    if has_meme_content(message):
+        return
+
+    try:
+        await message.delete()
+    except (discord.NotFound, discord.Forbidden):
+        return
+
+    try:
+        dm_channel = await dmChannelUser(message.author)
+        await dm_channel.send(f"Your message in {message.channel.mention} was deleted because that channel is only for memes. Please post an image, video, GIF, or a link that embeds in Discord.")
+    except Exception:
+        pass
 
 
 async def ensure_poll_thread(message: discord.Message):
@@ -666,7 +682,7 @@ def main():
         await verif_news_source(message)
         await report_automatic_warn(message)
         await smart_tweet(message)
-        await reminder_meme(message, bot)
+        await reminder_meme(message)
         await sanitize_social_links(message)
         await ensure_poll_thread(message)
 
@@ -678,6 +694,7 @@ def main():
         await verif_word_train(after)
         await smart_tweet(after)
         await sanitize_social_links(after)
+        await reminder_meme(after)
         
     @bot.event
     async def on_message_delete(msg):
