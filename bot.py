@@ -11,6 +11,7 @@ import os
 import random
 import requests
 import time
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import emojis
 import regex
 import arrow
@@ -231,6 +232,30 @@ async def reportreact(messageId, guild, emojiHash, channel, user):
     await report(messageId, guild, channel, user)
 
 regex_x = regex.compile(r"https://.*?x.com")
+HIDDEN_MESSAGE = "_ _"
+
+def is_domain(domain: str, allowed_domains) -> bool:
+    domain = domain.lower()
+    return any(domain == d or domain.endswith(f".{d}") for d in allowed_domains)
+
+def is_non_english(text: str) -> bool:
+    try:
+        return detect(text) != "en"
+    except Exception:
+        return False
+
+def fixupx_link(path: str) -> str:
+    path = path.split("?")[0].rstrip("/")
+    if not path.endswith("/en"):
+        path += "/en"
+    return "https://fixupx.com" + path
+
+async def fetch_saved_message(channel, message_id):
+    try:
+        return await channel.fetch_message(int(message_id))
+    except (discord.NotFound, TypeError, ValueError):
+        return None
+
 async def verif_news_source(message):
     """
     Check that there is no untrusted news source in the message
@@ -354,62 +379,123 @@ async def smart_tweet(msg: discord.Message, delete: bool = False):
 
     if msg.author.bot: return
     
-    msgId = msg.id
+    msgId = str(msg.id)
     infoSmartTweet = info.get("smart_tweet")
     if infoSmartTweet is None:
         infoSmartTweet = info["smart_tweet"] = dict()
 
     if delete and msgId in infoSmartTweet:
-        msgRep = await msg.channel.fetch_message(infoSmartTweet[msgId])
-        await msgRep.delete()
+        msgRep = await fetch_saved_message(msg.channel, infoSmartTweet[msgId])
+        if msgRep:
+            await msgRep.delete()
         del infoSmartTweet[msgId]
+        save()
+        return
+    elif delete:
         return
 
     links = regex.findall(r"https:\/\/([\w_-]+(?:(?:\.[\w_-]+)+))([\w.,@?^=%&:\/~+#-]*[\w@?^=%&\/~+#-])", msg.content)
-    links = [(x.lower(), y.lower()) for x, y in links]
-    twitterLinks = ["https://fixupx.com" + y.split("?")[0] + "/en" for x, y in links if any(x.startswith(link) for link in ("x.com", "twitter.com", "fxtwitter.com", "vxtwitter.com", "fixupx.com", "girlcockx.com"))]
+    twitterDomains = ("x.com", "twitter.com", "fxtwitter.com", "vxtwitter.com", "fixupx.com", "girlcockx.com")
+    twitterLinks = []
+    for domain, path in links:
+        if is_domain(domain, twitterDomains):
+            link = fixupx_link(path)
+            if link not in twitterLinks:
+                twitterLinks.append(link)
     anyVideoTweet = msg.embeds and any(e.image.proxy_url and "amplify_video_thumb" in e.image.proxy_url for e in msg.embeds)
-    nonEnglish = msg.embeds and any(e.description and len(e.description.split()) > 4 and detect(e.description) != "en" and "/en" not in msg.content for e in msg.embeds)
+    nonEnglish = msg.embeds and any(e.description and len(e.description.split()) > 4 and is_non_english(e.description) and "/en" not in msg.content for e in msg.embeds)
 
     if len(twitterLinks) and (anyVideoTweet or nonEnglish):
-        ref = discord.MessageReference(channel_id = msg.channel.id, message_id = msgId)
+        ref = discord.MessageReference(channel_id = msg.channel.id, message_id = msg.id)
         
-        if msg.edited_at and msgId in infoSmartTweet:
-            msgRep = await msg.channel.fetch_message(infoSmartTweet[msgId])
-            await msgRep.edit(content = "\n".join(twitterLinks))
+        if msgId in infoSmartTweet:
+            msgRep = await fetch_saved_message(msg.channel, infoSmartTweet[msgId])
+            if msgRep:
+                await msgRep.edit(content = "\n".join(twitterLinks))
+            else:
+                rep = await msg.channel.send("\n".join(twitterLinks), reference = ref)
+                infoSmartTweet[msgId] = rep.id
+                save()
         else:
             rep = await msg.channel.send("\n".join(twitterLinks), reference = ref)
             infoSmartTweet[msgId] = rep.id
+            save()
     elif msg.edited_at and msgId in infoSmartTweet:
-        msgRep = await msg.channel.fetch_message(infoSmartTweet[msgId])
-        await msgRep.edit(content = ".")
+        msgRep = await fetch_saved_message(msg.channel, infoSmartTweet[msgId])
+        if msgRep:
+            await msgRep.edit(content = HIDDEN_MESSAGE)
+        else:
+            del infoSmartTweet[msgId]
+            save()
 
-async def anonymize_instagram_links(msg: discord.Message):
+def clean_social_link(domain: str, path: str) -> Optional[str]:
+    domain = domain.lower()
+    parsed = urlsplit(f"https://{domain}{path}")
+
+    instagram_domains = ("instagram.com", "instagr.am", "ddinstagram.com", "kkinstagram.com")
+    if is_domain(domain, instagram_domains):
+        cleaned = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", parsed.fragment))
+        return cleaned if cleaned != f"https://{domain}{path}" else None
+
+    if is_domain(domain, ("youtube.com", "youtu.be")):
+        trackers = {"si", "feature"}
+        filtered_query = [
+            (key, value)
+            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+            if key.lower() not in trackers and not key.lower().startswith("utm_")
+        ]
+        cleaned_query = urlencode(filtered_query, doseq=True)
+        cleaned = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, cleaned_query, parsed.fragment))
+        return cleaned if cleaned != f"https://{domain}{path}" else None
+
+    return None
+
+async def sanitize_social_links(msg: discord.Message, delete: bool = False):
     if msg.author.bot: return
-    
+
+    msgId = str(msg.id)
+    infoSanitizedLinks = info.get("sanitized_links")
+    if infoSanitizedLinks is None:
+        infoSanitizedLinks = info["sanitized_links"] = dict()
+
+    if delete and msgId in infoSanitizedLinks:
+        msgRep = await fetch_saved_message(msg.channel, infoSanitizedLinks[msgId])
+        if msgRep:
+            await msgRep.delete()
+        del infoSanitizedLinks[msgId]
+        save()
+        return
+    elif delete:
+        return
+
     links = regex.findall(r"https:\/\/([\w_-]+(?:(?:\.[\w_-]+)+))([\w.,@?^=%&:\/~+#-]*[\w@?^=%&\/~+#-])", msg.content)
-    links = [(x.lower(), y.lower()) for x, y in links]
-    instagramLinks = ["https://instagram.com" + y.split("?")[0] for x, y in links if any(x.startswith(link) for link in ("instagram.com", "instagr.am", "ddinstagram.com"))]
-
-    if len(instagramLinks):
-        ref = discord.MessageReference(channel_id = msg.channel.id, message_id = msg.id)
-        await msg.channel.send("\n".join(instagramLinks), reference = ref)
-
-async def clean_youtube_links(msg: discord.Message):
-    if msg.author.bot: return
-
-    links = regex.findall(r"https:\/\/([\w_-]+(?:(?:\.[\w_-]+)+))([\w.,@?^=%&:\/~+#-]*[\w@?^=%&\/~+#-])", msg.content)
-
-    clean_links = []
+    cleanLinks = []
     for domain, path in links:
-        if any(domain.lower().startswith(d) for d in ("youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be")):
-            cleaned_path = regex.sub(r"[?&]si=[^&]*", "", path)
-            if cleaned_path != path:
-                clean_links.append(f"https://{domain}{cleaned_path}")
+        cleanLink = clean_social_link(domain, path)
+        if cleanLink and cleanLink not in cleanLinks:
+            cleanLinks.append(cleanLink)
 
-    if clean_links:
-        ref = discord.MessageReference(channel_id=msg.channel.id, message_id=msg.id)
-        await msg.channel.send("\n".join(clean_links), reference=ref)
+    if len(cleanLinks):
+        ref = discord.MessageReference(channel_id = msg.channel.id, message_id = msg.id)
+        content = "\n".join(cleanLinks)
+        if msgId in infoSanitizedLinks:
+            msgRep = await fetch_saved_message(msg.channel, infoSanitizedLinks[msgId])
+            if msgRep:
+                await msgRep.edit(content = content)
+            else:
+                rep = await msg.channel.send(content, reference = ref)
+                infoSanitizedLinks[msgId] = rep.id
+        else:
+            rep = await msg.channel.send(content, reference = ref)
+            infoSanitizedLinks[msgId] = rep.id
+        save()
+    elif msg.edited_at and msgId in infoSanitizedLinks:
+        msgRep = await fetch_saved_message(msg.channel, infoSanitizedLinks[msgId])
+        if msgRep:
+            await msgRep.edit(content = HIDDEN_MESSAGE)
+        else:
+            del infoSanitizedLinks[msgId]
+            save()
 
 async def reminder_meme(message: discord.Message, bot: commands.Bot):
     #check the message got sent in #european-memes and is not a bot message
@@ -581,8 +667,7 @@ def main():
         await report_automatic_warn(message)
         await smart_tweet(message)
         await reminder_meme(message, bot)
-        await anonymize_instagram_links(message)
-        await clean_youtube_links(message)
+        await sanitize_social_links(message)
         await ensure_poll_thread(message)
 
         if message.content.startswith(".ban"):
@@ -592,6 +677,7 @@ def main():
     async def on_message_edit(before, after):
         await verif_word_train(after)
         await smart_tweet(after)
+        await sanitize_social_links(after)
         
     @bot.event
     async def on_message_delete(msg):
@@ -613,6 +699,7 @@ def main():
             break
     
         await smart_tweet(msg, delete=True)
+        await sanitize_social_links(msg, delete=True)
         await count_banned_words(msg.guild, msg.author, msg.content, msg.channel)
     
     @bot.event
