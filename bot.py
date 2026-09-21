@@ -76,7 +76,7 @@ else:
 
 def save():
     with open("bot_info.json", "w") as f:
-        json.dump(info, f)
+        json.dump(info, f, default=list)
 
 
 def get_birthdays_storage():
@@ -92,6 +92,7 @@ def get_reports_storage():
     reports.setdefault("cases", {})
     reports.setdefault("user_threads", {})
     reports.setdefault("migrated_archive_messages", [])
+    reports.setdefault("forwarded_migrated_messages", [])
     return reports
 
 
@@ -243,6 +244,29 @@ async def close_deleted_active_report(msg: discord.Message, closed_by: Optional[
 def extract_user_id_from_mention(value: str) -> Optional[int]:
     match = regex.search(r"<@!?(\d+)>", value or "")
     return int(match.group(1)) if match else None
+
+
+async def forward_report_with_attachments(report_msg: discord.Message, destination: discord.abc.Messageable):
+    content = f"Historical report from {report_msg.jump_url}"
+    if report_msg.embeds:
+        await destination.send(content, embed=report_msg.embeds[0])
+    else:
+        await destination.send(content)
+    async for msg in report_msg.channel.history(after=report_msg.created_at, limit=20, oldest_first=True):
+        if msg.id == report_msg.id:
+            continue
+        if msg.embeds:
+            break
+        reference = msg.reference
+        if reference and reference.message_id == report_msg.id:
+            files = []
+            for att in msg.attachments:
+                r = requests.get(att.url)
+                files.append(discord.File(io.BytesIO(r.content), filename=att.filename))
+            if files:
+                await destination.send(f"Attachments for {report_msg.jump_url}", files=files)
+            elif msg.content:
+                await destination.send(msg.content)
 
 
 class ReportCloseSummaryModal(discord.ui.Modal):
@@ -977,6 +1001,8 @@ async def kekw_board(message: discord.Message, bot: commands.Bot):
         
         if "kekw_board" not in info:
             info["kekw_board"] = set()
+        elif not isinstance(info["kekw_board"], set):
+            info["kekw_board"] = set(info["kekw_board"])
         
         if message.id in info["kekw_board"]:
             # already forwarded
@@ -1818,7 +1844,7 @@ def main():
             except Exception:
                 user = await bot.fetch_user(user_id)
             user_thread = await get_or_create_user_report_thread(ctx.guild, report_channel, user)
-            await user_thread.send(f"Historical report for <@{user_id}> at <t:{int(msg.created_at.timestamp())}:f>.\nArchive: {msg.jump_url}")
+            await forward_report_with_attachments(msg, user_thread)
             reports["migrated_archive_messages"].append(str(msg.id))
             done += 1
             if done % 25 == 0:
