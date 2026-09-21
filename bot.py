@@ -303,6 +303,7 @@ async def verif_news_source(message):
         "telegraph.co.uk": "Daily Telegraph",
         "x.com/foxnews": "Fox News",
         "foxnews.com": "Fox News",
+        "x.com/brevesdepresse": "Brèves de presse",
         }
 
     ref = discord.MessageReference(channel_id = message.channel.id, message_id = message.id)
