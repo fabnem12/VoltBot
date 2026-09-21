@@ -7,6 +7,7 @@ from discord.ext import commands, tasks
 from typing import Optional, Union
 from unidecode import unidecode
 import datetime
+import io
 import os
 import random
 import requests
@@ -41,6 +42,8 @@ wordTrainChannel = 1141992409165733988
 deletedEditedMessages = 1467557771598758234
 modLogId = 929466478678405211
 reportChannelId = 806219815760166972
+activeReportChannelId = 1551498084196941834
+carlBotCommandChannelId = 567482036919730196
 modMessageLog = 1037071502656405584
 courtChannel = 912092404570554388
 introChannel = 567024817128210433
@@ -80,6 +83,215 @@ def get_birthdays_storage():
     if "birthdays" not in info or not isinstance(info["birthdays"], dict):
         info["birthdays"] = {}
     return info["birthdays"]
+
+
+def get_reports_storage():
+    if "reports" not in info or not isinstance(info["reports"], dict):
+        info["reports"] = {}
+    reports = info["reports"]
+    reports.setdefault("cases", {})
+    reports.setdefault("user_threads", {})
+    reports.setdefault("migrated_archive_messages", [])
+    return reports
+
+
+def report_thread_name(user: Union[discord.User, discord.Member]) -> str:
+    name = getattr(user, "display_name", None) or getattr(user, "name", None) or str(user.id)
+    name = regex.sub(r"\s+", " ", name).strip()
+    return f"reports - {name}"[:100]
+
+
+def case_thread_name(user: Union[discord.User, discord.Member], message_id: int) -> str:
+    name = getattr(user, "display_name", None) or getattr(user, "name", None) or str(user.id)
+    name = regex.sub(r"\s+", " ", name).strip()
+    return f"report - {name} - {message_id}"[:100]
+
+
+async def safe_fetch_channel(guild: discord.Guild, channel_id: int):
+    channel = guild.get_channel(channel_id)
+    if channel is None:
+        channel = await guild.fetch_channel(channel_id)
+    return channel
+
+
+def thread_link(guild_id: int, thread_id: int) -> str:
+    return f"https://discord.com/channels/{guild_id}/{thread_id}"
+
+
+async def get_or_create_user_report_thread(guild: discord.Guild, report_channel: discord.TextChannel, user: Union[discord.User, discord.Member]):
+    reports = get_reports_storage()
+    user_threads = reports["user_threads"]
+    user_id = str(user.id)
+
+    if user_id in user_threads:
+        try:
+            thread = await guild.fetch_channel(int(user_threads[user_id]))
+            if isinstance(thread, discord.Thread):
+                try:
+                    await thread.edit(archived=False, locked=False)
+                except Exception:
+                    pass
+                return thread
+        except Exception:
+            pass
+
+    base_msg = await report_channel.send(f"Report history for {user.mention} (`{user.id}`).")
+    thread = await base_msg.create_thread(name=report_thread_name(user), auto_archive_duration=10080)
+    user_threads[user_id] = str(thread.id)
+    save()
+    return thread
+
+
+async def send_report_attachment(channel: discord.TextChannel, filename: str, content: bytes, reference: discord.MessageReference):
+    await channel.send(file=discord.File(io.BytesIO(content), filename=filename), reference=reference)
+
+
+async def duplicate_report_attachments(msg: discord.Message, destinations):
+    for att in msg.attachments:
+        r = requests.get(att.url)
+        for channel, reference in destinations:
+            await send_report_attachment(channel, att.filename, r.content, reference)
+
+
+async def close_report_case(guild: discord.Guild, active_message_id: int, status: str, closed_by: Union[discord.User, discord.Member], summary: str = "", delete_active: bool = True):
+    reports = get_reports_storage()
+    case = reports["cases"].get(str(active_message_id))
+    if not case:
+        return False
+    if case.get("status") != "open":
+        return True
+
+    case["status"] = status
+    case["closed_by"] = str(closed_by.id)
+    case["closed_at"] = int(time.time())
+    if summary:
+        case["close_summary"] = summary
+    save()
+
+    colors = {
+        "dismissed": discord.Color.red(),
+        "warning": discord.Color.gold(),
+        "punishment": discord.Color.green(),
+        "manual_delete": discord.Color.light_grey(),
+        "punishment_marked_applied": discord.Color.green(),
+    }
+
+    try:
+        archive_channel = await safe_fetch_channel(guild, int(case["archive_channel_id"]))
+        archive_msg = await archive_channel.fetch_message(int(case["archive_message_id"]))
+        if archive_msg.embeds:
+            embed = archive_msg.embeds[0]
+            embed.color = colors.get(status, embed.color)
+            embed.add_field(name="Status", value=f"{status} by {closed_by.mention}" + (f"\n{summary}" if summary else ""), inline=False)
+            await archive_msg.edit(embed=embed)
+    except Exception:
+        pass
+
+    close_note = f"Case closed as **{status}** by {closed_by.mention}."
+    if summary:
+        close_note += f"\nSummary: {summary}"
+
+    for thread_key in ("active_thread_id",):
+        thread_id = case.get(thread_key)
+        if not thread_id:
+            continue
+        try:
+            thread = await guild.fetch_channel(int(thread_id))
+            await thread.send(close_note)
+        except Exception:
+            pass
+
+    user_thread_id = case.get("user_thread_id")
+    user_thread_message_id = case.get("user_thread_message_id")
+    if user_thread_id and user_thread_message_id:
+        try:
+            user_thread = await guild.fetch_channel(int(user_thread_id))
+            user_thread_msg = await user_thread.fetch_message(int(user_thread_message_id))
+            await user_thread_msg.edit(content=f"{user_thread_msg.content}\n\n{close_note}")
+        except Exception:
+            pass
+    elif user_thread_id:
+        try:
+            user_thread = await guild.fetch_channel(int(user_thread_id))
+            await user_thread.send(close_note)
+        except Exception:
+            pass
+
+    if delete_active:
+        try:
+            active_channel = await safe_fetch_channel(guild, int(case["active_channel_id"]))
+            active_msg = await active_channel.fetch_message(int(active_message_id))
+            await active_msg.delete()
+        except Exception:
+            pass
+
+    return True
+
+
+async def close_deleted_active_report(msg: discord.Message, closed_by: Optional[Union[discord.User, discord.Member]] = None):
+    if msg.channel.id != activeReportChannelId:
+        return False
+    reports = get_reports_storage()
+    case = reports["cases"].get(str(msg.id))
+    if not case:
+        return False
+    if case.get("status") != "open":
+        return True
+    return await close_report_case(msg.guild, msg.id, "manual_delete", closed_by or msg.author, "Active report message was manually deleted.", delete_active=False)
+
+
+def extract_user_id_from_mention(value: str) -> Optional[int]:
+    match = regex.search(r"<@!?(\d+)>", value or "")
+    return int(match.group(1)) if match else None
+
+
+class ReportCloseSummaryModal(discord.ui.Modal):
+    def __init__(self, active_message_id: int, status: str):
+        super().__init__(title=f"Close report as {status}")
+        self.active_message_id = active_message_id
+        self.status = status
+        self.summary = discord.ui.TextInput(
+            label="Summary",
+            style=discord.TextStyle.paragraph,
+            required=False,
+            max_length=1000,
+            placeholder="Optional: what was done / why the case is closed",
+        )
+        self.add_item(self.summary)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if interaction.guild is None:
+            return
+        if not await isMod(interaction.guild, interaction.user.id):
+            await interaction.response.send_message("Only mods can close reports.", ephemeral=True)
+            return
+        await close_report_case(interaction.guild, self.active_message_id, self.status, interaction.user, str(self.summary.value))
+        await interaction.response.send_message("Report closed.", ephemeral=True)
+
+
+class ReportCloseConfirmView(discord.ui.View):
+    def __init__(self, active_message_id: int, status: str):
+        super().__init__(timeout=900)
+        self.active_message_id = active_message_id
+        self.status = status
+
+    @discord.ui.button(label="Confirm close", style=discord.ButtonStyle.danger)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.guild is None:
+            return
+        if not await isMod(interaction.guild, interaction.user.id):
+            await interaction.response.send_message("Only mods can close reports.", ephemeral=True)
+            return
+        await interaction.response.send_modal(ReportCloseSummaryModal(self.active_message_id, self.status))
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.guild is None:
+            return
+        if not await isMod(interaction.guild, interaction.user.id):
+            await interaction.response.send_message("Only mods can cancel report closure.", ephemeral=True)
+            return
+        await interaction.response.edit_message(content="Close cancelled.", view=None)
 
 
 def get_paris_now() -> arrow.Arrow:
@@ -159,6 +371,7 @@ async def report(messageId, guild, channel, user, param = ""):
 
     msgInit = await channel.fetch_message(messageId)
     msg = msgInit
+    is_user_report = isinstance(param, str)
     if not isinstance(param, str):
         channelId = modMessageLog
         reporter = param
@@ -192,6 +405,51 @@ async def report(messageId, guild, channel, user, param = ""):
         if param != "":
             e.add_field(name = "Details", value=param)
     msgReport = await reportChannel.send(embed = e)
+    activeMsgReport = None
+    archiveThread = None
+    activeThread = None
+    userThread = None
+
+    if is_user_report:
+        assert isinstance(reportChannel, discord.TextChannel)
+        activeReportChannel = await guild.fetch_channel(activeReportChannelId)
+        assert isinstance(activeReportChannel, discord.TextChannel)
+        activeMsgReport = await activeReportChannel.send(embed=e)
+
+        archiveThread = await msgReport.create_thread(name=case_thread_name(author, msg.id), auto_archive_duration=10080)
+        activeThread = await activeMsgReport.create_thread(name=case_thread_name(author, msg.id), auto_archive_duration=10080)
+        await archiveThread.send(f"Discussion thread: {thread_link(guild.id, activeThread.id)}\nPlease discuss this report in the active thread, not here.")
+        try:
+            await archiveThread.edit(archived=True, locked=True)
+        except Exception:
+            pass
+
+        userThread = await get_or_create_user_report_thread(guild, reportChannel, author)
+        userThreadMsg = await userThread.send(
+            f"Report about {author.mention} (`{author.id}`) at <t:{int(msg.created_at.timestamp())}:f>.\n"
+            f"Archive: {msgReport.jump_url}\n"
+            f"Active discussion: {thread_link(guild.id, activeThread.id)}\n"
+            f"Original message: {msg.jump_url}\n"
+            f"Reporter: <@{reporter}>" + (f"\nDetails: {param}" if param else "")
+        )
+
+        reports = get_reports_storage()
+        reports["cases"][str(activeMsgReport.id)] = {
+            "type": "user_report",
+            "archive_message_id": str(msgReport.id),
+            "active_message_id": str(activeMsgReport.id),
+            "archive_channel_id": str(reportChannel.id),
+            "active_channel_id": str(activeReportChannel.id),
+            "archive_thread_id": str(archiveThread.id),
+            "active_thread_id": str(activeThread.id),
+            "user_thread_id": str(userThread.id),
+            "user_thread_message_id": str(userThreadMsg.id),
+            "reported_user_id": str(author.id),
+            "reporter_id": str(reporter),
+            "status": "open",
+            "created_at": int(time.time()),
+        }
+        save()
     
     # reactions to see what has been done with the report
     # either do nothing, informal warn, formal punishment
@@ -199,16 +457,17 @@ async def report(messageId, guild, channel, user, param = ""):
     await msgReport.add_reaction("❌")
     await msgReport.add_reaction("⚠️")
     await msgReport.add_reaction("🔨")
+    if activeMsgReport:
+        await activeMsgReport.add_reaction("❌")
+        await activeMsgReport.add_reaction("⚠️")
+        await activeMsgReport.add_reaction("🔨")
 
     ref = discord.MessageReference(channel_id = msgReport.channel.id, message_id = msgReport.id)
-
-    for att in msg.attachments:
-        r = requests.get(att.url)
-        with open(att.filename, "wb") as outfile:
-            outfile.write(r.content)
-
-        await reportChannel.send(file = discord.File(att.filename), reference = ref)
-        os.remove(att.filename)
+    destinations = [(reportChannel, ref)]
+    if activeMsgReport:
+        activeRef = discord.MessageReference(channel_id=activeMsgReport.channel.id, message_id=activeMsgReport.id)
+        destinations.append((activeMsgReport.channel, activeRef))
+    await duplicate_report_attachments(msg, destinations)
 
 async def assign_base_roles(newMember, guild):
     roles = [guild.get_role(x) for x in (708313061764890694, 708315631774335008, 754029717211971705, 708313617686069269, 856620435164495902, 596511307209900053, 717132666721402949, 1101606908437221436)]
@@ -561,12 +820,12 @@ async def ensure_poll_thread(message: discord.Message):
             pass
 
 
-async def handle_report_reaction_color(channel: Optional[discord.abc.Messageable], message_id: int, emoji_hash: Union[int, str], user: discord.abc.User):
-    """Update report embed color based on moderator reactions."""
+async def handle_report_reaction_color(channel: Optional[discord.abc.Messageable], message_id: int, emoji_hash: Union[int, str], user: Union[discord.User, discord.Member]):
+    """Update report embed color and ask for confirmation before closing active reports."""
     if user.bot or channel is None:
         return
 
-    if not isinstance(channel, discord.TextChannel) or channel.id != reportChannelId:
+    if not isinstance(channel, discord.TextChannel) or channel.id not in (reportChannelId, activeReportChannelId):
         return
 
     colors = {
@@ -576,6 +835,9 @@ async def handle_report_reaction_color(channel: Optional[discord.abc.Messageable
     }
 
     if emoji_hash not in colors:
+        return
+
+    if not await isMod(channel.guild, user.id):
         return
 
     try:
@@ -593,6 +855,29 @@ async def handle_report_reaction_color(channel: Optional[discord.abc.Messageable
         await msg.edit(embed=embed)
     except Exception:
         pass
+
+    if channel.id != activeReportChannelId:
+        return
+
+    reports = get_reports_storage()
+    case = reports["cases"].get(str(message_id))
+    if not case or case.get("status") != "open":
+        return
+
+    statuses = {
+        "❌": "dismissed",
+        "⚠️": "warning",
+        "🔨": "punishment",
+    }
+    status = statuses[emoji_hash]
+    if case.get("type") == "banned_word" and emoji_hash == "🔨":
+        status = "punishment_marked_applied"
+    confirm_text = f"{user.mention} wants to close this report as **{status}**. Confirm?"
+    try:
+        thread = await channel.guild.fetch_channel(int(case["active_thread_id"]))
+        await thread.send(confirm_text, view=ReportCloseConfirmView(message_id, status))
+    except Exception:
+        await channel.send(confirm_text, reference=discord.MessageReference(channel_id=channel.id, message_id=message_id), view=ReportCloseConfirmView(message_id, status))
 
 
 async def count_banned_words(guild: discord.Guild, author: discord.Member, msg_txt: str, channel: Optional[discord.TextChannel] = None):
@@ -626,7 +911,8 @@ async def count_banned_words(guild: discord.Guild, author: discord.Member, msg_t
         reportChannel = await guild.fetch_channel(reportChannelId)
         assert isinstance(reportChannel, discord.TextChannel)
         
-        await reportChannel.send(f"**User <@{authorId}> used the banned word {banned_word_used}**\nIt's the #{len(banned_words_user)} use of a banned word by the user since the 14th of July 2025.\n\nPrevious uses:\n" + "\n".join(f'{i+1}. {word} <t:{int(timestamp)}>' for i, (word, timestamp) in enumerate(banned_words_user)) + f"\n\n**Recommended punishment based on the number of offenses: __{punishment}__**")
+        summary = f"**User <@{authorId}> used the banned word {banned_word_used}**\nIt's the #{len(banned_words_user)} use of a banned word by the user since the 14th of July 2025.\n\nPrevious uses:\n" + "\n".join(f'{i+1}. {word} <t:{int(timestamp)}>' for i, (word, timestamp) in enumerate(banned_words_user)) + f"\n\n**Recommended punishment based on the number of offenses: __{punishment}__**"
+        archiveSummaryMsg = await reportChannel.send(summary)
         
         e = discord.Embed(description = msg_txt)
         if author.avatar:
@@ -636,6 +922,46 @@ async def count_banned_words(guild: discord.Guild, author: discord.Member, msg_t
             e.add_field(name = "Channel", value=channel.name, inline=False)
         
         await reportChannel.send(embed = e)
+
+        activeReportChannel = await guild.fetch_channel(activeReportChannelId)
+        assert isinstance(activeReportChannel, discord.TextChannel)
+        command_hint = "No mute recommended yet."
+        if punishment != "nothing":
+            duration = punishment.replace(" of mute", "")
+            command_hint = f"Run Carl-bot `/mute` in <#{carlBotCommandChannelId}>: user <@{authorId}>, duration `{duration}`, reason `Banned word usage - offense #{len(banned_words_user)}`."
+        activeSummaryMsg = await activeReportChannel.send(summary + f"\n\n{command_hint}\n\nReact ❌ to dismiss or 🔨 after the Carl-bot mute has been manually applied.")
+        await activeSummaryMsg.add_reaction("❌")
+        await activeSummaryMsg.add_reaction("🔨")
+
+        activeThread = await activeSummaryMsg.create_thread(name=case_thread_name(author, activeSummaryMsg.id), auto_archive_duration=10080)
+        await activeThread.send(command_hint)
+
+        userThread = await get_or_create_user_report_thread(guild, reportChannel, author)
+        userThreadMsg = await userThread.send(
+            f"Banned-word report for {author.mention} (`{author.id}`) at <t:{int(time.time())}:f>.\n"
+            f"Archive: {archiveSummaryMsg.jump_url}\n"
+            f"Active discussion: {thread_link(guild.id, activeThread.id)}\n"
+            f"Recommended punishment: {punishment}"
+        )
+
+        reports = get_reports_storage()
+        reports["cases"][str(activeSummaryMsg.id)] = {
+            "type": "banned_word",
+            "archive_message_id": str(archiveSummaryMsg.id),
+            "active_message_id": str(activeSummaryMsg.id),
+            "archive_channel_id": str(reportChannel.id),
+            "active_channel_id": str(activeReportChannel.id),
+            "active_thread_id": str(activeThread.id),
+            "user_thread_id": str(userThread.id),
+            "user_thread_message_id": str(userThreadMsg.id),
+            "reported_user_id": str(author.id),
+            "suggested_punishment": punishment,
+            "manual_action_required": True,
+            "action_channel_id": str(carlBotCommandChannelId),
+            "status": "open",
+            "created_at": int(time.time()),
+        }
+        save()
 
 async def kekw_board(message: discord.Message, bot: commands.Bot):
     if message.channel.id == channelKewkId: return
@@ -699,6 +1025,19 @@ def main():
         
     @bot.event
     async def on_message_delete(msg):
+        deleted_by = None
+        if msg.guild:
+            try:
+                async for entry in msg.guild.audit_logs(action=discord.AuditLogAction.message_delete):
+                    if msg.author.id == entry.target.id and abs(entry.created_at.timestamp() - time.time()) < 3:
+                        deleted_by = entry.user
+                        break
+            except Exception:
+                pass
+
+        if await close_deleted_active_report(msg, deleted_by):
+            return
+
         #resend the attachments of deleted messages in #deleted-edited-messages
         deletedMsgChannel = await msg.guild.fetch_channel(deletedEditedMessages)
         for att in msg.attachments:
@@ -1434,6 +1773,60 @@ def main():
     async def report_slur(ctx, author: discord.Member, *, slur: str):
         if (await isMod(ctx.guild, ctx.author.id)):
             await count_banned_words(ctx.guild, author, slur)
+
+    @bot.command(name="migrate_report_user_threads")
+    async def migrate_report_user_threads(ctx, mode: str = "dry"):
+        if ctx.guild.id != voltServer or not await isMod(ctx.guild, ctx.author.id):
+            return
+
+        run = mode.lower() in ("run", "apply", "yes")
+        report_channel = await bot.fetch_channel(reportChannelId)
+        assert isinstance(report_channel, discord.TextChannel)
+        reports = get_reports_storage()
+        migrated = set(str(x) for x in reports["migrated_archive_messages"])
+        current_case_archive_ids = {str(case.get("archive_message_id")) for case in reports["cases"].values()}
+        after = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=183)
+        counts = {}
+        posts = []
+
+        async for msg in report_channel.history(after=after, limit=None, oldest_first=True):
+            if str(msg.id) in migrated or str(msg.id) in current_case_archive_ids or not msg.embeds:
+                continue
+            embed = msg.embeds[0]
+            author_fields = [field.value for field in embed.fields if field.name == "Author"]
+            if not author_fields:
+                continue
+            user_id = extract_user_id_from_mention(author_fields[0])
+            if user_id is None:
+                continue
+            counts[user_id] = counts.get(user_id, 0) + 1
+            posts.append((msg, user_id))
+
+        if not run:
+            if not counts:
+                await ctx.send("Dry run: no historical reports to migrate from the last 6 months.")
+                return
+            preview = "\n".join(f"<@{user_id}>: {count}" for user_id, count in sorted(counts.items(), key=lambda x: x[1], reverse=True)[:30])
+            await ctx.send(f"Dry run: {len(posts)} reports would be migrated into {len(counts)} user threads.\nRun `{constantes.prefixVolt}migrate_report_user_threads run` to apply.\n{preview}")
+            return
+
+        await ctx.send(f"Migrating {len(posts)} historical reports into user threads...")
+        done = 0
+        for msg, user_id in posts:
+            try:
+                user = await ctx.guild.fetch_member(user_id)
+            except Exception:
+                user = await bot.fetch_user(user_id)
+            user_thread = await get_or_create_user_report_thread(ctx.guild, report_channel, user)
+            await user_thread.send(f"Historical report for <@{user_id}> at <t:{int(msg.created_at.timestamp())}:f>.\nArchive: {msg.jump_url}")
+            reports["migrated_archive_messages"].append(str(msg.id))
+            done += 1
+            if done % 25 == 0:
+                save()
+                await ctx.send(f"Migrated {done}/{len(posts)} reports...")
+
+        save()
+        await ctx.send(f"Migration complete: {done} reports migrated.")
     
     @bot.command(name="redirect_reports")
     async def redirect_reports(ctx):
