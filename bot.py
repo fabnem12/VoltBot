@@ -249,9 +249,9 @@ def extract_user_id_from_mention(value: str) -> Optional[int]:
 async def forward_report_with_attachments(report_msg: discord.Message, destination: discord.abc.Messageable):
     content = f"Historical report from {report_msg.jump_url}"
     if report_msg.embeds:
-        await destination.send(content, embed=report_msg.embeds[0])
+        copied_msg = await destination.send(content, embed=report_msg.embeds[0])
     else:
-        await destination.send(content)
+        copied_msg = await destination.send(content)
     async for msg in report_msg.channel.history(after=report_msg.created_at, limit=20, oldest_first=True):
         if msg.id == report_msg.id:
             continue
@@ -267,6 +267,7 @@ async def forward_report_with_attachments(report_msg: discord.Message, destinati
                 await destination.send(f"Attachments for {report_msg.jump_url}", files=files)
             elif msg.content:
                 await destination.send(msg.content)
+    return copied_msg
 
 
 class ReportCloseSummaryModal(discord.ui.Modal):
@@ -428,25 +429,21 @@ async def report(messageId, guild, channel, user, param = ""):
         e.add_field(name = "Link to message", value=msg.jump_url)
         if param != "":
             e.add_field(name = "Details", value=param)
-    msgReport = await reportChannel.send(embed = e)
     activeMsgReport = None
-    archiveThread = None
     activeThread = None
     userThread = None
+    userThreadMsg = None
 
     if is_user_report:
         assert isinstance(reportChannel, discord.TextChannel)
         activeReportChannel = await guild.fetch_channel(activeReportChannelId)
         assert isinstance(activeReportChannel, discord.TextChannel)
         activeMsgReport = await activeReportChannel.send(embed=e)
-
-        archiveThread = await msgReport.create_thread(name=case_thread_name(author, msg.id), auto_archive_duration=10080)
         activeThread = await activeMsgReport.create_thread(name=case_thread_name(author, msg.id), auto_archive_duration=10080)
-        await archiveThread.send(f"Discussion thread: {thread_link(guild.id, activeThread.id)}\nPlease discuss this report in the active thread, not here.")
-        try:
-            await archiveThread.edit(archived=True, locked=True)
-        except Exception:
-            pass
+
+        archiveEmbed = discord.Embed.from_dict(e.to_dict())
+        archiveEmbed.add_field(name="Discussion thread", value=thread_link(guild.id, activeThread.id), inline=False)
+        msgReport = await reportChannel.send(embed=archiveEmbed)
 
         userThread = await get_or_create_user_report_thread(guild, reportChannel, author)
         userThreadMsg = await userThread.send(
@@ -454,7 +451,8 @@ async def report(messageId, guild, channel, user, param = ""):
             f"Archive: {msgReport.jump_url}\n"
             f"Active discussion: {thread_link(guild.id, activeThread.id)}\n"
             f"Original message: {msg.jump_url}\n"
-            f"Reporter: <@{reporter}>" + (f"\nDetails: {param}" if param else "")
+            f"Reporter: <@{reporter}>" + (f"\nDetails: {param}" if param else ""),
+            embed=e,
         )
 
         reports = get_reports_storage()
@@ -464,7 +462,6 @@ async def report(messageId, guild, channel, user, param = ""):
             "active_message_id": str(activeMsgReport.id),
             "archive_channel_id": str(reportChannel.id),
             "active_channel_id": str(activeReportChannel.id),
-            "archive_thread_id": str(archiveThread.id),
             "active_thread_id": str(activeThread.id),
             "user_thread_id": str(userThread.id),
             "user_thread_message_id": str(userThreadMsg.id),
@@ -474,6 +471,8 @@ async def report(messageId, guild, channel, user, param = ""):
             "created_at": int(time.time()),
         }
         save()
+    else:
+        msgReport = await reportChannel.send(embed=e)
     
     # reactions to see what has been done with the report
     # either do nothing, informal warn, formal punishment
@@ -491,6 +490,9 @@ async def report(messageId, guild, channel, user, param = ""):
     if activeMsgReport:
         activeRef = discord.MessageReference(channel_id=activeMsgReport.channel.id, message_id=activeMsgReport.id)
         destinations.append((activeMsgReport.channel, activeRef))
+    if userThread and userThreadMsg:
+        userThreadRef = discord.MessageReference(channel_id=userThread.id, message_id=userThreadMsg.id)
+        destinations.append((userThread, userThreadRef))
     await duplicate_report_attachments(msg, destinations)
 
 async def assign_base_roles(newMember, guild):
@@ -965,7 +967,8 @@ async def count_banned_words(guild: discord.Guild, author: discord.Member, msg_t
             f"Banned-word report for {author.mention} (`{author.id}`) at <t:{int(time.time())}:f>.\n"
             f"Archive: {archiveSummaryMsg.jump_url}\n"
             f"Active discussion: {thread_link(guild.id, activeThread.id)}\n"
-            f"Recommended punishment: {punishment}"
+            f"Recommended punishment: {punishment}",
+            embed=e,
         )
 
         reports = get_reports_storage()
